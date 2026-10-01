@@ -1,0 +1,15 @@
+# Stub (Step 0). Node labels, edge types, designation representation and
+# required provenance fields are added in Step 1, along with field visibility
+# and decision rights per role.
+
+# Permission matrix: the CLI commands each role may run. A command is added to
+# the matrix in the build step that registers it.
+roles:
+  analyst:
+    commands: []
+  reviewer:
+    commands: []
+  auditor:
+    commands: []
+  engineer:
+    commands: []
