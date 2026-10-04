@@ -14,6 +14,22 @@ GapCode = Literal[
     "LAPSED_LEI",
     "REVIEW_BAND_MATCH",
     "PCT_SUM_OVER_100",
+    # The upward traversal stopped at max_depth with owners still unexplored.
+    "DEPTH_LIMIT_REACHED",
+]
+
+# Why a recommendation was made. The last two come from the agent pipeline, not the rules.
+ReasonCode = Literal[
+    "DIRECT_DESIGNATION",
+    "DERIVED_50PCT",
+    "POSSIBLY_BLOCKED",
+    "EFFECTIVE_EXPOSURE",
+    "NEAR_MISS_AGGREGATE",
+    "DECISION_RELEVANT_GAP",
+    "CONTROL_LINK",
+    "ENTITY_NOT_FOUND",
+    "GUARDRAIL_FAILED",
+    "PIPELINE_ERROR",
 ]
 
 Exposure = Annotated[Decimal, AfterValidator(quantize), Field(ge=0)]

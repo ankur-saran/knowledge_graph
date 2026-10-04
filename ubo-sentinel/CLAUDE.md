@@ -13,10 +13,13 @@
 - **Determinism.** Same inputs and same snapshot set give a byte-identical canonical decision payload. No ids from wall-clock time or random UUIDs. Sort every collection before serialising. `canonical_json` is sorted keys, no whitespace, UTF-8.
 - **Canonical decision payload.** The `Decision` record minus `created_at`, `status`, `llm_annotations` and the reviewer fields (`reviewed_by`, `review_reason`, `reviewed_at`), produced only by `Decision.canonical_payload()`.
 - **Percentages are `Decimal`**, never `float` (DuckDB `DECIMAL(7,4)`); `canonical_json` writes them as strings quantised to 4 places.
-- **Hashed ids** are `sha256` over a `canonical_json` list, never string concatenation. `decision_id` uses the resolved per-source `snapshot_ids`, not the set alias.
+- **Hashed ids** are `sha256` over a `canonical_json` list, never string concatenation. `decision_id` uses the resolved per-dataset `snapshot_ids`, not the set alias.
+- **Stable bytes.** Snapshot ids hash file bytes. Files under `fixtures/`, `eval/`, `rules/` and `ontology/` are UTF-8 without BOM with LF endings (`.gitattributes`).
+- **Reasons and gaps are closed sets.** `ReasonCode` and `GapCode` in `models/evidence.py`. A truncated traversal is a `DEPTH_LIMIT_REACHED` gap, never a silent `CLEAR`.
+- **One name scorer.** Entity linking and query-time resolution both use `name_similarity()` in `pipeline/name_match.py`.
 - **Provenance.** Every node, edge and sanction carries one `Provenance(source, source_record_id, snapshot_id, as_of, confidence)` in Bronze, Silver, Gold and the Pydantic models.
 - **Edge direction.** `OWNS` is owner → asset. `CONSOLIDATED_BY` is child → parent. `CONTROLS` is controller → controlled. Only code under `graph/` reasons about raw direction.
-- **Snapshot set.** A `snapshot_set_id` names a manifest row that resolves to per-source `snapshot_id`s. `--snapshot` takes a set id (`fixtures`, `latest`, or an explicit id).
+- **Snapshot set.** A `snapshot_set_id` names a manifest row that resolves to per-dataset `snapshot_id`s (a dataset is one published file or feed). `--snapshot` takes a set id (`fixtures`, `latest`, or an explicit id).
 - **Roles.** `analyst`, `reviewer`, `auditor`, `engineer`. Every CLI command calls `require_role()` from `cli/app.py`, which reads the matrix in `ontology/ontology.yaml`. `review` requires an explicit `--role reviewer`.
 - **Queries.** Agents, CLI and UI read graph data only through the typed functions in `graph/queries.py` and through `GraphView(role)`. No free-form queries.
 - **Runtime output** goes to `var/` (gitignored).
@@ -44,10 +47,13 @@ Read by the skills in `.claude/skills/`. A value of "not yet created" is filled 
 | Silver module | `src/ubo_sentinel/pipeline/silver.py` — not yet created (Step 4) |
 | Silver mapping module | `src/ubo_sentinel/pipeline/transformer.py` — not yet created (Step 4) |
 | Ingest command | `uv run ubo ingest --source <name>` — not yet created (Step 3) |
-| Fixture directory | `fixtures/snapshot_t0/` (changed sanctions list: `fixtures/snapshot_t1/`) |
-| Fixture-integrity test | `uv run pytest tests/unit/test_fixtures.py -v` — not yet created (Step 2) |
+| Fixture directory | `fixtures/snapshot_t0/` (changed sanctions list: `fixtures/snapshot_t1/`); format in `fixtures/README.md` |
+| Fixture row schemas and reader | `src/ubo_sentinel/models/fixture_rows.py` (`read_rows()`) |
+| Fixture-integrity test | `uv run pytest tests/unit/test_fixtures.py -v` |
+| Name-matching module | `src/ubo_sentinel/pipeline/name_match.py` |
 | Rule-pack directory | `rules/` |
 | Reference rule pack | `rules/ofac.yaml` — not yet created (Step 6) |
-| Gold-scenario file | `eval/gold_scenarios.yaml` — not yet created (Step 2) |
+| Gold-scenario file | `eval/gold_scenarios.yaml` (schema and loader: `models/gold_scenario.py`) |
+| Labelled ER set | `eval/er_labelled.csv` |
 | Evaluator command | `uv run ubo eval --suite all` — not yet created (Step 6) |
 | Runtime output directory | `var/` |

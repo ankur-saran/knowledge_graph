@@ -1,0 +1,5 @@
+source,source_record_id,as_of,confidence,entity_ref,category,reason
+fx_registry,s00-repex-1,2026-09-01,1.0,fx_registry:s00-hub,DIRECT_PARENT,NATURAL_PERSONS
+fx_registry,s00-repex-2,2026-09-01,1.0,fx_registry:s00-hub,ULTIMATE_PARENT,NATURAL_PERSONS
+fx_registry,s12-repex-1,2026-09-01,1.0,fx_registry:s12-target,DIRECT_PARENT,NON_PUBLIC
+fx_registry,s20-repex-1,2026-09-01,1.0,fx_registry:s20-target,ULTIMATE_PARENT,NATURAL_PERSONS

@@ -1,0 +1,538 @@
+# Gold scenarios: what the rule engine must conclude for each fixture target, and why.
+# Schema and loader: ubo_sentinel.models.gold_scenario. Fixtures: fixtures/README.md.
+# Node ids are canonical entity ids. Edge ids are never written here; a path gives
+# its nodes and the relation of each hop, and the loader derives the ids.
+
+- id: SCEN-01
+  query: Acme Trading FZE
+  target_id: lei:FXS01TARGET000000000
+  expected_recommendation: CLEAR
+  expected_recommendation_t1: ESCALATE
+  rationale: No owner is designated and every percentage is known. On the changed list the 60 % parent
+    is designated, so the target becomes derived-blocked.
+
+- id: SCEN-02
+  query: Vostrek Maritime LLC
+  target_id: lei:FXS02TARGET000000000
+  expected_recommendation: ESCALATE
+  expected_reasons:
+  - DIRECT_DESIGNATION
+  expected_blocked:
+  - lei:FXS02TARGET000000000
+  expected_paths:
+  - nodes:
+    - lei:FXS02TARGET000000000
+    via: []
+  rationale: 'The target carries an active designation, linked by LEI: it is in the seed set.'
+
+- id: SCEN-03
+  query: Halcyon Ridge Minerals Ltd
+  target_id: lei:FXS03TARGET000000000
+  expected_recommendation: ESCALATE
+  expected_reasons:
+  - DERIVED_50PCT
+  expected_blocked:
+  - fx_list:s03-owner-a
+  - fx_list:s03-owner-b
+  - lei:FXS03TARGET000000000
+  expected_paths:
+  - nodes:
+    - fx_list:s03-owner-a
+    - lei:FXS03TARGET000000000
+    via:
+    - OWNS
+  - nodes:
+    - fx_list:s03-owner-b
+    - lei:FXS03TARGET000000000
+    via:
+    - OWNS
+  rationale: Two designated persons hold 30 % each; the aggregate of 60 % meets the 50 % threshold.
+
+- id: SCEN-04
+  query: Zephyrine Logistics BV
+  target_id: lei:FXS04TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - DECISION_RELEVANT_GAP
+  - POSSIBLY_BLOCKED
+  expected_blocked:
+  - lei:FXS04PARENT000000000
+  expected_possibly_blocked:
+  - lei:FXS04TARGET000000000
+  expected_exposure:
+    max_pct: null
+    sum_pct: null
+    has_unknown: true
+  expected_paths:
+  - nodes:
+    - lei:FXS04PARENT000000000
+    - lei:FXS04TARGET000000000
+    via:
+    - CONSOLIDATED_BY
+  expected_gaps:
+  - code: NULL_PCT_EDGE
+    decision_relevant: true
+    edge:
+      subject_id: lei:FXS04TARGET000000000
+      object_id: lei:FXS04PARENT000000000
+      rel_type: CONSOLIDATED_BY
+  rationale: The only link to the designated parent is a consolidation edge with no percentage. A
+    majority is presumed, so the target is possibly blocked; the gap is on the path.
+
+- id: SCEN-05
+  query: Brightwater Tannery SA
+  target_id: lei:FXS05TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - EFFECTIVE_EXPOSURE
+  - NEAR_MISS_AGGREGATE
+  expected_blocked:
+  - fx_list:s05-owner-a
+  - fx_list:s05-owner-b
+  expected_exposure:
+    max_pct: '22'
+    sum_pct: '42'
+    has_unknown: false
+  expected_paths:
+  - nodes:
+    - fx_list:s05-owner-a
+    - lei:FXS05TARGET000000000
+    via:
+    - OWNS
+  - nodes:
+    - fx_list:s05-owner-b
+    - lei:FXS05TARGET000000000
+    via:
+    - OWNS
+  rationale: 'Blocked owners hold 22 % and 20 %: the 42 % aggregate is below 50 but at or above the
+    near-miss level. A direct aggregate of 40 or more always also meets the exposure level, so both
+    reasons are expected.'
+
+- id: SCEN-06
+  query: Ulveston Freight Ltd
+  target_id: lei:FXS06TARGET000000000
+  expected_recommendation: ESCALATE
+  expected_reasons:
+  - DERIVED_50PCT
+  expected_blocked:
+  - lei:FXS06INTER1000000000
+  - lei:FXS06INTER2000000000
+  - lei:FXS06TARGET000000000
+  - lei:FXS06TOP000000000000
+  expected_paths:
+  - nodes:
+    - lei:FXS06TOP000000000000
+    - lei:FXS06INTER1000000000
+    - lei:FXS06INTER2000000000
+    - lei:FXS06TARGET000000000
+    via:
+    - OWNS
+    - OWNS
+    - OWNS
+  rationale: The designated party (linked by registration number) holds 60 % of the first intermediate,
+    which holds 55 % of the second, which holds 51 % of the target. Each level is derived-blocked
+    in turn.
+
+- id: SCEN-07
+  query: Orlamunde Glassworks GmbH
+  target_id: lei:FXS07TARGET000000000
+  expected_recommendation: ESCALATE
+  expected_reasons:
+  - DERIVED_50PCT
+  expected_blocked:
+  - fx_list:s07-owner-a
+  - fx_list:s07-owner-b
+  - lei:FXS07TARGET000000000
+  expected_paths:
+  - nodes:
+    - fx_list:s07-owner-a
+    - lei:FXS07TARGET000000000
+    via:
+    - OWNS
+  - nodes:
+    - fx_list:s07-owner-b
+    - lei:FXS07TARGET000000000
+    via:
+    - OWNS
+  rationale: 'Blocked owners hold 30 % and 20 %: exactly 50 %, which meets a ''>='' threshold.'
+
+- id: SCEN-08
+  query: Nettlebed Cider Company Ltd
+  target_id: lei:FXS08TARGET000000000
+  expected_recommendation: REVIEW
+  expected_recommendation_t1: CLEAR
+  expected_reasons:
+  - EFFECTIVE_EXPOSURE
+  expected_blocked:
+  - fx_list:s08-owner
+  expected_exposure:
+    max_pct: '30'
+    sum_pct: '30'
+    has_unknown: false
+  expected_paths:
+  - nodes:
+    - fx_list:s08-owner
+    - lei:FXS08TARGET000000000
+    via:
+    - OWNS
+  rationale: 'One blocked owner holds 30 %: below the near-miss level, but effective exposure is at
+    or above 25 %. On the changed list the designation is removed.'
+
+- id: SCEN-09
+  query: Calloway Reef Resorts Ltd
+  target_id: lei:FXS09TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - EFFECTIVE_EXPOSURE
+  expected_blocked:
+  - fx_list:s09-blocked
+  expected_exposure:
+    max_pct: '40'
+    sum_pct: '40'
+    has_unknown: false
+  expected_paths:
+  - nodes:
+    - fx_list:s09-blocked
+    - lei:FXS09INTER0000000000
+    - lei:FXS09TARGET000000000
+    via:
+    - OWNS
+    - OWNS
+  rationale: OFAC FAQ 401, negative case. The blocked party holds 40 % of an intermediate that owns
+    all of the target. The intermediate is not derived-blocked, so nothing counts toward the target's
+    aggregate; effective exposure is 40 %.
+
+- id: SCEN-10
+  query: Marrowdale Dairy Ltd
+  target_id: lei:FXS10TARGET000000000
+  twin_of: SCEN-09
+  expected_recommendation: CLEAR
+  expected_blocked:
+  - fx_list:s10-blocked
+  expected_exposure:
+    max_pct: '20'
+    sum_pct: '20'
+    has_unknown: false
+  rationale: 'Same shape as SCEN-09 with 20 %: effective exposure is below 25 % and there is no gap.'
+
+- id: SCEN-11
+  query: Pellucid Optics Pte Ltd
+  target_id: lei:FXS11TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - CONTROL_LINK
+  expected_blocked:
+  - fx_list:s11-director
+  expected_paths:
+  - nodes:
+    - fx_list:s11-director
+    - lei:FXS11TARGET000000000
+    via:
+    - CONTROLS
+  rationale: A designated person is a director of the target and owns none of it. A control link without
+    a percentage is not a data gap.
+
+- id: SCEN-12
+  query: Crannoch Distillers Ltd
+  target_id: lei:FXS12TARGET000000000
+  twin_of: SCEN-10
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - DECISION_RELEVANT_GAP
+  expected_blocked:
+  - fx_list:s12-blocked
+  expected_exposure:
+    max_pct: '20'
+    sum_pct: '20'
+    has_unknown: false
+  expected_paths:
+  - nodes:
+    - fx_list:s12-blocked
+    - lei:FXS12INTER0000000000
+    - lei:FXS12TARGET000000000
+    via:
+    - OWNS
+    - OWNS
+  expected_gaps:
+  - code: REPORTING_EXCEPTION
+    node: lei:FXS12TARGET000000000
+    decision_relevant: true
+  rationale: Same shape as SCEN-10, and the target has a reporting exception. The target is an end
+    of the path to the blocked party, so the gap is decision-relevant.
+
+- id: SCEN-13
+  query: Bexhollow Textiles Ltd
+  target_id: lei:FXS13TARGET000000000
+  twin_of: SCEN-10
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - DECISION_RELEVANT_GAP
+  expected_blocked:
+  - fx_list:s13-blocked
+  expected_exposure:
+    max_pct: '20'
+    sum_pct: '20'
+    has_unknown: false
+  expected_paths:
+  - nodes:
+    - fx_list:s13-blocked
+    - lei:FXS13INTER0000000000
+    - lei:FXS13TARGET000000000
+    via:
+    - OWNS
+    - OWNS
+  expected_gaps:
+  - code: LAPSED_LEI
+    node: lei:FXS13INTER0000000000
+    decision_relevant: true
+  rationale: Same shape as SCEN-10, and the intermediate's LEI has lapsed. It sits on the path to
+    the blocked party, so the gap is decision-relevant.
+
+- id: SCEN-14
+  query: Fairweather Bulk Carriers Ltd
+  target_id: lei:FXS14TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - DECISION_RELEVANT_GAP
+  - POSSIBLY_BLOCKED
+  expected_possibly_blocked:
+  - lei:FXS14OWNER0000000000
+  - lei:FXS14TARGET000000000
+  expected_paths:
+  - nodes:
+    - lei:FXS14OWNER0000000000
+    - lei:FXS14TARGET000000000
+    via:
+    - OWNS
+  expected_gaps:
+  - code: REVIEW_BAND_MATCH
+    node: lei:FXS14OWNER0000000000
+    decision_relevant: true
+  declared_name_pairs:
+  - a: fx_list:s14-listed
+    b: lei:FXS14OWNER0000000000
+    band: review
+  rationale: The 60 % owner resembles a designated party by name only, in the review band. The owner
+    is possibly blocked, and through its majority so is the target.
+
+- id: SCEN-15
+  query: Thornaby Rolling Mills Ltd
+  target_id: lei:FXS15TARGET000000000
+  expected_recommendation: ESCALATE
+  expected_reasons:
+  - DERIVED_50PCT
+  expected_blocked:
+  - fx_list:s15-blocked
+  - lei:FXS15TARGET000000000
+  expected_paths:
+  - nodes:
+    - fx_list:s15-blocked
+    - lei:FXS15TARGET000000000
+    via:
+    - OWNS
+  rationale: The target and another company own shares in each other, and a blocked party holds 60
+    % of the target. The traversal and the fix-point must terminate. The other company is only 30
+    % owned by a blocked entity and stays unblocked.
+
+- id: SCEN-16
+  query: Silverline Commodities Ltd
+  target_id: lei:FXS16TARGET000000000
+  expect_disambiguation: true
+  expected_recommendation: CLEAR
+  declared_name_pairs:
+  - a: lei:FXS16TARGET000000000
+    b: lei:FXS24TARGET000000000
+    band: homonym
+  rationale: Two companies share this name. The analyst picks the Cyprus one, which has no blocked
+    owner.
+
+- id: SCEN-17
+  query: Quenby Aerostructures Ltd
+  target_id: lei:FXS17TARGET000000000
+  expected_recommendation: CLEAR
+  expected_recommendation_t1: ESCALATE
+  rationale: The 70 % owner's designation is inactive, so it seeds nothing. On the changed list the
+    designation is active again.
+
+- id: SCEN-18
+  query: Lanternfish Seafoods AS
+  target_id: lei:FXS18TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - EFFECTIVE_EXPOSURE
+  expected_blocked:
+  - lei:FXS18OWNER0000000000
+  expected_exposure:
+    max_pct: '30'
+    sum_pct: '30'
+    has_unknown: false
+  expected_paths:
+  - nodes:
+    - lei:FXS18OWNER0000000000
+    - lei:FXS18TARGET000000000
+    via:
+    - OWNS
+  rationale: Two sources report the same 30 % stake by the same blocked owner (one entity, linked
+    by LEI). It is one edge of 30 %, not two that add up to 60 %.
+
+- id: SCEN-19
+  query: Dunmorrow Quarries Ltd
+  target_id: lei:FXS19TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - DECISION_RELEVANT_GAP
+  expected_blocked:
+  - fx_list:s19-blocked
+  expected_exposure:
+    max_pct: '20'
+    sum_pct: '20'
+    has_unknown: false
+  expected_paths:
+  - nodes:
+    - fx_list:s19-blocked
+    - lei:FXS19TARGET000000000
+    via:
+    - OWNS
+  expected_gaps:
+  - code: PCT_SUM_OVER_100
+    node: lei:FXS19TARGET000000000
+    decision_relevant: true
+  rationale: A blocked owner holds 20 %, below every level, but the reported stakes in the target
+    add up to 110 %. The target is an end of the path, so the gap is decision-relevant.
+
+- id: SCEN-20
+  query: Greywether Bookbinders Ltd
+  target_id: lei:FXS20TARGET000000000
+  expected_recommendation: CLEAR
+  expected_gaps:
+  - code: REPORTING_EXCEPTION
+    node: lei:FXS20TARGET000000000
+    decision_relevant: false
+  - code: LAPSED_LEI
+    node: lei:FXS20PARENT000000000
+    decision_relevant: false
+  rationale: The target has a reporting exception and its parent's LEI has lapsed, but no blocked
+    or possibly-blocked party is in the graph. With gap_scope 'on_path' both gaps are informational.
+
+- id: SCEN-21
+  query: Ravenscar Wind Farms Ltd
+  target_id: lei:FXS21TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - EFFECTIVE_EXPOSURE
+  expected_blocked:
+  - fx_list:s21-blocked
+  expected_exposure:
+    max_pct: '15'
+    sum_pct: '30'
+    has_unknown: false
+  expected_paths:
+  - nodes:
+    - fx_list:s21-blocked
+    - lei:FXS21INTER1000000000
+    - lei:FXS21TARGET000000000
+    via:
+    - OWNS
+    - OWNS
+  - nodes:
+    - fx_list:s21-blocked
+    - lei:FXS21INTER2000000000
+    - lei:FXS21TARGET000000000
+    via:
+    - OWNS
+    - OWNS
+  rationale: A blocked party holds 30 % of each of two intermediates that own half of the target each.
+    No single path exceeds 15 %; the sum over paths is 30 %. The exposure test uses the sum.
+
+- id: SCEN-22
+  query: Kittiwake Packaging Ltd
+  target_id: lei:FXS22TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - DECISION_RELEVANT_GAP
+  expected_gaps:
+  - code: DEPTH_LIMIT_REACHED
+    node: lei:FXS22INTER5000000000
+    decision_relevant: true
+  rationale: A designated party owns the target through a 100 % chain, six hops up. With max_depth
+    5 it is outside the subgraph, and the fifth intermediate still has an unexplored owner. The truncation
+    is a decision-relevant gap whatever gap_scope says. With max_depth 7 the same target is ESCALATE.
+
+- id: SCEN-23
+  query: Zzyzx Nonexistent Ventures
+  target_id: null
+  suite: pipeline
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - ENTITY_NOT_FOUND
+  rationale: No fixture entity resembles the query. An unresolved name is never CLEAR.
+
+- id: SCEN-24
+  query: Silverline Commodities Ltd
+  target_id: lei:FXS24TARGET000000000
+  expect_disambiguation: true
+  twin_of: SCEN-16
+  expected_recommendation: ESCALATE
+  expected_reasons:
+  - DERIVED_50PCT
+  expected_blocked:
+  - fx_list:s24-owner
+  - lei:FXS24TARGET000000000
+  expected_paths:
+  - nodes:
+    - fx_list:s24-owner
+    - lei:FXS24TARGET000000000
+    via:
+    - OWNS
+  rationale: The Malta company with the same name as SCEN-16's target is 80 % owned by a designated
+    party. Picking the other candidate changes the answer.
+
+- id: SCEN-25
+  query: Winterbourne Ceramics Ltd
+  target_id: lei:FXS25TARGET000000000
+  twin_of: SCEN-07
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - EFFECTIVE_EXPOSURE
+  - NEAR_MISS_AGGREGATE
+  expected_blocked:
+  - fx_list:s25-owner-a
+  - fx_list:s25-owner-b
+  expected_exposure:
+    max_pct: '30'
+    sum_pct: '49.9999'
+    has_unknown: false
+  expected_paths:
+  - nodes:
+    - fx_list:s25-owner-a
+    - lei:FXS25TARGET000000000
+    via:
+    - OWNS
+  - nodes:
+    - fx_list:s25-owner-b
+    - lei:FXS25TARGET000000000
+    via:
+    - OWNS
+  rationale: 'Same shape as SCEN-07 with 30 % and 19.9999 %: 49.9999 % does not meet the threshold.'
+
+- id: SCEN-26
+  query: Harrowgate Grain Terminals Ltd
+  target_id: lei:FXS26TARGET000000000
+  expected_recommendation: ESCALATE
+  expected_reasons:
+  - DERIVED_50PCT
+  expected_blocked:
+  - lei:FXS26OWNER0000000000
+  - lei:FXS26TARGET000000000
+  expected_paths:
+  - nodes:
+    - lei:FXS26OWNER0000000000
+    - lei:FXS26TARGET000000000
+    via:
+    - OWNS
+  declared_name_pairs:
+  - a: fx_list:s26-listed
+    b: lei:FXS26OWNER0000000000
+    band: blocked
+  rationale: The 70 % owner shares no identifier with the designated record, but the names match at
+    or above the match threshold, so the owner is in the seed set.

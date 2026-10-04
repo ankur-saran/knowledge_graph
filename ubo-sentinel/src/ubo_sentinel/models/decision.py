@@ -12,7 +12,7 @@ from pydantic import (
 )
 
 from ubo_sentinel.models.canonical import short_id
-from ubo_sentinel.models.evidence import DataGap, EffectiveExposure, EvidencePath
+from ubo_sentinel.models.evidence import DataGap, EffectiveExposure, EvidencePath, ReasonCode
 from ubo_sentinel.models.provenance import NonEmptyStr
 
 Recommendation = Literal["CLEAR", "REVIEW", "ESCALATE"]
@@ -52,7 +52,7 @@ class Decision(BaseModel):
     target_id: NonEmptyStr | None
     recommendation: Recommendation
     status: DecisionStatus
-    reasons: list[str] = []
+    reasons: list[ReasonCode] = []
     blocked_set: list[str] = []
     possibly_blocked_set: list[str] = []
     paths: list[EvidencePath] = []
@@ -77,7 +77,7 @@ class Decision(BaseModel):
 
     @field_validator("reasons", "blocked_set", "possibly_blocked_set", "guardrail_warnings")
     @classmethod
-    def _sort_unique(cls, value: list[str]) -> list[str]:
+    def _sort_unique[T: str](cls, value: list[T]) -> list[T]:
         return sorted(set(value))
 
     @field_validator("paths")

@@ -1,0 +1,45 @@
+query_name,lei,jurisdiction,expected_entity_id,variant_type
+Acme Trading FZE,,,lei:FXS01TARGET000000000,exact
+Quillon Harbour Group Ltd,,,lei:FXS01PARENT000000000,exact
+Halcyon Ridge Minerals Ltd,,,lei:FXS03TARGET000000000,exact
+Tobias Wrenfield,,,fx_list:s01-minority,exact
+Pembrook Lattice GmbH,,DE,lei:FXS03OTHER0000000000,exact
+acme trading fze,,,lei:FXS01TARGET000000000,case
+ZEPHYRINE LOGISTICS BV,,,lei:FXS04TARGET000000000,case
+brightwater TANNERY sa,,,lei:FXS05TARGET000000000,case
+ulveston freight ltd,,,lei:FXS06TARGET000000000,case
+"Vostrek Maritime, L.L.C.",,,lei:FXS02TARGET000000000,punctuation
+Pellucid Optics (Pte.) Ltd.,,,lei:FXS11TARGET000000000,punctuation
+Calloway-Reef Resorts Ltd,,,lei:FXS09TARGET000000000,punctuation
+Yusuf Al Qahdari,,,fx_list:s03-owner-b,punctuation
+Nettlebed Cider Company Limited,,,lei:FXS08TARGET000000000,legal_form
+Orlamunde Glassworks,,,lei:FXS07TARGET000000000,legal_form
+Lanternfish Seafoods,,,lei:FXS18TARGET000000000,legal_form
+Marrowdale Dairy Limited,,,lei:FXS10TARGET000000000,legal_form
+Carrowmore Industrial,,CH,lei:FXS04PARENT000000000,legal_form
+Acme FZE,,,lei:FXS01TARGET000000000,alias
+Vostrek Marine,,,lei:FXS02TARGET000000000,alias
+Дмитрий Волканов,,,fx_list:s03-owner-a,transliteration
+يوسف القحدري,,,fx_list:s03-owner-b,transliteration
+Железный Берег Инвест,,,lei:FXS06TOP000000000000,transliteration
+Dmitry Volkanov,,,fx_list:s03-owner-a,transliteration
+Rashid Tulaganov,,,fx_list:s11-director,transliteration
+Acme Tradng FZE,,,lei:FXS01TARGET000000000,typo
+Crannoch Distilers Ltd,,,lei:FXS12TARGET000000000,typo
+Bexhollow Textile Ltd,,,lei:FXS13TARGET000000000,typo
+Thornaby Roling Mills Ltd,,,lei:FXS15TARGET000000000,typo
+Quenby Aerostuctures Ltd,,,lei:FXS17TARGET000000000,typo
+Ravenscar Wind Farm Ltd,,,lei:FXS21TARGET000000000,typo
+Mills Thornaby Rolling,,,lei:FXS15TARGET000000000,word_order
+Grain Terminals Harrowgate Ltd,,,lei:FXS26TARGET000000000,word_order
+Silverline Commodities Ltd,,CY,lei:FXS16TARGET000000000,homonym
+Silverline Commodities Ltd,,MT,lei:FXS24TARGET000000000,homonym
+Kittiwake Pkg,FXS22TARGET000000000,,lei:FXS22TARGET000000000,lei
+Dunmorrow Quarries Ltd,FXS19TARGET000000000,,lei:FXS19TARGET000000000,lei
+Murmansk Trawl Flot,,,lei:FXS18OWNER0000000000,merged_record
+Zhelezny Bereg Invest,,,lei:FXS06TOP000000000000,merged_record
+Zzyzx Nonexistent Ventures,,,,negative
+Umbrella Biotech Holdings,,,,negative
+Northwind Traders Inc,,,,negative
+Jonathan Featherstonehaugh,,,,negative
+Global Petroleum Services,,,,negative

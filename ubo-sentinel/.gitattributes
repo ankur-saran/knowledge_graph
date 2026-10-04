@@ -1,0 +1,6 @@
+# Snapshot ids and the rule-pack hash are computed from file bytes, so these
+# files must have the same bytes on every platform.
+fixtures/** text eol=lf
+eval/** text eol=lf
+rules/** text eol=lf
+ontology/** text eol=lf

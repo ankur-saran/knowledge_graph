@@ -1,0 +1,100 @@
+source,source_record_id,as_of,confidence,lei,registration_authority_id,registration_number,legal_name,aliases,jurisdiction,status,entity_type
+fx_registry,s00-hub,2026-09-01,1.0,FXS00HUB000000000000,RA-FX-GB,00-HUB,Brackenridge Consolidated plc,,GB,ACTIVE,LegalEntity
+fx_registry,s00-mid,2026-09-01,1.0,FXS00MID000000000000,RA-FX-GB,00-MID,Tarnhelm Subholdings Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s00-sub-1,2026-09-01,1.0,FXS00SUB100000000000,RA-FX-GB,00-SUB-1,Aldergrove Plumbing Supplies Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s00-sub-2,2026-09-01,1.0,FXS00SUB200000000000,RA-FX-GB,00-SUB-2,Birchanger Tool Hire Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s00-sub-3,2026-09-01,1.0,FXS00SUB300000000000,RA-FX-GB,00-SUB-3,Copsewood Fasteners Ltd,,GB,INACTIVE,LegalEntity
+fx_registry,s00-sub-4,2026-09-01,1.0,FXS00SUB400000000000,RA-FX-GB,00-SUB-4,Dovecote Scaffolding Ltd,,GB,RETIRED,LegalEntity
+fx_registry,s00-sub-5,2026-09-01,1.0,FXS00SUB500000000000,RA-FX-GB,00-SUB-5,Elmstead Roofing Merchants Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s00-sub-6,2026-09-01,1.0,FXS00SUB600000000000,RA-FX-GB,00-SUB-6,Furzeham Paint Depot Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s00-sub-7,2026-09-01,1.0,FXS00SUB700000000000,RA-FX-GB,00-SUB-7,Gorsebank Joinery Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s00-sub-8,2026-09-01,1.0,FXS00SUB800000000000,RA-FX-GB,00-SUB-8,Hazelmere Ironmongers Ltd,,GB,ACTIVE,LegalEntity
+fx_list,s00-founder,2026-09-15,1.0,,,,Cordelia Ashdowne,,GB,UNKNOWN,Person
+fx_registry,s01-target,2026-09-01,1.0,FXS01TARGET000000000,RA-FX-AE,01-TARGET,Acme Trading FZE,Acme FZE,AE,ACTIVE,LegalEntity
+fx_registry,s01-parent,2026-09-01,1.0,FXS01PARENT000000000,RA-FX-AE,01-PARENT,Quillon Harbour Group Ltd,,AE,ACTIVE,LegalEntity
+fx_list,s01-minority,2026-09-15,1.0,,,,Tobias Wrenfield,,GB,UNKNOWN,Person
+fx_registry,s02-target,2026-09-01,1.0,FXS02TARGET000000000,RA-FX-AE,02-TARGET,Vostrek Maritime LLC,,AE,ACTIVE,LegalEntity
+fx_list,s02-listed,2026-09-15,1.0,FXS02TARGET000000000,,,Vostrek Maritime L.L.C.,Vostrek Marine,AE,ACTIVE,LegalEntity
+fx_registry,s02-parent,2026-09-01,1.0,FXS02PARENT000000000,RA-FX-CY,02-PARENT,Ondura Capital Partners Ltd,,CY,ACTIVE,LegalEntity
+fx_registry,s03-target,2026-09-01,1.0,FXS03TARGET000000000,RA-FX-CY,03-TARGET,Halcyon Ridge Minerals Ltd,,CY,ACTIVE,LegalEntity
+fx_list,s03-owner-a,2026-09-15,1.0,,,,Dmitri Volkanov,Дмитрий Волканов,RU,UNKNOWN,Person
+fx_list,s03-owner-b,2026-09-15,1.0,,,,Yusuf Al-Qahdari,يوسف القحدري,AE,UNKNOWN,Person
+fx_registry,s03-other,2026-09-01,1.0,FXS03OTHER0000000000,RA-FX-DE,03-OTHER,Pembrook Lattice GmbH,,DE,ACTIVE,LegalEntity
+fx_registry,s04-target,2026-09-01,1.0,FXS04TARGET000000000,RA-FX-NL,04-TARGET,Zephyrine Logistics BV,,NL,ACTIVE,LegalEntity
+fx_registry,s04-parent,2026-09-01,1.0,FXS04PARENT000000000,RA-FX-CH,04-PARENT,Carrowmore Industrial AG,,CH,ACTIVE,LegalEntity
+fx_list,s04-listed,2026-09-15,1.0,FXS04PARENT000000000,,,Carrowmore Industrial AG,,CH,ACTIVE,LegalEntity
+fx_registry,s05-target,2026-09-01,1.0,FXS05TARGET000000000,RA-FX-ES,05-TARGET,Brightwater Tannery SA,,ES,ACTIVE,LegalEntity
+fx_list,s05-owner-a,2026-09-15,1.0,,,,Kolvari Exports JSC,,RU,ACTIVE,LegalEntity
+fx_list,s05-owner-b,2026-09-15,1.0,,,,Mirzakhan Petrochem OOO,,RU,ACTIVE,LegalEntity
+fx_registry,s05-other,2026-09-01,1.0,FXS05OTHER0000000000,RA-FX-GB,05-OTHER,Fennimore Estates Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s06-target,2026-09-01,1.0,FXS06TARGET000000000,RA-FX-GB,06-TARGET,Ulveston Freight Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s06-inter-2,2026-09-01,1.0,FXS06INTER2000000000,RA-FX-GB,06-INTER-2,Darnley Yardarm Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s06-inter-1,2026-09-01,1.0,FXS06INTER1000000000,RA-FX-PA,06-INTER-1,Skerravore Shipping SA,,PA,ACTIVE,LegalEntity
+fx_registry,s06-top,2026-09-01,1.0,FXS06TOP000000000000,RA-FX-RU,06-TOP,Zhelezny Bereg Invest OOO,Железный Берег Инвест,RU,ACTIVE,LegalEntity
+fx_list,s06-listed,2026-09-15,1.0,,RA-FX-RU,06-TOP,Zhelezny Bereg Invest,,RU,ACTIVE,LegalEntity
+fx_registry,s07-target,2026-09-01,1.0,FXS07TARGET000000000,RA-FX-DE,07-TARGET,Orlamunde Glassworks GmbH,,DE,ACTIVE,LegalEntity
+fx_list,s07-owner-a,2026-09-15,1.0,,,,Tarsevich Metallurg PJSC,,RU,ACTIVE,LegalEntity
+fx_list,s07-owner-b,2026-09-15,1.0,,,,Belogorsk Lesprom ZAO,,RU,ACTIVE,LegalEntity
+fx_registry,s07-other,2026-09-01,1.0,FXS07OTHER0000000000,RA-FX-GB,07-OTHER,Wexcombe Pension Trustees Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s08-target,2026-09-01,1.0,FXS08TARGET000000000,RA-FX-GB,08-TARGET,Nettlebed Cider Company Ltd,,GB,ACTIVE,LegalEntity
+fx_list,s08-owner,2026-09-15,1.0,,,,Granitsa Avto OAO,,BY,ACTIVE,LegalEntity
+fx_registry,s08-other,2026-09-01,1.0,FXS08OTHER0000000000,RA-FX-GB,08-OTHER,Hollowell Family Office Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s09-target,2026-09-01,1.0,FXS09TARGET000000000,RA-FX-BS,09-TARGET,Calloway Reef Resorts Ltd,,BS,ACTIVE,LegalEntity
+fx_registry,s09-inter,2026-09-01,1.0,FXS09INTER0000000000,RA-FX-BS,09-INTER,Sandpiper Atoll Ventures Ltd,,BS,ACTIVE,LegalEntity
+fx_list,s09-blocked,2026-09-15,1.0,,,,Khorasan Bridge FZCO,,AE,ACTIVE,LegalEntity
+fx_registry,s09-other,2026-09-01,1.0,FXS09OTHER0000000000,RA-FX-SE,09-OTHER,Lindqvist Arbor AB,,SE,ACTIVE,LegalEntity
+fx_registry,s10-target,2026-09-01,1.0,FXS10TARGET000000000,RA-FX-IE,10-TARGET,Marrowdale Dairy Ltd,,IE,ACTIVE,LegalEntity
+fx_registry,s10-inter,2026-09-01,1.0,FXS10INTER0000000000,RA-FX-IE,10-INTER,Tullyvane Creameries Ltd,,IE,ACTIVE,LegalEntity
+fx_list,s10-blocked,2026-09-15,1.0,,,,Sevrugin Kombinat OOO,,RU,ACTIVE,LegalEntity
+fx_registry,s10-other,2026-09-01,1.0,FXS10OTHER0000000000,RA-FX-DK,10-OTHER,Ostergaard Molkerei ApS,,DK,ACTIVE,LegalEntity
+fx_registry,s11-target,2026-09-01,1.0,FXS11TARGET000000000,RA-FX-SG,11-TARGET,Pellucid Optics Pte Ltd,,SG,ACTIVE,LegalEntity
+fx_registry,s11-parent,2026-09-01,1.0,FXS11PARENT000000000,RA-FX-SG,11-PARENT,Jurong Lenscraft Pte Ltd,,SG,ACTIVE,LegalEntity
+fx_list,s11-director,2026-09-15,1.0,,,,Rashid Tulyaganov,,UZ,UNKNOWN,Person
+fx_registry,s12-target,2026-09-01,1.0,FXS12TARGET000000000,RA-FX-GB,12-TARGET,Crannoch Distillers Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s12-inter,2026-09-01,1.0,FXS12INTER0000000000,RA-FX-GB,12-INTER,Glenmoriston Casks Ltd,,GB,ACTIVE,LegalEntity
+fx_list,s12-blocked,2026-09-15,1.0,,,,Akhtuba Spirt ZAO,,RU,ACTIVE,LegalEntity
+fx_registry,s13-target,2026-09-01,1.0,FXS13TARGET000000000,RA-FX-GB,13-TARGET,Bexhollow Textiles Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s13-inter,2026-09-01,1.0,FXS13INTER0000000000,RA-FX-GB,13-INTER,Wyrmsley Weavers Ltd,,GB,LAPSED,LegalEntity
+fx_list,s13-blocked,2026-09-15,1.0,,,,Narimanov Khlopok OOO,,UZ,ACTIVE,LegalEntity
+fx_registry,s14-target,2026-09-01,1.0,FXS14TARGET000000000,RA-FX-MT,14-TARGET,Fairweather Bulk Carriers Ltd,,MT,ACTIVE,LegalEntity
+fx_registry,s14-owner,2026-09-01,1.0,FXS14OWNER0000000000,RA-FX-GR,14-OWNER,Petrakis Aegean Navigation SA,,GR,ACTIVE,LegalEntity
+fx_list,s14-listed,2026-09-15,1.0,,,,Petrakos Aegean Navigators,,GR,ACTIVE,LegalEntity
+fx_registry,s14-other,2026-09-01,1.0,FXS14OTHER0000000000,RA-FX-GR,14-OTHER,Kallithea Olive Estates SA,,GR,ACTIVE,LegalEntity
+fx_registry,s15-target,2026-09-01,1.0,FXS15TARGET000000000,RA-FX-GB,15-TARGET,Thornaby Rolling Mills Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s15-cross,2026-09-01,1.0,FXS15CROSS0000000000,RA-FX-GB,15-CROSS,Eskdale Billet Works Ltd,,GB,ACTIVE,LegalEntity
+fx_list,s15-blocked,2026-09-15,1.0,,,,Uralskiy Prokat OAO,,RU,ACTIVE,LegalEntity
+fx_registry,s16-target,2026-09-01,1.0,FXS16TARGET000000000,RA-FX-CY,16-TARGET,Silverline Commodities Ltd,,CY,ACTIVE,LegalEntity
+fx_registry,s16-parent,2026-09-01,1.0,FXS16PARENT000000000,RA-FX-CY,16-PARENT,Avgerinos Family Holdings Ltd,,CY,ACTIVE,LegalEntity
+fx_registry,s17-target,2026-09-01,1.0,FXS17TARGET000000000,RA-FX-GB,17-TARGET,Quenby Aerostructures Ltd,,GB,ACTIVE,LegalEntity
+fx_list,s17-owner,2026-09-15,1.0,,,,Voronezh Aviadetal OAO,,RU,ACTIVE,LegalEntity
+fx_registry,s17-other,2026-09-01,1.0,FXS17OTHER0000000000,RA-FX-GB,17-OTHER,Mossgiel Engineering Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s18-target,2026-09-01,1.0,FXS18TARGET000000000,RA-FX-NO,18-TARGET,Lanternfish Seafoods AS,,NO,ACTIVE,LegalEntity
+fx_registry,s18-owner,2026-09-01,1.0,FXS18OWNER0000000000,RA-FX-RU,18-OWNER,Murmansk Trawl Flot AO,,RU,ACTIVE,LegalEntity
+fx_list,s18-owner-listed,2026-09-15,1.0,FXS18OWNER0000000000,,,Murmansk Trawl Flot,,RU,ACTIVE,LegalEntity
+fx_registry,s18-other,2026-09-01,1.0,FXS18OTHER0000000000,RA-FX-NO,18-OTHER,Hjelmeland Fjordbruk AS,,NO,ACTIVE,LegalEntity
+fx_registry,s19-target,2026-09-01,1.0,FXS19TARGET000000000,RA-FX-IE,19-TARGET,Dunmorrow Quarries Ltd,,IE,ACTIVE,LegalEntity
+fx_list,s19-blocked,2026-09-15,1.0,,,,Kuzbass Shcheben OOO,,RU,ACTIVE,LegalEntity
+fx_registry,s19-other-a,2026-09-01,1.0,FXS19OTHERA000000000,RA-FX-IE,19-OTHER-A,Ballyhale Aggregates Ltd,,IE,ACTIVE,LegalEntity
+fx_registry,s19-other-b,2026-09-01,1.0,FXS19OTHERB000000000,RA-FX-IE,19-OTHER-B,Inchiquin Stone Ltd,,IE,ACTIVE,LegalEntity
+fx_registry,s20-target,2026-09-01,1.0,FXS20TARGET000000000,RA-FX-GB,20-TARGET,Greywether Bookbinders Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s20-parent,2026-09-01,1.0,FXS20PARENT000000000,RA-FX-GB,20-PARENT,Oxgate Stationers Ltd,,GB,LAPSED,LegalEntity
+fx_registry,s21-target,2026-09-01,1.0,FXS21TARGET000000000,RA-FX-GB,21-TARGET,Ravenscar Wind Farms Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s21-inter-1,2026-09-01,1.0,FXS21INTER1000000000,RA-FX-NL,21-INTER-1,Northsea Turbine Leasing BV,,NL,ACTIVE,LegalEntity
+fx_registry,s21-inter-2,2026-09-01,1.0,FXS21INTER2000000000,RA-FX-JE,21-INTER-2,Flamborough Offshore Assets Ltd,,JE,ACTIVE,LegalEntity
+fx_list,s21-blocked,2026-09-15,1.0,,,,Yamal Energomash PAO,,RU,ACTIVE,LegalEntity
+fx_registry,s22-target,2026-09-01,1.0,FXS22TARGET000000000,RA-FX-GB,22-TARGET,Kittiwake Packaging Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s22-inter-1,2026-09-01,1.0,FXS22INTER1000000000,RA-FX-GB,22-INTER-1,Ardnamurchan Cartons Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s22-inter-2,2026-09-01,1.0,FXS22INTER2000000000,RA-FX-GB,22-INTER-2,Benbecula Pulp Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s22-inter-3,2026-09-01,1.0,FXS22INTER3000000000,RA-FX-GB,22-INTER-3,Colonsay Fibre Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s22-inter-4,2026-09-01,1.0,FXS22INTER4000000000,RA-FX-GB,22-INTER-4,Dunvegan Paperboard Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s22-inter-5,2026-09-01,1.0,FXS22INTER5000000000,RA-FX-GB,22-INTER-5,Eriskay Forest Products Ltd,,GB,ACTIVE,LegalEntity
+fx_list,s22-top,2026-09-15,1.0,,,,Segezha Karton OOO,,RU,ACTIVE,LegalEntity
+fx_registry,s24-target,2026-09-01,1.0,FXS24TARGET000000000,RA-FX-MT,24-TARGET,Silverline Commodities Ltd,,MT,ACTIVE,LegalEntity
+fx_list,s24-owner,2026-09-15,1.0,,,,Donbass Ugol Trade OOO,,RU,ACTIVE,LegalEntity
+fx_registry,s25-target,2026-09-01,1.0,FXS25TARGET000000000,RA-FX-GB,25-TARGET,Winterbourne Ceramics Ltd,,GB,ACTIVE,LegalEntity
+fx_list,s25-owner-a,2026-09-15,1.0,,,,Gzhel Farfor Zavod OAO,,RU,ACTIVE,LegalEntity
+fx_list,s25-owner-b,2026-09-15,1.0,,,,Dulevo Keramika ZAO,,RU,ACTIVE,LegalEntity
+fx_registry,s25-other,2026-09-01,1.0,FXS25OTHER0000000000,RA-FX-GB,25-OTHER,Stoke Kilnworks Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s26-target,2026-09-01,1.0,FXS26TARGET000000000,RA-FX-GB,26-TARGET,Harrowgate Grain Terminals Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s26-owner,2026-09-01,1.0,FXS26OWNER0000000000,RA-FX-UA,26-OWNER,Azovzerno Export LLC,,UA,ACTIVE,LegalEntity
+fx_list,s26-listed,2026-09-15,1.0,,,,AZOVZERNO EXPORT L.L.C.,,UA,ACTIVE,LegalEntity

@@ -353,15 +353,20 @@ def test_decision_rejects_an_id_that_does_not_match_its_inputs():
 def test_decision_collections_are_sorted():
     decision = make_decision(
         blocked_set=["b", "a"],
-        reasons=["Z", "A"],
+        reasons=["EFFECTIVE_EXPOSURE", "DERIVED_50PCT"],
         paths=[
             EvidencePath(node_ids=["b", "t"], edge_ids=["e2"]),
             EvidencePath(node_ids=["a", "t"], edge_ids=["e1"]),
         ],
     )
     assert decision.blocked_set == ["a", "b"]
-    assert decision.reasons == ["A", "Z"]
+    assert decision.reasons == ["DERIVED_50PCT", "EFFECTIVE_EXPOSURE"]
     assert [path.node_ids[0] for path in decision.paths] == ["a", "b"]
+
+
+def test_reason_code_is_a_closed_set():
+    with pytest.raises(ValidationError):
+        make_decision(reasons=["BECAUSE"])
 
 
 def test_blocked_and_possibly_blocked_sets_must_not_overlap():
@@ -425,8 +430,12 @@ def test_canonical_payload_is_unchanged_by_time_review_and_llm_text():
 
 
 def test_canonical_payload_is_unchanged_by_input_order():
-    one = make_decision(blocked_set=["owner-1", "asset-1"], reasons=["A", "B"])
-    two = make_decision(blocked_set=["asset-1", "owner-1"], reasons=["B", "A"])
+    one = make_decision(
+        blocked_set=["owner-1", "asset-1"], reasons=["CONTROL_LINK", "DERIVED_50PCT"]
+    )
+    two = make_decision(
+        blocked_set=["asset-1", "owner-1"], reasons=["DERIVED_50PCT", "CONTROL_LINK"]
+    )
     assert canonical_json(one.canonical_payload()) == canonical_json(two.canonical_payload())
 
 
