@@ -21,6 +21,9 @@
 - **Edge direction.** `OWNS` is owner → asset. `CONSOLIDATED_BY` is child → parent. `CONTROLS` is controller → controlled. Only code under `graph/` reasons about raw direction.
 - **Snapshot set.** A `snapshot_set_id` names a manifest row that resolves to per-dataset `snapshot_id`s (a dataset is one published file or feed). `--snapshot` takes a set id (`fixtures`, `latest`, or an explicit id). Both ids are content-derived: a snapshot id from the file's bytes, a set id from its members. A set has a family (`fixtures` or `real`) and inherits missing datasets only from its own family. `latest` is the newest set; `fixtures` is the newest fixture set that one complete directory supplied.
 - **Bronze is append-only.** `_raw` is the source record as published; Silver parses it. An ingest writes everything in one transaction or nothing. The only wall-clock value is `bronze_snapshots.ingested_at`, and no id or hash reads it.
+- **Silver is built per snapshot set** and is derived: `ubo normalize --rebuild` replaces it. `silver_builds` records the engine version, the parameters and a digest of the rows; a set built by other code is refused, not reused. Raise `TRANSFORM_VERSION` in `pipeline/transformer.py` when a change alters the rows.
+- **Merge on identifiers, link on names.** Records that share an LEI, or a registration authority and number, are one entity; a registration join that would put two LEIs or two entity types in one entity is refused. Entities with similar names are never merged: they get a `silver_entity_links` row, and a designation reaches the linked entity at the link's confidence, one link away. A registry's record describes a merged entity before a list's record does (`pipeline/sources.py`).
+- **Source formats stop at the mapper.** `pipeline/mappers.py` turns each dataset's Bronze `_raw` into the typed staging tables; nothing after staging knows a source's format.
 - **Roles.** `analyst`, `reviewer`, `auditor`, `engineer`. Every CLI command calls `require_role()` from `cli/app.py`, which reads the matrix in `ontology/ontology.yaml`. `review` requires an explicit `--role reviewer`.
 - **Queries.** Agents, CLI and UI read graph data only through the typed functions in `graph/queries.py` and through `GraphView(role)`. No free-form queries.
 - **Runtime output** goes to `var/` (gitignored).
@@ -46,8 +49,10 @@ Read by the skills in `.claude/skills/`. A value of "not yet created" is filled 
 | Loader directory | `src/ubo_sentinel/pipeline/loaders/` (registry: `LOADERS` in its `__init__.py`; reference loader: `fixture_loader.py`, tests in `tests/unit/test_bronze.py`) |
 | Bronze module | `src/ubo_sentinel/pipeline/bronze.py` (`SnapshotManager`, `resolve_set()`, `transaction()`) |
 | Database | `var/ubo.duckdb`, opened with `connect()` in `src/ubo_sentinel/pipeline/db.py`; env `UBO_DB` overrides the path (tests use a temp file) |
-| Silver module | `src/ubo_sentinel/pipeline/silver.py` — not yet created (Step 4) |
-| Silver mapping module | `src/ubo_sentinel/pipeline/transformer.py` — not yet created (Step 4) |
+| Silver module | `src/ubo_sentinel/pipeline/silver.py` (tables, `silver_digest()`, `read_entities()` and the other readers; tests in `tests/unit/test_silver.py`) |
+| Silver mapping module | `src/ubo_sentinel/pipeline/mappers.py` (`MAPPERS`: dataset → staging columns); source ranks in `pipeline/sources.py` |
+| Silver transformer | `src/ubo_sentinel/pipeline/transformer.py` (`build_silver()`); merge and link rules in `pipeline/entity_linking.py` |
+| Normalize command | `uv run ubo normalize [--snapshot SET] [--rebuild]` (`src/ubo_sentinel/cli/normalize_cmd.py`) |
 | Ingest command | `uv run ubo ingest --source <name> [--path DIR] [--base SET]` (`src/ubo_sentinel/cli/ingest_cmd.py`) |
 | Fixture directory | `fixtures/snapshot_t0/` (changed sanctions list: `fixtures/snapshot_t1/`); format in `fixtures/README.md` |
 | Fixture row schemas and reader | `src/ubo_sentinel/models/fixture_rows.py` (`read_rows()`) |

@@ -56,7 +56,7 @@ roles:
     read_only: true
     decision_rights: []
   engineer:
-    commands: [ingest]
+    commands: [ingest, normalize]
     masked_fields: {}
     read_only: false
     decision_rights: []
