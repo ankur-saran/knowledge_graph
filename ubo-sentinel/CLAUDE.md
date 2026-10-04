@@ -11,7 +11,9 @@
 ## Conventions
 
 - **Determinism.** Same inputs and same snapshot set give a byte-identical canonical decision payload. No ids from wall-clock time or random UUIDs. Sort every collection before serialising. `canonical_json` is sorted keys, no whitespace, UTF-8.
-- **Canonical decision payload.** The `Decision` record minus `created_at`, `prev_hash`, `hash`, `llm_annotations` and reviewer fields.
+- **Canonical decision payload.** The `Decision` record minus `created_at`, `status`, `llm_annotations` and the reviewer fields (`reviewed_by`, `review_reason`, `reviewed_at`), produced only by `Decision.canonical_payload()`.
+- **Percentages are `Decimal`**, never `float` (DuckDB `DECIMAL(7,4)`); `canonical_json` writes them as strings quantised to 4 places.
+- **Hashed ids** are `sha256` over a `canonical_json` list, never string concatenation. `decision_id` uses the resolved per-source `snapshot_ids`, not the set alias.
 - **Provenance.** Every node, edge and sanction carries one `Provenance(source, source_record_id, snapshot_id, as_of, confidence)` in Bronze, Silver, Gold and the Pydantic models.
 - **Edge direction.** `OWNS` is owner → asset. `CONSOLIDATED_BY` is child → parent. `CONTROLS` is controller → controlled. Only code under `graph/` reasons about raw direction.
 - **Snapshot set.** A `snapshot_set_id` names a manifest row that resolves to per-source `snapshot_id`s. `--snapshot` takes a set id (`fixtures`, `latest`, or an explicit id).
@@ -35,7 +37,8 @@ Read by the skills in `.claude/skills/`. A value of "not yet created" is filled 
 | Full test command (with coverage gate) | `make test` |
 | Lint command | `uv run ruff check .` and `uv run ruff format --check .` |
 | CLI entry point | `src/ubo_sentinel/cli/app.py` (run as `uv run ubo`) |
-| Ontology file | `ontology/ontology.yaml` |
+| Models package | `src/ubo_sentinel/models/` |
+| Ontology file | `ontology/ontology.yaml` (loader: `load_ontology()` in `models/ontology.py`) |
 | Loader directory | `src/ubo_sentinel/pipeline/loaders/` — not yet created (Step 3) |
 | Bronze module | `src/ubo_sentinel/pipeline/bronze.py` — not yet created (Step 3) |
 | Silver module | `src/ubo_sentinel/pipeline/silver.py` — not yet created (Step 4) |

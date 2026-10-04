@@ -8,8 +8,10 @@ from typing import Annotated
 
 import typer
 import yaml
+from pydantic import ValidationError
 
 from ubo_sentinel import __version__
+from ubo_sentinel.models.ontology import load_ontology
 
 # Commands are run from the repository root.
 ONTOLOGY_PATH = Path("ontology/ontology.yaml")
@@ -24,19 +26,15 @@ app = typer.Typer(
 
 def load_permissions(ontology_path: Path = ONTOLOGY_PATH) -> dict[str, set[str]]:
     """Return the role -> permitted commands matrix from the ontology."""
-    with ontology_path.open(encoding="utf-8") as f:
-        ontology = yaml.safe_load(f) or {}
-    return {
-        role: set((spec or {}).get("commands") or [])
-        for role, spec in (ontology.get("roles") or {}).items()
-    }
+    ontology = load_ontology(ontology_path)
+    return {role: set(spec.commands) for role, spec in ontology.roles.items()}
 
 
 def require_role(role: str, command: str, ontology_path: Path = ONTOLOGY_PATH) -> None:
     """Exit with an error unless `role` may run `command`. Fails closed."""
     try:
         permissions = load_permissions(ontology_path)
-    except (OSError, yaml.YAMLError) as exc:
+    except (OSError, yaml.YAMLError, ValidationError) as exc:
         typer.echo(f"Cannot read permission matrix from {ontology_path}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 

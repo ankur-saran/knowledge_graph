@@ -1,15 +1,62 @@
-# Stub (Step 0). Node labels, edge types, designation representation and
-# required provenance fields are added in Step 1, along with field visibility
-# and decision rights per role.
+# Machine-readable ontology. Validated by `ubo_sentinel.models.ontology.load_ontology`.
+# ONTOLOGY.md is the human-readable description of this file.
 
-# Permission matrix: the CLI commands each role may run. A command is added to
-# the matrix in the build step that registers it.
+# Required properties per node label. Provenance fields are listed once, below.
+node_labels:
+  LegalEntity:
+    properties: [id, lei, registration_authority_id, registration_number, legal_name,
+                 aliases, jurisdiction, status, entity_type, repex_reason]
+  Person:
+    properties: [id, lei, registration_authority_id, registration_number, legal_name,
+                 aliases, jurisdiction, status, entity_type, repex_reason]
+
+# Every edge runs subject -> object.
+edge_types:
+  OWNS:
+    subject: {role: owner, labels: [LegalEntity, Person]}
+    object: {role: asset, labels: [LegalEntity]}
+    properties: [id, subject_id, object_id, rel_type, pct, basis, is_ultimate]
+  CONSOLIDATED_BY:
+    subject: {role: child, labels: [LegalEntity]}
+    object: {role: parent, labels: [LegalEntity]}
+    properties: [id, subject_id, object_id, rel_type, pct, basis, is_ultimate]
+  CONTROLS:
+    subject: {role: controller, labels: [LegalEntity, Person]}
+    object: {role: controlled, labels: [LegalEntity]}
+    properties: [id, subject_id, object_id, rel_type, pct, basis, is_ultimate]
+
+# Designations are rows in a table keyed by node id, not edges.
+designations:
+  table: graph_sanctions
+  keyed_by: node_id
+  properties: [id, entity_id, program, list_date, list_source, is_active, match_type,
+               match_confidence]
+
+# Carried by every node, edge and designation.
+provenance:
+  fields: [source, source_record_id, snapshot_id, as_of, confidence]
+
+# Permission matrix. A command is added to a role's list in the build step that
+# registers it. Only `reviewer` may hold decision rights.
 roles:
   analyst:
     commands: []
+    masked_fields:
+      Person: [legal_name, aliases, registration_number]
+    read_only: false
+    decision_rights: []
   reviewer:
     commands: []
+    masked_fields: {}
+    read_only: false
+    decision_rights: [APPROVED, OVERRIDDEN, ESCALATED]
   auditor:
     commands: []
+    masked_fields: {}
+    read_only: true
+    decision_rights: []
   engineer:
     commands: []
+    masked_fields: {}
+    read_only: false
+    decision_rights: []

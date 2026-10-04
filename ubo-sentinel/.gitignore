@@ -24,5 +24,5 @@ var/
 
 # Planning documents (kept local, not committed)
 BUILD_PLAN.md
-C:\Users\ankur\Projects\Claude\knowledge_graph\ubo-sentinel-implementation-plan.md
-C:\Users\ankur\Projects\Claude\knowledge_graph\ubo-sentinel-PRD.md
+..\knowledge_graph\ubo-sentinel-implementation-plan.md
+..\knowledge_graph\ubo-sentinel-PRD.md

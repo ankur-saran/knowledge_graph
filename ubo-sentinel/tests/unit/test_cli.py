@@ -1,20 +1,21 @@
 import pytest
 import typer
+import yaml
 from typer.testing import CliRunner
 
 from ubo_sentinel import __version__
-from ubo_sentinel.cli.app import app, require_role
+from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
 
 runner = CliRunner()
 
 
 @pytest.fixture
 def ontology(tmp_path):
+    """A copy of the shipped ontology in which only `analyst` may run `screen`."""
+    data = yaml.safe_load(ONTOLOGY_PATH.read_text(encoding="utf-8"))
+    data["roles"]["analyst"]["commands"] = ["screen"]
     path = tmp_path / "ontology.yaml"
-    path.write_text(
-        "roles:\n  analyst:\n    commands: [screen]\n  engineer:\n    commands: []\n",
-        encoding="utf-8",
-    )
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
     return path
 
 
@@ -49,6 +50,14 @@ def test_require_role_rejects_unknown_role(ontology):
 def test_require_role_fails_closed_without_ontology(tmp_path):
     with pytest.raises(typer.Exit) as exc:
         require_role("analyst", "screen", tmp_path / "missing.yaml")
+    assert exc.value.exit_code == 2
+
+
+def test_require_role_fails_closed_on_invalid_ontology(tmp_path):
+    path = tmp_path / "ontology.yaml"
+    path.write_text("roles:\n  analyst:\n    commands: [screen]\n", encoding="utf-8")
+    with pytest.raises(typer.Exit) as exc:
+        require_role("analyst", "screen", path)
     assert exc.value.exit_code == 2
 
 
