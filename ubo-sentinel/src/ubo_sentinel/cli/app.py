@@ -66,3 +66,7 @@ def main(
     ] = False,
 ) -> None:
     """Beneficial ownership and sanctions exposure screening."""
+
+
+# Command modules register themselves on `app` when imported.
+from ubo_sentinel.cli import ingest_cmd  # noqa: E402, F401

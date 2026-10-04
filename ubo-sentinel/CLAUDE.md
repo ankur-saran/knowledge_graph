@@ -19,7 +19,8 @@
 - **One name scorer.** Entity linking and query-time resolution both use `name_similarity()` in `pipeline/name_match.py`.
 - **Provenance.** Every node, edge and sanction carries one `Provenance(source, source_record_id, snapshot_id, as_of, confidence)` in Bronze, Silver, Gold and the Pydantic models.
 - **Edge direction.** `OWNS` is owner → asset. `CONSOLIDATED_BY` is child → parent. `CONTROLS` is controller → controlled. Only code under `graph/` reasons about raw direction.
-- **Snapshot set.** A `snapshot_set_id` names a manifest row that resolves to per-dataset `snapshot_id`s (a dataset is one published file or feed). `--snapshot` takes a set id (`fixtures`, `latest`, or an explicit id).
+- **Snapshot set.** A `snapshot_set_id` names a manifest row that resolves to per-dataset `snapshot_id`s (a dataset is one published file or feed). `--snapshot` takes a set id (`fixtures`, `latest`, or an explicit id). Both ids are content-derived: a snapshot id from the file's bytes, a set id from its members. A set has a family (`fixtures` or `real`) and inherits missing datasets only from its own family. `latest` is the newest set; `fixtures` is the newest fixture set that one complete directory supplied.
+- **Bronze is append-only.** `_raw` is the source record as published; Silver parses it. An ingest writes everything in one transaction or nothing. The only wall-clock value is `bronze_snapshots.ingested_at`, and no id or hash reads it.
 - **Roles.** `analyst`, `reviewer`, `auditor`, `engineer`. Every CLI command calls `require_role()` from `cli/app.py`, which reads the matrix in `ontology/ontology.yaml`. `review` requires an explicit `--role reviewer`.
 - **Queries.** Agents, CLI and UI read graph data only through the typed functions in `graph/queries.py` and through `GraphView(role)`. No free-form queries.
 - **Runtime output** goes to `var/` (gitignored).
@@ -42,11 +43,12 @@ Read by the skills in `.claude/skills/`. A value of "not yet created" is filled 
 | CLI entry point | `src/ubo_sentinel/cli/app.py` (run as `uv run ubo`) |
 | Models package | `src/ubo_sentinel/models/` |
 | Ontology file | `ontology/ontology.yaml` (loader: `load_ontology()` in `models/ontology.py`) |
-| Loader directory | `src/ubo_sentinel/pipeline/loaders/` — not yet created (Step 3) |
-| Bronze module | `src/ubo_sentinel/pipeline/bronze.py` — not yet created (Step 3) |
+| Loader directory | `src/ubo_sentinel/pipeline/loaders/` (registry: `LOADERS` in its `__init__.py`; reference loader: `fixture_loader.py`, tests in `tests/unit/test_bronze.py`) |
+| Bronze module | `src/ubo_sentinel/pipeline/bronze.py` (`SnapshotManager`, `resolve_set()`, `transaction()`) |
+| Database | `var/ubo.duckdb`, opened with `connect()` in `src/ubo_sentinel/pipeline/db.py`; env `UBO_DB` overrides the path (tests use a temp file) |
 | Silver module | `src/ubo_sentinel/pipeline/silver.py` — not yet created (Step 4) |
 | Silver mapping module | `src/ubo_sentinel/pipeline/transformer.py` — not yet created (Step 4) |
-| Ingest command | `uv run ubo ingest --source <name>` — not yet created (Step 3) |
+| Ingest command | `uv run ubo ingest --source <name> [--path DIR] [--base SET]` (`src/ubo_sentinel/cli/ingest_cmd.py`) |
 | Fixture directory | `fixtures/snapshot_t0/` (changed sanctions list: `fixtures/snapshot_t1/`); format in `fixtures/README.md` |
 | Fixture row schemas and reader | `src/ubo_sentinel/models/fixture_rows.py` (`read_rows()`) |
 | Fixture-integrity test | `uv run pytest tests/unit/test_fixtures.py -v` |

@@ -19,6 +19,7 @@ from ubo_sentinel.models.fixture_rows import (
     RelationshipRow,
     RepexRow,
     SanctionRow,
+    read_raw_rows,
     read_rows,
 )
 from ubo_sentinel.models.gold_scenario import GoldScenario, load_gold_scenarios
@@ -62,6 +63,7 @@ __all__ = [
     "entity_id",
     "load_gold_scenarios",
     "load_ontology",
+    "read_raw_rows",
     "read_rows",
     "relationship_id",
     "sanction_id",

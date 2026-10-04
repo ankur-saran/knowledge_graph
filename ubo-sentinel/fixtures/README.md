@@ -32,4 +32,5 @@ Every file starts with `source`, `source_record_id`, `as_of`, `confidence`. Then
 - **Names are distinctive on purpose.** Two different entities may have similar names only where a gold scenario declares the pair. Avoid reusing words such as "Holdings" or "Trading" across scenarios.
 - **LEIs** are 20 characters, start with `FX` and are not valid real LEIs.
 - **Bytes matter.** Snapshot ids are computed from file bytes. Keep the files UTF-8 without a BOM, with LF line endings (`.gitattributes` enforces this on checkout).
+- **Aliases.** `uv run ubo ingest --source fixtures` loads `snapshot_t0/`, and the `fixtures` alias points at that set. Loading `snapshot_t1/` (`--path fixtures/snapshot_t1`) makes a new set and moves only `latest`, so `fixtures` always means t0.
 - **Row keys are stable.** `source_record_id` identifies a row across snapshots; the list diff relies on it.

@@ -9,7 +9,14 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from ubo_sentinel.models.entity import EntityStatus, EntityType, entity_id
 from ubo_sentinel.models.provenance import Confidence, NonEmptyStr
@@ -103,17 +110,30 @@ class RepexRow(_Row):
     reason: NonEmptyStr
 
 
-def read_rows[R: _Row](path: Path, model: type[R]) -> list[R]:
-    """Read a fixture CSV. The header must be exactly the model's fields, in order.
+def read_raw_rows[R: _Row](path: Path, model: type[R]) -> list[tuple[dict[str, str | None], R]]:
+    """Read a fixture CSV as (cells as written, validated row) pairs.
 
-    An empty cell is read as null.
+    The header must be exactly the model's fields, in order. An empty cell is
+    read as null. Bronze stores the cells; `model.model_validate(cells)` gives
+    the row back.
     """
     with path.open(encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         expected = list(model.model_fields)
         if reader.fieldnames != expected:
             raise ValueError(f"{path}: header is {reader.fieldnames}, expected {expected}")
-        return [
-            model.model_validate({key: value or None for key, value in row.items()})
-            for row in reader
-        ]
+        pairs = []
+        for row in reader:
+            if None in row:
+                raise ValueError(f"{path}:{reader.line_num}: more cells than columns")
+            raw = {key: value or None for key, value in row.items()}
+            try:
+                pairs.append((raw, model.model_validate(raw)))
+            except ValidationError as exc:
+                raise ValueError(f"{path}:{reader.line_num}: {exc}") from exc
+        return pairs
+
+
+def read_rows[R: _Row](path: Path, model: type[R]) -> list[R]:
+    """Read a fixture CSV as validated rows. See `read_raw_rows`."""
+    return [row for _, row in read_raw_rows(path, model)]

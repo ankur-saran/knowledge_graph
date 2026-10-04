@@ -63,7 +63,7 @@ class Decision(BaseModel):
     llm_annotations: dict[str, Any] = {}
     # The id or alias the caller passed; informational only.
     snapshot_set_id: NonEmptyStr
-    # Source -> resolved snapshot id.
+    # Dataset -> resolved snapshot id.
     snapshot_ids: dict[str, str]
     rule_pack_id: NonEmptyStr
     rule_pack_hash: NonEmptyStr
