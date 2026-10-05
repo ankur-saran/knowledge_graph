@@ -37,11 +37,11 @@ Properties: `id`, `subject_id`, `object_id`, `rel_type`, `pct`, `basis`, `is_ult
 - `pct` is a decimal percentage, greater than 0 and at most 100, kept to 4 decimal places. It is empty when the source gives no percentage; an empty `pct` is a data gap, never zero.
 - `basis` is one of `shareholding`, `accounting_consolidation`, `directorship`, `other`.
 - There is one edge per subject, object, relation and `is_ultimate`. When several records report it, the newest record that gives a percentage decides it, and `supporting_records` lists them all.
-- Only code under `graph/` reasons about raw edge direction. Everything else asks for "owners or controllers of X".
+- Gold stores each edge's `upper_id` (owner, parent or controller) and `lower_id`. Only `pipeline/gold.py` and code under `graph/` reason about raw edge direction. Everything else asks for "owners or controllers of X".
 
 ## Designations
 
-A sanctions designation is not an edge. Designations are rows in the `graph_sanctions` table, keyed by node id, with properties `id`, `entity_id`, `program`, `list_date`, `list_source`, `is_active`, `match_type`, `match_confidence`.
+A sanctions designation is not an edge. Designations are rows in the `graph_sanctions` table, keyed by node id, with properties `id`, `entity_id`, `designated_entity_id`, `program`, `list_date`, `list_source`, `is_active`, `match_type`, `match_confidence`.
 
 There is one row per designation and entity it reaches. `program`, `list_date`, `list_source` and `is_active` describe the designation. `match_type` (`DIRECT`, `LEI`, `REGISTRATION`, `FUZZY_NAME`) and `match_confidence` describe how the designation was linked to that entity:
 
@@ -53,6 +53,8 @@ There is one row per designation and entity it reaches. `program`, `list_date`, 
 | `FUZZY_NAME` | belongs to another entity, linked to this one by name | the link's confidence |
 
 A designation crosses one link and no further.
+
+`designated_entity_id` is the entity the designation record belongs to. It equals `entity_id` on that entity's own row and differs on a row that crossed a link, so a row always says whose designation it is.
 
 ## Provenance
 

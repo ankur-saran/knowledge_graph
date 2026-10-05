@@ -18,14 +18,17 @@
 - **Reasons and gaps are closed sets.** `ReasonCode` and `GapCode` in `models/evidence.py`. A truncated traversal is a `DEPTH_LIMIT_REACHED` gap, never a silent `CLEAR`.
 - **One name scorer.** Entity linking and query-time resolution both use `name_similarity()` in `pipeline/name_match.py`.
 - **Provenance.** Every node, edge and sanction carries one `Provenance(source, source_record_id, snapshot_id, as_of, confidence)` in Bronze, Silver, Gold and the Pydantic models.
-- **Edge direction.** `OWNS` is owner → asset. `CONSOLIDATED_BY` is child → parent. `CONTROLS` is controller → controlled. Only code under `graph/` reasons about raw direction.
+- **Edge direction.** `OWNS` is owner → asset. `CONSOLIDATED_BY` is child → parent. `CONTROLS` is controller → controlled. Gold stores every edge's `upper_id` (owner, parent or controller) and `lower_id`; only `pipeline/gold.py` and code under `graph/` reason about raw direction.
 - **Snapshot set.** A `snapshot_set_id` names a manifest row that resolves to per-dataset `snapshot_id`s (a dataset is one published file or feed). `--snapshot` takes a set id (`fixtures`, `latest`, or an explicit id). Both ids are content-derived: a snapshot id from the file's bytes, a set id from its members. A set has a family (`fixtures` or `real`) and inherits missing datasets only from its own family. `latest` is the newest set; `fixtures` is the newest fixture set that one complete directory supplied.
 - **Bronze is append-only.** `_raw` is the source record as published; Silver parses it. An ingest writes everything in one transaction or nothing. The only wall-clock value is `bronze_snapshots.ingested_at`, and no id or hash reads it.
 - **Silver is built per snapshot set** and is derived: `ubo normalize --rebuild` replaces it. `silver_builds` records the engine version, the parameters and a digest of the rows; a set built by other code is refused, not reused. Raise `TRANSFORM_VERSION` in `pipeline/transformer.py` when a change alters the rows.
 - **Merge on identifiers, link on names.** Records that share an LEI, or a registration authority and number, are one entity; a registration join that would put two LEIs or two entity types in one entity is refused. Entities with similar names are never merged: they get a `silver_entity_links` row, and a designation reaches the linked entity at the link's confidence, one link away. A registry's record describes a merged entity before a list's record does (`pipeline/sources.py`).
 - **Source formats stop at the mapper.** `pipeline/mappers.py` turns each dataset's Bronze `_raw` into the typed staging tables; nothing after staging knows a source's format.
 - **Roles.** `analyst`, `reviewer`, `auditor`, `engineer`. Every CLI command calls `require_role()` from `cli/app.py`, which reads the matrix in `ontology/ontology.yaml`. `review` requires an explicit `--role reviewer`.
-- **Queries.** Agents, CLI and UI read graph data only through the typed functions in `graph/queries.py` and through `GraphView(role)`. No free-form queries.
+- **Gold is built per snapshot set** from Silver and holds only what Silver lacks (edge ends, node degrees, links from both ends, name blocks). `gold_builds` records the Silver digest it was built from and a `gold_digest`; a graph built from an earlier Silver is stale and `ubo build-graph` rebuilds it.
+- **Queries.** Graph data is read only through the typed functions in `graph/queries.py`, each registered in `QUERIES` by `@query`. No free-form queries. Every query takes a `GraphStore`, which is bound to one connection and one built snapshot set.
+- **Store and view.** The screening pipeline reads the `GraphStore` unmasked, so a decision does not depend on who asked. Anything shown to a person, exported or sent to a model goes through `GraphView(role)`; what is masked comes from the role's `masked_fields` in the ontology.
+- **Connections.** DuckDB lets a file have one writer or readers, never both, and one process cannot mix the two. Open a store for one operation and close it; pass an existing connection where one is already open.
 - **Runtime output** goes to `var/` (gitignored).
 - **LLM use** is optional, advisory and recorded. Each LLM feature has its own flag, off by default. No LLM output can alter a recommendation, a decision's status or the canonical payload. Replay reads stored LLM text and never calls the model.
 - **No network in tests.** Downloading is separate from ingesting.
@@ -52,6 +55,14 @@ Read by the skills in `.claude/skills/`. A value of "not yet created" is filled 
 | Silver module | `src/ubo_sentinel/pipeline/silver.py` (tables, `silver_digest()`, `read_entities()` and the other readers; tests in `tests/unit/test_silver.py`) |
 | Silver mapping module | `src/ubo_sentinel/pipeline/mappers.py` (`MAPPERS`: dataset → staging columns); source ranks in `pipeline/sources.py` |
 | Silver transformer | `src/ubo_sentinel/pipeline/transformer.py` (`build_silver()`); merge and link rules in `pipeline/entity_linking.py` |
+| Gold module | `src/ubo_sentinel/pipeline/gold.py` (`build_gold()`, `gold_digest()`, `is_built()`; tests in `tests/unit/test_gold.py`) |
+| Build-graph command | `uv run ubo build-graph [--snapshot SET]` (`src/ubo_sentinel/cli/build_graph_cmd.py`) |
+| Graph store | `src/ubo_sentinel/graph/store.py` (`GraphStore.open(snapshot, con=None)`, `GraphNotBuilt`) |
+| Query API | `src/ubo_sentinel/graph/queries.py` (`QUERIES` registry, `@query`); traversal in `graph/projection.py`; tests in `tests/unit/test_graph.py` |
+| Entity resolution | `src/ubo_sentinel/graph/entity_resolution.py` (`resolve()`, `evaluate_labelled()`) |
+| Role views | `src/ubo_sentinel/graph/views.py` (`GraphView`; tests in `tests/unit/test_views.py`) |
+| Graph models | `src/ubo_sentinel/models/graph.py` (`SubGraph`, `EntityMatch`, `SanctionMatch`, `OwnerEdge`) |
+| Shared test fixtures | `tests/conftest.py` (`database`, `con`, `ontology`, `gold`, `graph_t0`, `build_graph()`) |
 | Normalize command | `uv run ubo normalize [--snapshot SET] [--rebuild]` (`src/ubo_sentinel/cli/normalize_cmd.py`) |
 | Ingest command | `uv run ubo ingest --source <name> [--path DIR] [--base SET]` (`src/ubo_sentinel/cli/ingest_cmd.py`) |
 | Fixture directory | `fixtures/snapshot_t0/` (changed sanctions list: `fixtures/snapshot_t1/`); format in `fixtures/README.md` |

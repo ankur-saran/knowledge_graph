@@ -90,6 +90,7 @@ _TABLES: dict[str, tuple[str, str]] = {
         f"""
     id TEXT NOT NULL,
     entity_id TEXT NOT NULL,
+    designated_entity_id TEXT NOT NULL,
     program TEXT NOT NULL,
     list_date DATE,
     list_source TEXT NOT NULL,
@@ -142,7 +143,31 @@ class SilverError(ValueError):
     """Silver cannot be built for this snapshot set. Nothing was written."""
 
 
+def _column_names(columns: str) -> list[str]:
+    return ["snapshot_set_id", *(line.split()[0] for line in columns.strip().splitlines())]
+
+
+def _drop_outdated(con: duckdb.DuckDBPyConnection) -> None:
+    """Drop Silver when a table has the columns of an earlier version.
+
+    Silver is derived from Bronze, so nothing is lost: `ubo normalize` builds it again.
+    """
+    existing: dict[str, list[str]] = {}
+    for table, column in con.execute(
+        "SELECT table_name, column_name FROM information_schema.columns"
+        " WHERE table_name LIKE 'silver_%' ORDER BY table_name, ordinal_position"
+    ).fetchall():
+        existing.setdefault(table, []).append(column)
+    if any(
+        table in existing and existing[table] != _column_names(columns)
+        for table, (columns, _) in _TABLES.items()
+    ):
+        for table in (*_TABLES, "silver_builds"):
+            con.execute(f"DROP TABLE IF EXISTS {table}")
+
+
 def create_schema(con: duckdb.DuckDBPyConnection) -> None:
+    _drop_outdated(con)
     for table, (columns, key) in _TABLES.items():
         con.execute(
             f"CREATE TABLE IF NOT EXISTS {table} (\n    snapshot_set_id TEXT NOT NULL,{columns},"
@@ -205,7 +230,7 @@ def read_rows(
     return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
 
 
-def _with_provenance(row: dict[str, Any]) -> dict[str, Any]:
+def fold_provenance(row: dict[str, Any]) -> dict[str, Any]:
     """Fold the five provenance columns into one `provenance` value."""
     fields = {field: row.pop(field) for field in Provenance.model_fields}
     if "supporting_records" in row:
@@ -215,21 +240,21 @@ def _with_provenance(row: dict[str, Any]) -> dict[str, Any]:
 
 def read_entities(con: duckdb.DuckDBPyConnection, snapshot_set_id: str) -> list[Entity]:
     rows = read_rows(con, "silver_entities", snapshot_set_id)
-    return [Entity.model_validate(_with_provenance(row)) for row in rows]
+    return [Entity.model_validate(fold_provenance(row)) for row in rows]
 
 
 def read_relationships(con: duckdb.DuckDBPyConnection, snapshot_set_id: str) -> list[Relationship]:
     rows = read_rows(con, "silver_relationships", snapshot_set_id)
-    return [Relationship.model_validate(_with_provenance(row)) for row in rows]
+    return [Relationship.model_validate(fold_provenance(row)) for row in rows]
 
 
 def read_sanctions(con: duckdb.DuckDBPyConnection, snapshot_set_id: str) -> list[Sanction]:
     rows = read_rows(con, "silver_sanctions", snapshot_set_id)
-    return [Sanction.model_validate(_with_provenance(row)) for row in rows]
+    return [Sanction.model_validate(fold_provenance(row)) for row in rows]
 
 
 def read_reporting_exceptions(
     con: duckdb.DuckDBPyConnection, snapshot_set_id: str
 ) -> list[ReportingException]:
     rows = read_rows(con, "silver_reporting_exceptions", snapshot_set_id)
-    return [ReportingException.model_validate(_with_provenance(row)) for row in rows]
+    return [ReportingException.model_validate(fold_provenance(row)) for row in rows]

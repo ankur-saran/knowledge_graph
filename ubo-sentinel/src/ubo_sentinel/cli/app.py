@@ -69,4 +69,4 @@ def main(
 
 
 # Command modules register themselves on `app` when imported.
-from ubo_sentinel.cli import ingest_cmd, normalize_cmd  # noqa: E402, F401
+from ubo_sentinel.cli import build_graph_cmd, ingest_cmd, normalize_cmd  # noqa: E402, F401

@@ -1,7 +1,6 @@
 """Bronze: schema, content-derived ids, idempotent and all-or-nothing ingest."""
 
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -25,27 +24,6 @@ T0 = Path("fixtures/snapshot_t0")
 T1 = Path("fixtures/snapshot_t1")
 
 runner = CliRunner()
-
-
-@pytest.fixture(autouse=True)
-def database(tmp_path, monkeypatch):
-    """Every test gets its own database file; none touches `var/`."""
-    path = tmp_path / "db" / "ubo.duckdb"
-    monkeypatch.setenv(DB_ENV_VAR, str(path))
-    return path
-
-
-@pytest.fixture
-def con():
-    connection = connect()
-    yield connection
-    connection.close()
-
-
-@pytest.fixture
-def t0_copy(tmp_path):
-    """A copy of the t0 fixtures that a test may change."""
-    return Path(shutil.copytree(T0, tmp_path / "snapshot"))
 
 
 def count(con, table):

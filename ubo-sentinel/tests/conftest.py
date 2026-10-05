@@ -1,14 +1,67 @@
 """Fixtures shared by the test modules."""
 
+import shutil
 from collections import defaultdict
 from pathlib import Path
 
 import pytest
 
-from ubo_sentinel.models import EntityRow, read_rows
+from ubo_sentinel.cli.app import ONTOLOGY_PATH
+from ubo_sentinel.models import EntityRow, load_gold_scenarios, load_ontology, read_rows
+from ubo_sentinel.pipeline.db import DB_ENV_VAR, connect
+from ubo_sentinel.pipeline.gold import build_gold
+from ubo_sentinel.pipeline.loaders.fixture_loader import ingest_fixtures
+from ubo_sentinel.pipeline.transformer import build_silver
 
 # Commands are run from the repository root.
 T0 = Path("fixtures/snapshot_t0")
+T1 = Path("fixtures/snapshot_t1")
+GOLD_PATH = Path("eval/gold_scenarios.yaml")
+
+
+@pytest.fixture(autouse=True)
+def database(tmp_path, monkeypatch):
+    """Every test gets its own database file; none touches `var/`."""
+    path = tmp_path / "db" / "ubo.duckdb"
+    monkeypatch.setenv(DB_ENV_VAR, str(path))
+    return path
+
+
+@pytest.fixture
+def con():
+    connection = connect()
+    yield connection
+    connection.close()
+
+
+@pytest.fixture
+def t0_copy(tmp_path):
+    """A copy of the t0 fixtures that a test may change."""
+    return Path(shutil.copytree(T0, tmp_path / "snapshot"))
+
+
+@pytest.fixture(scope="session")
+def ontology():
+    return load_ontology(ONTOLOGY_PATH)
+
+
+@pytest.fixture(scope="session")
+def gold():
+    return load_gold_scenarios(GOLD_PATH)
+
+
+def build_graph(con, ontology, path=None):
+    """Ingest a fixture directory and build Silver and Gold. Returns the set id."""
+    snapshot_set = ingest_fixtures(con, path).snapshot_set
+    build_silver(con, snapshot_set, ontology)
+    build_gold(con, snapshot_set)
+    return snapshot_set.snapshot_set_id
+
+
+@pytest.fixture
+def graph_t0(con, ontology):
+    """The t0 fixtures built up to Gold. Returns the set id."""
+    return build_graph(con, ontology)
 
 
 @pytest.fixture(scope="session")

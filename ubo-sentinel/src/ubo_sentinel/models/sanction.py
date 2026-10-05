@@ -24,6 +24,9 @@ class Sanction(BaseModel):
 
     id: NonEmptyStr
     entity_id: NonEmptyStr
+    # The entity the designation record belongs to. It differs from `entity_id`
+    # on a row that reached its entity through a link.
+    designated_entity_id: NonEmptyStr
     program: NonEmptyStr
     list_date: date | None = None
     list_source: NonEmptyStr

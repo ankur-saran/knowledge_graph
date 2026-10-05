@@ -34,6 +34,11 @@ def normalise_name(name: str) -> str:
     return " ".join(kept or tokens)
 
 
+def similarity_normalised(a_norm: str, b_norm: str) -> float:
+    """Similarity of two names that `normalise_name` has already normalised."""
+    return fuzz.token_sort_ratio(a_norm, b_norm) / 100
+
+
 def name_similarity(a: str, b: str) -> float:
     """Similarity of two names in [0, 1], independent of word order."""
-    return fuzz.token_sort_ratio(normalise_name(a), normalise_name(b)) / 100
+    return similarity_normalised(normalise_name(a), normalise_name(b))

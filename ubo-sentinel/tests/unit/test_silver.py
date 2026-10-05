@@ -1,15 +1,14 @@
 """Silver: canonical ids, merging, linking, edge reconciliation and determinism."""
 
 import json
-import shutil
 from collections import Counter
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
-from ubo_sentinel.cli.app import ONTOLOGY_PATH, app
-from ubo_sentinel.models import canonical_json, load_gold_scenarios, load_ontology
+from ubo_sentinel.cli.app import app
+from ubo_sentinel.models import canonical_json
 from ubo_sentinel.pipeline import transformer
 from ubo_sentinel.pipeline.bronze import BRONZE_TABLES, resolve_set
 from ubo_sentinel.pipeline.db import DB_ENV_VAR, connect
@@ -33,44 +32,12 @@ from ubo_sentinel.pipeline.transformer import build_silver
 # Commands are run from the repository root.
 T0 = Path("fixtures/snapshot_t0")
 T1 = Path("fixtures/snapshot_t1")
-GOLD_PATH = Path("eval/gold_scenarios.yaml")
 
 # The OFAC pack's match threshold (BUILD_PLAN 6.1). Read it from
 # `rules/ofac.yaml` once Step 6 has created it.
 MATCH_THRESHOLD = 0.92
 
 runner = CliRunner()
-
-
-@pytest.fixture(autouse=True)
-def database(tmp_path, monkeypatch):
-    """Every test gets its own database file; none touches `var/`."""
-    path = tmp_path / "db" / "ubo.duckdb"
-    monkeypatch.setenv(DB_ENV_VAR, str(path))
-    return path
-
-
-@pytest.fixture
-def con():
-    connection = connect()
-    yield connection
-    connection.close()
-
-
-@pytest.fixture
-def t0_copy(tmp_path):
-    """A copy of the t0 fixtures that a test may change."""
-    return Path(shutil.copytree(T0, tmp_path / "snapshot"))
-
-
-@pytest.fixture(scope="module")
-def ontology():
-    return load_ontology(ONTOLOGY_PATH)
-
-
-@pytest.fixture(scope="module")
-def gold():
-    return load_gold_scenarios(GOLD_PATH)
 
 
 @pytest.fixture
@@ -261,6 +228,12 @@ def test_two_leis_that_share_a_registration_are_linked_not_merged(con, ontology,
         "lei:FXS02TARGET000000000": "LEI",
         "lei:FXS99TWIN00000000000": "REGISTRATION",
     }
+    # Both rows say whose designation it is, which tells the refused merge apart.
+    assert {
+        sanction.designated_entity_id
+        for sanction in read_sanctions(con, set_id)
+        if sanction.provenance.source_record_id == "s02-des"
+    } == {"lei:FXS02TARGET000000000"}
 
 
 def test_resolve_groups_keeps_the_first_join_and_refuses_the_conflicting_one():
@@ -393,6 +366,14 @@ def test_match_type_says_how_a_designation_reaches_its_entity(con, t0):
     }
     for key, match_type in expected.items():
         assert reached[key].match_type == match_type, key
+
+    # A row that crossed a link names the designated entity; every other row is its own.
+    for (_, entity_id), sanction in reached.items():
+        crossed = sanction.match_type == "FUZZY_NAME"
+        assert (sanction.designated_entity_id != entity_id) == crossed
+    assert (
+        reached["s14-des", "lei:FXS14OWNER0000000000"].designated_entity_id == "fx_list:s14-listed"
+    )
 
     for sanction in reached.values():
         if sanction.match_type == "FUZZY_NAME":

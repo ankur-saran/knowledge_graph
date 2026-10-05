@@ -23,6 +23,14 @@ from ubo_sentinel.models.fixture_rows import (
     read_rows,
 )
 from ubo_sentinel.models.gold_scenario import GoldScenario, load_gold_scenarios
+from ubo_sentinel.models.graph import (
+    EntityLink,
+    EntityMatch,
+    OwnerEdge,
+    SanctionMatch,
+    SetGap,
+    SubGraph,
+)
 from ubo_sentinel.models.ontology import OntologyConfig, Role, load_ontology
 from ubo_sentinel.models.provenance import Provenance
 from ubo_sentinel.models.relationship import Basis, Relationship, RelType, relationship_id
@@ -37,6 +45,8 @@ __all__ = [
     "DecisionStatus",
     "EffectiveExposure",
     "Entity",
+    "EntityLink",
+    "EntityMatch",
     "EntityRow",
     "EntityStatus",
     "EntityType",
@@ -46,6 +56,7 @@ __all__ = [
     "GoldScenario",
     "MatchType",
     "OntologyConfig",
+    "OwnerEdge",
     "Provenance",
     "ReasonCode",
     "Recommendation",
@@ -57,7 +68,10 @@ __all__ = [
     "ReportingException",
     "Role",
     "Sanction",
+    "SanctionMatch",
     "SanctionRow",
+    "SetGap",
+    "SubGraph",
     "canonical_json",
     "compute_decision_id",
     "entity_id",

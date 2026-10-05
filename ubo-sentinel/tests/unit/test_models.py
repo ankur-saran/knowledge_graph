@@ -71,6 +71,7 @@ def make_sanction(**overrides):
     fields = {
         "id": sanction_id("fixtures", "row-9", "owner-1"),
         "entity_id": "owner-1",
+        "designated_entity_id": "owner-1",
         "program": "SDN",
         "list_date": date(2024, 1, 15),
         "list_source": "OFAC",

@@ -29,7 +29,7 @@ edge_types:
 designations:
   table: graph_sanctions
   keyed_by: node_id
-  properties: [id, entity_id, program, list_date, list_source, is_active, match_type,
+  properties: [id, entity_id, designated_entity_id, program, list_date, list_source, is_active, match_type,
                match_confidence]
 
 # Carried by every node, edge and designation.
@@ -56,7 +56,7 @@ roles:
     read_only: true
     decision_rights: []
   engineer:
-    commands: [ingest, normalize]
+    commands: [ingest, normalize, build-graph]
     masked_fields: {}
     read_only: false
     decision_rights: []

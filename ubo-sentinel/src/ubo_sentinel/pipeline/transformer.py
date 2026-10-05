@@ -37,7 +37,7 @@ from ubo_sentinel.pipeline.sources import SOURCE_RANK
 
 # Raise this when a change here alters the rows Silver holds for the same Bronze
 # rows. A set built by another version is not reused.
-TRANSFORM_VERSION = 1
+TRANSFORM_VERSION = 2
 
 REJECT_UNRESOLVED_REF = "UNRESOLVED_REF"
 REJECT_SELF_LOOP = "SELF_LOOP_AFTER_MERGE"
@@ -495,7 +495,8 @@ def _write_sanctions(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
         [set_id],
     )
     # A designation reaches the entity its record belongs to, and each entity
-    # linked to that one, one link away and no further.
+    # linked to that one, one link away and no further. `entity_id` here is the
+    # designated entity; `reached_id` is the entity the row is for.
     con.execute(
         f"""
         INSERT INTO silver_sanctions
@@ -513,8 +514,8 @@ def _write_sanctions(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
             JOIN silver_entity_links l
                 ON l.snapshot_set_id = ? AND d.entity_id IN (l.entity_id_a, l.entity_id_b)
         )
-        SELECT ?, ubo_sanction_id(source, source_record_id, reached_id), reached_id, program,
-            list_date, list_source, is_active, match_type, match_confidence, {_PROV}
+        SELECT ?, ubo_sanction_id(source, source_record_id, reached_id), reached_id, entity_id,
+            program, list_date, list_source, is_active, match_type, match_confidence, {_PROV}
         FROM reached
         """,
         [set_id, set_id],
