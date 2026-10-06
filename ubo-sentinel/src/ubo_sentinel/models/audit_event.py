@@ -1,14 +1,15 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ubo_sentinel.models.decision import DecisionStatus, UtcDatetime
+from ubo_sentinel.models.decision import UtcDatetime
 from ubo_sentinel.models.ontology import Role
 from ubo_sentinel.models.provenance import NonEmptyStr
 
-# One event per state transition, so the event types are the decision statuses.
-# Later steps that add other event kinds widen this alias here.
-EventType = DecisionStatus
+# One event per state transition (the decision statuses), plus a screen that
+# failed and so made no decision. Later steps that add other event kinds widen
+# this alias here.
+EventType = Literal["RECOMMENDED", "APPROVED", "OVERRIDDEN", "ESCALATED", "SCREEN_FAILED"]
 
 
 class AuditEvent(BaseModel):

@@ -103,6 +103,18 @@ class GraphStore:
         columns = [column[0] for column in cursor.description]
         return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
 
+    def snapshot_info(self) -> list[dict[str, Any]]:
+        """The snapshots of this set: what each holds and the dates it covers.
+
+        Without `ingested_at`: a wall-clock value has no place in a decision.
+        """
+        return self.rows(
+            "SELECT s.dataset, s.snapshot_id, b.row_count, b.as_of_min, b.as_of_max,"
+            " b.published_at FROM snapshot_sets s JOIN bronze_snapshots b USING (snapshot_id)"
+            " WHERE s.snapshot_set_id = ? ORDER BY s.dataset",
+            [self.set_id],
+        )
+
     def build_info(self) -> dict[str, Any]:
         """What was built for this set, and from what."""
         return {

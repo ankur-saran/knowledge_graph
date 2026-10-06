@@ -5,6 +5,7 @@ from typing import Any
 
 from ubo_sentinel.graph import queries
 from ubo_sentinel.graph.store import GraphStore
+from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.gold_scenario import GoldScenario
 from ubo_sentinel.models.rule_result import RuleResult
 from ubo_sentinel.rules.engine import RuleEngine
@@ -20,11 +21,14 @@ class FieldDiff:
 @dataclass(frozen=True)
 class ScenarioReport:
     scenario_id: str
-    result: RuleResult
+    # The rule engine's result, or the pipeline's decision; None when a screen made none.
+    result: RuleResult | Decision | None
     diffs: list[FieldDiff]
     # Evidence paths the scenario expects, and how many of them were reported.
     paths_expected: int
     paths_found: int
+    # Statements of the memo that cite nothing (pipeline suite).
+    uncited_claims: int = 0
 
     @property
     def passed(self) -> bool:
@@ -41,8 +45,8 @@ def screen(
     return engine.evaluate(subgraph, queries.get_sanctioned_nodes(store, subgraph))
 
 
-def compare(result: RuleResult, scenario: GoldScenario) -> ScenarioReport:
-    """Every field in which the result differs from the scenario.
+def compare(result: RuleResult | Decision, scenario: GoldScenario) -> ScenarioReport:
+    """Every field in which a rule result, or a decision, differs from the scenario.
 
     Reasons, the two sets and the gaps must be equal, so a scenario cannot pass
     for the wrong reason. Paths are a minimum: the engine may report more.

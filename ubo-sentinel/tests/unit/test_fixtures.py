@@ -43,7 +43,7 @@ REVIEW_BAND_LOW = PACK.review_band_low
 MATCH_THRESHOLD = PACK.match_threshold
 
 # Reasons that only the agent pipeline can produce, so no fixture can cover them.
-PIPELINE_FAILURE_REASONS = {"GUARDRAIL_FAILED", "PIPELINE_ERROR"}
+PIPELINE_FAILURE_REASONS = {"EVIDENCE_LIMIT_EXCEEDED", "GUARDRAIL_FAILED", "PIPELINE_ERROR"}
 BACKGROUND = "s00"
 ER_COLUMNS = ["query_name", "lei", "jurisdiction", "expected_entity_id", "variant_type"]
 ER_VARIANT_TYPES = {

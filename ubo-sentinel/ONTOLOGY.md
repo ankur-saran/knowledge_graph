@@ -69,7 +69,7 @@ Every node, edge and designation carries: `source`, `source_record_id`, `snapsho
 | `auditor` | none | yes | none |
 | `engineer` | none | no | none |
 
-Each role also has a list of CLI commands it may run. Each build step adds the command it registers; so far `engineer` may run `ingest`, `normalize`, `build-graph` and `eval`, and `auditor` may run `eval`. Only `reviewer` may hold decision rights, and the loader rejects a file that gives them to any other role.
+Each role also has a list of CLI commands it may run. Each build step adds the command it registers; so far `analyst` and `reviewer` may run `screen`, `engineer` may run `ingest`, `normalize`, `build-graph` and `eval`, and `auditor` may run `eval`. Only `reviewer` may hold decision rights, and the loader rejects a file that gives them to any other role.
 
 ## What the loader rejects
 

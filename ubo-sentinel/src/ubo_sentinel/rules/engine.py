@@ -174,7 +174,7 @@ class RuleEngine:
         return _Evaluation(self.pack, subgraph, sanction_matches).result()
 
 
-def _classify(pack: RulePack, match: SanctionMatch) -> BlockSet | None:
+def classify_match(pack: RulePack, match: SanctionMatch) -> BlockSet | None:
     if not match.is_active:
         return None
     if match.designated_entity_id == match.entity_id:
@@ -226,7 +226,7 @@ class _Evaluation:
         """Node -> the sanction ids that seed it, for the blocked and the possibly-blocked set."""
         found: dict[BlockSet, dict[str, list[str]]] = {"BLOCKED": {}, "POSSIBLY_BLOCKED": {}}
         for match in self.matches:
-            block_set = _classify(self.pack, match)
+            block_set = classify_match(self.pack, match)
             if block_set is not None:
                 active = [record.id for record in match.sanction_records if record.is_active]
                 found[block_set].setdefault(match.entity_id, []).extend(active)
@@ -403,7 +403,7 @@ class _Evaluation:
             if node.status in UNMAINTAINED_STATUSES:
                 add("LAPSED_LEI", node_id, node.provenance, every or node_id in on_path_nodes)
         for match in self.matches:
-            in_band = _classify(self.pack, match) == "POSSIBLY_BLOCKED"
+            in_band = classify_match(self.pack, match) == "POSSIBLY_BLOCKED"
             if in_band and match.entity_id not in blocked:
                 record = next(r for r in match.sanction_records if r.is_active)
                 relevant = every or match.entity_id in on_path_nodes

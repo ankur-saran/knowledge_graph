@@ -5,9 +5,12 @@ import json
 import pytest
 from conftest import T1, build_graph
 
+from ubo_sentinel.agents.base import ScreenRequest
+from ubo_sentinel.agents.supervisor import Supervisor
+from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.graph import queries
 from ubo_sentinel.graph.store import GraphStore
-from ubo_sentinel.graph.views import MASK, GraphView
+from ubo_sentinel.graph.views import MASK, GraphView, mask_candidates, mask_decision
 from ubo_sentinel.models import canonical_json
 
 TARGET = "lei:FXS03TARGET000000000"
@@ -224,6 +227,7 @@ def test_an_engineer_sees_what_was_built_and_none_of_the_graph(store, view):
         lambda: engineer.get_direct_owners(TARGET),
         lambda: engineer.get_affected_entities(PERSON, 5),
         lambda: engineer.get_source_record(person.provenance),
+        lambda: engineer.get_decision_by_id("0000000000000000"),
     ]
     for call in refused:
         with pytest.raises(PermissionError, match="metadata only"):
@@ -235,3 +239,85 @@ def test_a_view_offers_exactly_the_allow_listed_queries(store, ontology):
     assert offered == set(queries.QUERIES)
     with pytest.raises(PermissionError, match="Unknown role"):
         GraphView(store, "intern", ontology)
+
+
+# --- decisions -------------------------------------------------------------------------
+
+
+@pytest.fixture
+def decision(con, graph_t0, ontology):
+    """SCEN-03, screened and recorded: two designated persons own the target."""
+    request = ScreenRequest(query="Halcyon Ridge Minerals Ltd", snapshot=graph_t0)
+    return Supervisor(ontology, AuditLog()).run(request, con).decision
+
+
+def test_a_decision_is_masked_like_the_graph_it_came_from(decision, view, ontology):
+    analyst = view("analyst")
+    masked = analyst.mask_decision(decision)
+    alias = analyst.pseudonym(PERSON, "Person")
+
+    assert (masked.masked, masked.viewer_role, masked.decision_id) == (
+        True,
+        "analyst",
+        decision.decision_id,
+    )
+    assert not any(name in text(masked) for name in [*PII, PERSON, "s03-owner-a", "s03-des-a"])
+    # The same pseudonym as in the subgraph, wherever the person appears.
+    assert alias in masked.blocked_set and alias in {node.id for node in subgraph(analyst).nodes}
+    assert alias in {path.node_ids[0] for path in masked.paths}
+    assert alias in {edge.upper_id for edge in masked.memo.edges}
+    assert alias in {match.entity_id for match in masked.memo.matches}
+    person = masked.memo.entity(alias)
+    assert (person.legal_name, person.aliases) == (MASK, [MASK])
+    assert person.provenance.source_record_id == MASK and person.jurisdiction == "RU"
+    # The designation's record is the person's; the stake's record is not masked.
+    designated = next(c for c in masked.memo.claims if c.subject_id == alias)
+    assert [c.provenance.source_record_id for c in designated.citations] == [MASK]
+    assert masked.memo.entity(TARGET).legal_name == "Halcyon Ridge Minerals Ltd"
+    # What is not about a person is as recorded.
+    assert (masked.recommendation, masked.reasons) == (decision.recommendation, decision.reasons)
+    assert masked.memo.dangling() == [] and masked.memo.uncited() == []
+    assert mask_decision(decision, "analyst", ontology) == masked
+
+
+def test_a_reviewer_sees_the_decision_as_recorded(decision, view):
+    plain = view("reviewer").mask_decision(decision)
+    assert plain.masked is False and plain.blocked_set == decision.blocked_set
+    assert plain.memo.model_dump(mode="json") == decision.memo_json
+    assert all(name in text(plain) for name in PII)
+    # Every role is shown the same hash: it is of the decision, not of the view.
+    assert plain.payload_sha256 == view("analyst").mask_decision(decision).payload_sha256
+
+
+def test_a_decision_made_on_another_set_is_masked_as_well(decision, con, ontology):
+    """What is masked is read from the memo, not from the graph that is open."""
+    t1 = build_graph(con, ontology, T1)
+    with GraphView.open("analyst", t1, ontology, con) as later:
+        assert later.store.set_id != decision.snapshot_set_id
+        found = later.get_decision_by_id(decision.decision_id)
+    assert found.masked and not any(name in text(found) for name in [*PII, PERSON])
+
+
+def test_a_recorded_decision_is_read_through_the_view(decision, view):
+    analyst, auditor = view("analyst"), view("auditor")
+    assert analyst.get_decision_by_id(decision.decision_id) == analyst.mask_decision(decision)
+    assert auditor.get_decision_by_id(decision.decision_id).blocked_set == decision.blocked_set
+    assert analyst.get_decision_by_id("0000000000000000") is None
+
+
+def test_a_query_that_is_a_persons_name_is_not_shown_back(con, graph_t0, ontology):
+    request = ScreenRequest(query="Dmitri Volkanov", snapshot=graph_t0)
+    person = Supervisor(ontology).run(request, con).decision
+    assert person.target_id == PERSON
+    assert mask_decision(person, "analyst", ontology).query == MASK
+    assert mask_decision(person, "reviewer", ontology).query == "Dmitri Volkanov"
+
+
+def test_candidates_are_masked_without_a_store(store, view, ontology):
+    found = queries.resolve_entity(store, "Dmitri Volkanov")
+    assert mask_candidates(found, "analyst", ontology) == view("analyst").resolve_entity(
+        "Dmitri Volkanov"
+    )
+    assert mask_candidates(found, "reviewer", ontology) == found
+    with pytest.raises(PermissionError, match="Unknown role"):
+        mask_candidates(found, "intern", ontology)

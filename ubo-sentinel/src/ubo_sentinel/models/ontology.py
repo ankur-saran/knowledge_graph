@@ -92,6 +92,14 @@ class OntologyConfig(_Spec):
         return self
 
 
+def require_write(ontology: OntologyConfig, role: str) -> None:
+    """Raise unless the role may write (a decision, a review, an audit event)."""
+    if role not in ontology.roles:
+        raise PermissionError(f"Unknown role '{role}'.")
+    if ontology.roles[role].read_only:
+        raise PermissionError(f"Role '{role}' is read-only.")
+
+
 def load_ontology(path: Path) -> OntologyConfig:
     """Load and validate the ontology.
 

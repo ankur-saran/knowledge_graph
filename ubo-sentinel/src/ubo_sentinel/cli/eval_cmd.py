@@ -1,5 +1,6 @@
 """`ubo eval`: run the gold scenarios and the labelled entity-resolution set."""
 
+import tempfile
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -8,10 +9,14 @@ import typer
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from ubo_sentinel.cli.app import app, require_role
+from ubo_sentinel.agents.evaluator import run_pipeline_suite
+from ubo_sentinel.agents.supervisor import Supervisor
+from ubo_sentinel.audit.log import AuditLog
+from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
 from ubo_sentinel.graph.entity_resolution import ErReport, evaluate_labelled
 from ubo_sentinel.graph.store import GraphNotBuilt, GraphStore
 from ubo_sentinel.models.gold_scenario import load_gold_scenarios
+from ubo_sentinel.models.ontology import load_ontology
 from ubo_sentinel.pipeline import bronze
 from ubo_sentinel.pipeline.bronze import UnknownSnapshotSet
 from ubo_sentinel.rules.engine import RuleEngine
@@ -30,6 +35,7 @@ ER_PRECISION_TARGET = 0.95
 
 class Suite(StrEnum):
     rules = "rules"
+    pipeline = "pipeline"
     er = "er"
     all = "all"
 
@@ -48,21 +54,23 @@ def _metric(name: str, value: float, target: float) -> bool:
     return met
 
 
-def _print_rules(reports: list[ScenarioReport], skipped: list[str]) -> bool:
-    typer.echo("Gold scenarios (rules suite)")
+def _print_scenarios(title: str, reports: list[ScenarioReport], skipped: list[str]) -> bool:
+    typer.echo(title)
     for report in reports:
         status = "PASS" if report.passed else "FAIL"
         result = report.result
-        line = f"  {report.scenario_id}  {status}  {result.recommendation:<8} "
-        typer.echo((line + ", ".join(result.reasons)).rstrip())
+        recommendation = result.recommendation if result else "-"
+        line = f"  {report.scenario_id}  {status}  {recommendation:<8} "
+        typer.echo((line + ", ".join(result.reasons if result else [])).rstrip())
         for diff in report.diffs:
             typer.echo(f"      {diff.field}: expected {_show(diff.expected)}")
             typer.echo(f"      {' ' * len(diff.field)}  actual   {_show(diff.actual)}")
         if not report.passed:
-            for why in report.result.derivations:
+            # The rule engine's trace; a decision carries it in its memo.
+            for why in getattr(result, "derivations", []):
                 typer.echo(f"      derived: {_show(why)}")
     if skipped:
-        typer.echo(f"  Not run here (pipeline suite, Step 7): {', '.join(skipped)}")
+        typer.echo(f"  Not run here (pipeline suite): {', '.join(skipped)}")
 
     passed = sum(report.passed for report in reports)
     expected = sum(report.paths_expected for report in reports)
@@ -75,6 +83,15 @@ def _print_rules(reports: list[ScenarioReport], skipped: list[str]) -> bool:
         "Evidence-path recall", found / expected if expected else 1.0, PATH_RECALL_TARGET
     )
     return accuracy and recall
+
+
+def _print_pipeline(reports: list[ScenarioReport]) -> bool:
+    ok = _print_scenarios("Gold scenarios (pipeline suite: query to decision)", reports, [])
+    uncited = sum(report.uncited_claims for report in reports)
+    typer.echo(
+        f"  {'Uncited claims':<22} {uncited:>7}   (target 0)   {'ok' if not uncited else 'ABOVE'}"
+    )
+    return ok and not uncited
 
 
 def _print_er(report: ErReport) -> bool:
@@ -98,7 +115,7 @@ def evaluate(
     ] = DEFAULT_PACK,
     role: Annotated[str, typer.Option("--role")] = "engineer",
 ) -> None:
-    """Run the gold scenarios through the rule engine and score entity resolution."""
+    """Run the gold scenarios through the rules and the pipeline, and score entity resolution."""
     require_role(role, "eval")
     try:
         engine = RuleEngine(load_rule_pack(pack_path(rule_pack)))
@@ -118,8 +135,25 @@ def evaluate(
             )
             if suite in (Suite.rules, Suite.all):
                 scenarios = load_gold_scenarios(GOLD_PATH)
-                skipped = [scenario.id for scenario in scenarios if scenario.suite != "rules"]
-                ok = _print_rules(run_rules_suite(store, engine, scenarios), skipped) and ok
+                skipped = [
+                    scenario.id
+                    for scenario in scenarios
+                    if scenario.suite != "rules" and suite is Suite.rules
+                ]
+                reports = run_rules_suite(store, engine, scenarios)
+                ok = _print_scenarios("Gold scenarios (rules suite)", reports, skipped) and ok
+            if suite in (Suite.pipeline, Suite.all):
+                # The suite records nothing: its log is a directory that is thrown away.
+                with tempfile.TemporaryDirectory() as scratch:
+                    supervisor = Supervisor(load_ontology(ONTOLOGY_PATH), AuditLog(Path(scratch)))
+                    reports = run_pipeline_suite(
+                        supervisor,
+                        load_gold_scenarios(GOLD_PATH),
+                        store.set_id,
+                        store.con,
+                        engine.pack,
+                    )
+                ok = _print_pipeline(reports) and ok
             if suite in (Suite.er, Suite.all):
                 ok = _print_er(evaluate_labelled(store, ER_PATH)) and ok
     except UnknownSnapshotSet as exc:

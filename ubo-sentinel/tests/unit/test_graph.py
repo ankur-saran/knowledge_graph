@@ -238,7 +238,7 @@ def test_the_allow_list_is_the_modules_public_functions(store):
         and not name.startswith("_")
     } - {"query"}
     assert set(queries.QUERIES) == public == set(queries.__all__) - {"QUERIES"}
-    assert len(public) == 8
+    assert len(public) == 9
     # No query takes a snapshot set: the store fixes it.
     for spec in queries.QUERIES.values():
         assert "snapshot_set_id" not in spec.signature.parameters
@@ -432,3 +432,26 @@ def test_resolution_meets_the_bar_on_the_labelled_set(store):
     # No negative row returns a candidate at or above the floor.
     assert report.false_candidates == []
     assert RESOLVE_FLOOR == LINK_FLOOR
+
+
+def test_candidates_say_which_of_them_are_linked(store):
+    """SCEN-27: the registry's and the list's record of one company, linked by name."""
+    found = queries.resolve_entity(store, "Pendlewick Salt Refiners Ltd")
+    assert [(m.entity_id, m.source) for m in found] == [
+        ("fx_list:s27-dup", "fx_list"),
+        ("lei:FXS27TARGET000000000", "fx_registry"),
+    ]
+    assert [[(link.entity_id, link.confidence) for link in m.linked] for m in found] == [
+        [("lei:FXS27TARGET000000000", 1.0)],
+        [("fx_list:s27-dup", 1.0)],
+    ]
+    # Homonyms are two companies: nothing links them.
+    assert [m.linked for m in queries.resolve_entity(store, "Silverline Commodities Ltd")] == [
+        [],
+        [],
+    ]
+
+
+def test_a_decision_that_was_never_made_is_none(store):
+    assert queries.get_decision_by_id(store, "0000000000000000") is None
+    assert store.calls[-1].name == "get_decision_by_id"

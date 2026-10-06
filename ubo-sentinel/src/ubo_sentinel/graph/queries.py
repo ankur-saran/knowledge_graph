@@ -13,8 +13,10 @@ from dataclasses import dataclass
 from functools import wraps
 from typing import Any
 
+from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.graph import entity_resolution, projection
 from ubo_sentinel.graph.store import GraphStore, QueryCall, id_list
+from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.entity import Entity
 from ubo_sentinel.models.graph import (
     EntityMatch,
@@ -32,6 +34,7 @@ from ubo_sentinel.pipeline.silver import fold_provenance
 __all__ = [
     "QUERIES",
     "get_affected_entities",
+    "get_decision_by_id",
     "get_direct_owners",
     "get_entity_by_id",
     "get_ownership_subgraph",
@@ -190,3 +193,13 @@ def get_source_record(store: GraphStore, provenance: Provenance) -> dict[str, An
         [provenance.snapshot_id, provenance.source, provenance.source_record_id],
     ).fetchone()
     return json.loads(row[0]) if row else None
+
+
+@query
+def get_decision_by_id(store: GraphStore, decision_id: str) -> Decision | None:
+    """A recorded decision, with its review if it has one. None when there is no such decision.
+
+    Decisions live in the audit log, not in the graph: the store only logs the
+    call, and a decision made on another snapshot set is returned as well.
+    """
+    return AuditLog().decision(decision_id)

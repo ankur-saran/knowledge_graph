@@ -24,6 +24,7 @@ from ubo_sentinel.models.fixture_rows import (
 )
 from ubo_sentinel.models.gold_scenario import GoldScenario, load_gold_scenarios
 from ubo_sentinel.models.graph import (
+    CandidateLink,
     EntityLink,
     EntityMatch,
     OwnerEdge,
@@ -31,7 +32,7 @@ from ubo_sentinel.models.graph import (
     SetGap,
     SubGraph,
 )
-from ubo_sentinel.models.ontology import OntologyConfig, Role, load_ontology
+from ubo_sentinel.models.ontology import OntologyConfig, Role, load_ontology, require_write
 from ubo_sentinel.models.provenance import Provenance
 from ubo_sentinel.models.relationship import Basis, Relationship, RelType, relationship_id
 from ubo_sentinel.models.reporting_exception import RepexCategory, ReportingException
@@ -41,6 +42,7 @@ from ubo_sentinel.models.sanction import MatchType, Sanction, sanction_id
 __all__ = [
     "AuditEvent",
     "Basis",
+    "CandidateLink",
     "DataGap",
     "Decision",
     "DecisionStatus",
@@ -84,6 +86,7 @@ __all__ = [
     "read_raw_rows",
     "read_rows",
     "relationship_id",
+    "require_write",
     "sanction_id",
     "sha256_hex",
 ]

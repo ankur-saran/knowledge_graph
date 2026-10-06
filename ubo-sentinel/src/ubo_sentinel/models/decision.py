@@ -21,7 +21,8 @@ DecisionStatus = Literal["RECOMMENDED", "APPROVED", "OVERRIDDEN", "ESCALATED"]
 UtcDatetime = Annotated[AwareDatetime, AfterValidator(lambda value: value.astimezone(UTC))]
 
 REVIEWER_FIELDS = frozenset({"reviewed_by", "review_reason", "reviewed_at"})
-NON_CANONICAL_FIELDS = REVIEWER_FIELDS | {"created_at", "status", "llm_annotations"}
+# `query` is what the caller typed: two spellings of one name reach one decision.
+NON_CANONICAL_FIELDS = REVIEWER_FIELDS | {"created_at", "status", "llm_annotations", "query"}
 
 
 def normalise_query(query: str) -> str:
@@ -35,13 +36,28 @@ def compute_decision_id(
     rule_pack_hash: str,
     engine_version: str,
     max_depth: int,
+    graph_digest: str,
+    pipeline_version: int,
 ) -> str:
     """Deterministic id over the resolved snapshot ids, never the set alias.
 
-    When no target was resolved, the normalised query takes its place.
+    When no target was resolved, the normalised query takes its place. The
+    graph digest and the pipeline version are part of it, so a change to the
+    transform or to the agents gives a new id even when the package version
+    has not moved.
     """
     subject = target_id if target_id is not None else normalise_query(query)
-    return short_id([subject, snapshot_ids, rule_pack_hash, engine_version, max_depth])
+    return short_id(
+        [
+            subject,
+            snapshot_ids,
+            rule_pack_hash,
+            engine_version,
+            max_depth,
+            graph_digest,
+            pipeline_version,
+        ]
+    )
 
 
 class Decision(BaseModel):
@@ -61,13 +77,17 @@ class Decision(BaseModel):
     guardrail_warnings: list[str] = []
     memo_json: dict[str, Any] = {}
     llm_annotations: dict[str, Any] = {}
-    # The id or alias the caller passed; informational only.
+    # The resolved set id, never an alias: what the caller typed is in the audit event.
     snapshot_set_id: NonEmptyStr
     # Dataset -> resolved snapshot id.
     snapshot_ids: dict[str, str]
     rule_pack_id: NonEmptyStr
     rule_pack_hash: NonEmptyStr
     engine_version: NonEmptyStr
+    # `PIPELINE_VERSION` of the agents that made the decision.
+    pipeline_version: int = Field(ge=1)
+    # The `gold_digest` of the graph the screen read.
+    graph_digest: NonEmptyStr
     max_depth: int = Field(ge=0)
     created_at: UtcDatetime
     # Empty on a RECOMMENDED decision; filled when the view is rebuilt from the audit log.
@@ -99,6 +119,8 @@ class Decision(BaseModel):
             self.rule_pack_hash,
             self.engine_version,
             self.max_depth,
+            self.graph_digest,
+            self.pipeline_version,
         )
         if self.decision_id != expected:
             raise ValueError(f"decision_id does not match its inputs (expected {expected})")
@@ -118,5 +140,5 @@ class Decision(BaseModel):
         return self
 
     def canonical_payload(self) -> dict[str, Any]:
-        """What determinism and replay compare: no timestamps, status, LLM text or reviewer."""
+        """What determinism and replay compare: no times, status, LLM text, reviewer or query."""
         return self.model_dump(mode="json", exclude=set(NON_CANONICAL_FIELDS))

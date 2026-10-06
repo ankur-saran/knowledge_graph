@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ubo_sentinel.graph.store import GraphStore, id_list
-from ubo_sentinel.models.graph import EntityMatch
+from ubo_sentinel.models.graph import CandidateLink, EntityMatch
 from ubo_sentinel.pipeline.entity_linking import BLOCK_PREFIX_LENGTH, LINK_FLOOR
 from ubo_sentinel.pipeline.name_match import normalise_name, similarity_normalised
 
@@ -26,7 +26,7 @@ CANDIDATE_CAP = 5000
 
 _LEI = re.compile(r"^[A-Z0-9]{18}[0-9]{2}$")
 
-_NODE_COLUMNS = "id, legal_name, jurisdiction, entity_type, status, lei"
+_NODE_COLUMNS = "id, legal_name, jurisdiction, entity_type, status, lei, source"
 
 
 def resolve(
@@ -47,11 +47,11 @@ def resolve(
     if lei:
         found = _by_identifier(store, "lei", lei, "LEI")
         if found:
-            return found[:max_candidates]
+            return _with_links(store, found[:max_candidates])
     if registration_number:
         found = _by_identifier(store, "registration_number", registration_number, "REGISTRATION")
         if found:
-            return found[:max_candidates]
+            return _with_links(store, found[:max_candidates])
 
     scored = _score_names(store, normalise_name(query))
     if not scored:
@@ -73,13 +73,39 @@ def resolve(
         return (-match.confidence, elsewhere, match.entity_id)
 
     matches.sort(key=rank)
-    return matches[:max_candidates]
+    return _with_links(store, matches[:max_candidates])
+
+
+def _with_links(store: GraphStore, matches: list[EntityMatch]) -> list[EntityMatch]:
+    """Say which of the candidates are linked to each other, and how closely."""
+    ids = [match.entity_id for match in matches]
+    if len(ids) < 2:
+        return matches
+    rows = store.con.execute(
+        "SELECT node_id, linked_node_id, confidence FROM graph_links"
+        f" WHERE snapshot_set_id = ? AND node_id IN {id_list()} AND linked_node_id IN {id_list()}",
+        [store.set_id, ids, ids],
+    ).fetchall()
+    linked: dict[str, list[CandidateLink]] = {}
+    for node_id, linked_id, confidence in rows:
+        linked.setdefault(node_id, []).append(
+            CandidateLink(entity_id=linked_id, confidence=confidence)
+        )
+    return [
+        match.model_copy(update={"linked": sorted(linked[match.entity_id], key=_link_key)})
+        if match.entity_id in linked
+        else match
+        for match in matches
+    ]
+
+
+def _link_key(link: CandidateLink) -> str:
+    return link.entity_id
 
 
 def _display(node: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: node[key] for key in ("legal_name", "jurisdiction", "entity_type", "status", "lei")
-    }
+    keys = ("legal_name", "jurisdiction", "entity_type", "status", "lei", "source")
+    return {key: node[key] for key in keys}
 
 
 def _nodes(store: GraphStore, ids: list[str]) -> dict[str, dict[str, Any]]:

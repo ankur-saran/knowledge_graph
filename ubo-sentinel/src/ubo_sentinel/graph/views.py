@@ -6,6 +6,7 @@ decision does not depend on who asked; everything shown to a person, exported
 or sent to a model goes through a view.
 """
 
+import copy
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -15,7 +16,8 @@ import duckdb
 
 from ubo_sentinel.graph import queries
 from ubo_sentinel.graph.store import GraphStore, id_list
-from ubo_sentinel.models.canonical import short_id
+from ubo_sentinel.models.canonical import sha256_hex, short_id
+from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.entity import Entity
 from ubo_sentinel.models.graph import (
     EntityLink,
@@ -25,7 +27,8 @@ from ubo_sentinel.models.graph import (
     SanctionMatch,
     SubGraph,
 )
-from ubo_sentinel.models.ontology import OntologyConfig
+from ubo_sentinel.models.memo import DecisionView, Memo
+from ubo_sentinel.models.ontology import OntologyConfig, require_write
 from ubo_sentinel.models.provenance import Provenance
 from ubo_sentinel.models.relationship import Relationship
 from ubo_sentinel.models.sanction import Sanction
@@ -36,6 +39,135 @@ MASK = "[PII MASKED]"
 # has no property for this, so it is the one rule here that names a role.
 METADATA_ONLY_ROLES = frozenset({"engineer"})
 
+_PROVENANCE_KEY = ("source", "source_record_id", "snapshot_id")
+
+
+def pseudonym_for(entity_id: str, label: str) -> str:
+    """A stable stand-in for a masked node's id.
+
+    An unsalted hash: it keeps a person's name off the screen, it is not
+    anonymisation.
+    """
+    return f"{label.lower()}:{short_id([entity_id])}"
+
+
+def _masked_fields(role: str, ontology: OntologyConfig) -> dict[str, set[str]]:
+    """Label -> the properties the role does not see."""
+    if role not in ontology.roles:
+        raise PermissionError(f"Unknown role '{role}'.")
+    return {label: set(fields) for label, fields in ontology.roles[role].masked_fields.items()}
+
+
+def mask_candidates(
+    candidates: list[EntityMatch], role: str, ontology: OntologyConfig
+) -> list[EntityMatch]:
+    """Resolver candidates as the role sees them, in the same order."""
+    hidden = _masked_fields(role, ontology)
+    if not hidden:
+        return candidates
+    ids = {
+        match.entity_id: pseudonym_for(match.entity_id, match.entity_type)
+        for match in candidates
+        if match.entity_type in hidden
+    }
+    masked = []
+    for match in candidates:
+        update: dict[str, Any] = {
+            "linked": [
+                link.model_copy(update={"entity_id": ids.get(link.entity_id, link.entity_id)})
+                for link in match.linked
+            ]
+        }
+        if match.entity_id in ids:
+            update |= {"entity_id": ids[match.entity_id], "legal_name": MASK, "matched_name": MASK}
+        masked.append(match.model_copy(update=update))
+    return masked
+
+
+def masked_values(decision: Decision, role: str, ontology: OntologyConfig) -> list[str]:
+    """Every value of the decision that the role must not be shown.
+
+    The ids, the masked properties and the record ids of the entities the role
+    sees masked, and the record ids of their designations.
+    """
+    hidden = _masked_fields(role, ontology)
+    memo = Memo.model_validate(decision.memo_json)
+    values: set[str] = set()
+    masked_ids = set()
+    for entity in memo.entities:
+        if entity.entity_type not in hidden:
+            continue
+        masked_ids.add(entity.id)
+        values.update((entity.id, entity.provenance.source_record_id))
+        for name in hidden[entity.entity_type]:
+            value = getattr(entity, name, None)
+            values.update(value if isinstance(value, list) else [value] if value else [])
+    for match in memo.matches:
+        if match.designated_entity_id in masked_ids:
+            values.update(c.provenance.source_record_id for c in match.citations if c.provenance)
+    return sorted(values)
+
+
+def mask_decision(decision: Decision, role: str, ontology: OntologyConfig) -> DecisionView:
+    """A decision as the role sees it.
+
+    What is masked is read from the memo's own entity table, so a decision made
+    on another snapshot set is masked as well as one made on the open set.
+    """
+    hidden = _masked_fields(role, ontology)
+    memo = Memo.model_validate(decision.memo_json)
+    data = decision.model_dump(mode="json", exclude={"memo_json"})
+    data |= {
+        "memo": copy.deepcopy(decision.memo_json),
+        "payload_sha256": sha256_hex(decision.canonical_payload()),
+        "viewer_role": role,
+    }
+    masked = [entity for entity in memo.entities if entity.entity_type in hidden]
+    if not masked:
+        return DecisionView.model_validate(data)
+
+    ids = {entity.id: pseudonym_for(entity.id, entity.entity_type) for entity in masked}
+    # The records that are a masked party's identity: its own, and its designations.
+    records = {_record_key(entity.provenance.model_dump(mode="json")) for entity in masked}
+    for match in memo.matches:
+        if match.designated_entity_id in ids:
+            records.update(
+                _record_key(c.provenance.model_dump(mode="json"))
+                for c in match.citations
+                if c.provenance
+            )
+    for row in data["memo"]["entities"]:
+        if row["id"] not in ids:
+            continue
+        for name in hidden[row["entity_type"]]:
+            value = row.get(name)
+            if isinstance(value, list):
+                row[name] = [MASK] if value else []
+            elif value is not None:
+                row[name] = MASK
+
+    def replace(value: Any) -> Any:
+        if isinstance(value, str):
+            return ids.get(value, value)
+        if isinstance(value, list):
+            return [replace(item) for item in value]
+        if isinstance(value, dict):
+            if set(_PROVENANCE_KEY) <= set(value) and _record_key(value) in records:
+                value = value | {"source_record_id": MASK}
+            return {ids.get(key, key): replace(item) for key, item in value.items()}
+        return value
+
+    data = replace(data)
+    if decision.target_id in ids:
+        # The query that found a masked party is that party's name.
+        data["query"] = MASK
+    data |= {"llm_annotations": {}, "masked": True}
+    return DecisionView.model_validate(data)
+
+
+def _record_key(provenance: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(provenance[key] for key in _PROVENANCE_KEY)
+
 
 class GraphView:
     def __init__(self, store: GraphStore, role: str, ontology: OntologyConfig) -> None:
@@ -43,11 +175,9 @@ class GraphView:
             raise PermissionError(f"Unknown role '{role}'.")
         self.store = store
         self.role = role
-        self._spec = ontology.roles[role]
+        self._ontology = ontology
         # Label -> the properties this role does not see.
-        self._masked_fields = {
-            label: set(fields) for label, fields in self._spec.masked_fields.items()
-        }
+        self._masked_fields = _masked_fields(role, ontology)
         # Node id -> label, for the ids met so far.
         self._labels: dict[str, str] = {}
         # Pseudonym -> node id, for the pseudonyms this view has handed out.
@@ -80,8 +210,7 @@ class GraphView:
 
     def require_write(self) -> None:
         """Raise unless the role may write (a decision, a review, an audit event)."""
-        if self._spec.read_only:
-            raise PermissionError(f"Role '{self.role}' is read-only.")
+        require_write(self._ontology, self.role)
 
     def build_info(self) -> dict[str, Any]:
         """What was built for the set. Every role may read it."""
@@ -173,17 +302,25 @@ class GraphView:
             }
         return record
 
+    def get_decision_by_id(self, decision_id: str) -> DecisionView | None:
+        """A recorded decision as this role sees it."""
+        self._require_graph()
+        found = queries.get_decision_by_id(self.store, decision_id)
+        return self.mask_decision(found) if found else None
+
     # --- masking ------------------------------------------------------------------------
 
     def pseudonym(self, entity_id: str, label: str) -> str:
-        """A stable stand-in for a masked node's id.
-
-        An unsalted hash: it keeps a person's name off the screen, it is not
-        anonymisation.
-        """
-        alias = f"{label.lower()}:{short_id([entity_id])}"
+        """The stand-in for a masked node's id; the view remembers whose it is."""
+        alias = pseudonym_for(entity_id, label)
         self._real_ids[alias] = entity_id
         return alias
+
+    def mask_decision(self, decision: Decision) -> DecisionView:
+        return mask_decision(decision, self.role, self._ontology)
+
+    def mask_candidates(self, candidates: list[EntityMatch]) -> list[EntityMatch]:
+        return mask_candidates(candidates, self.role, self._ontology)
 
     def mask_subgraph(self, subgraph: SubGraph) -> SubGraph:
         """The subgraph as this role sees it. Unchanged for a role that masks nothing."""
@@ -273,15 +410,22 @@ class GraphView:
         )
 
     def _mask_match(self, match: EntityMatch) -> EntityMatch:
-        if match.entity_type not in self._masked_fields:
+        if not self._masked_fields:
             return match
-        return match.model_copy(
-            update={
+        # A candidate that is not masked may still be linked to one that is.
+        update: dict[str, Any] = {
+            "linked": [
+                link.model_copy(update={"entity_id": self._id(link.entity_id)})
+                for link in match.linked
+            ]
+        }
+        if match.entity_type in self._masked_fields:
+            update |= {
                 "entity_id": self.pseudonym(match.entity_id, match.entity_type),
                 "legal_name": MASK,
                 "matched_name": MASK,
             }
-        )
+        return match.model_copy(update=update)
 
     def _mask_sanction(self, sanction: Sanction) -> Sanction:
         update: dict[str, Any] = {

@@ -45,6 +45,13 @@ class EntityLink(_Model):
     linked_has_upstream: bool
 
 
+class CandidateLink(_Model):
+    """Another candidate of the same query that may be the same entity as this one."""
+
+    entity_id: NonEmptyStr
+    confidence: Confidence
+
+
 class EntityMatch(_Model):
     """A candidate for a query, with what an analyst needs to pick one."""
 
@@ -58,6 +65,16 @@ class EntityMatch(_Model):
     entity_type: EntityType
     status: EntityStatus
     lei: str | None = None
+    # The source of the record that describes the entity: a registry or a list.
+    source: NonEmptyStr
+    # The other candidates this one is linked to. A registry's and a list's
+    # record of one company are two entities joined by such a link.
+    linked: list[CandidateLink] = []
+
+    @field_validator("linked")
+    @classmethod
+    def _sort_linked(cls, value: list[CandidateLink]) -> list[CandidateLink]:
+        return sorted(value, key=lambda link: link.entity_id)
 
 
 class SanctionMatch(_Model):

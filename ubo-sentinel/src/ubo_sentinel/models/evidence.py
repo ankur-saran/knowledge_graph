@@ -21,7 +21,7 @@ GapCode = Literal[
     "POSSIBLE_DUPLICATE",
 ]
 
-# Why a recommendation was made. The last two come from the agent pipeline, not the rules.
+# Why a recommendation was made. The last four come from the agent pipeline, not the rules.
 ReasonCode = Literal[
     "DIRECT_DESIGNATION",
     "DERIVED_50PCT",
@@ -31,6 +31,8 @@ ReasonCode = Literal[
     "DECISION_RELEVANT_GAP",
     "CONTROL_LINK",
     "ENTITY_NOT_FOUND",
+    # The graph above the target has more evidence paths than the rule pack allows.
+    "EVIDENCE_LIMIT_EXCEEDED",
     "GUARDRAIL_FAILED",
     "PIPELINE_ERROR",
 ]

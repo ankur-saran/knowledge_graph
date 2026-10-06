@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from ubo_sentinel.audit.log import VAR_ENV_VAR
 from ubo_sentinel.cli.app import ONTOLOGY_PATH
 from ubo_sentinel.models import EntityRow, load_gold_scenarios, load_ontology, read_rows
 from ubo_sentinel.pipeline.db import DB_ENV_VAR, connect
@@ -24,9 +25,10 @@ PACK = load_rule_pack(pack_path(DEFAULT_PACK))
 
 @pytest.fixture(autouse=True)
 def database(tmp_path, monkeypatch):
-    """Every test gets its own database file; none touches `var/`."""
+    """Every test gets its own database file and audit log; none touches `var/`."""
     path = tmp_path / "db" / "ubo.duckdb"
     monkeypatch.setenv(DB_ENV_VAR, str(path))
+    monkeypatch.setenv(VAR_ENV_VAR, str(tmp_path / "var"))
     return path
 
 

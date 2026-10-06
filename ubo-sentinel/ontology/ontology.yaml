@@ -40,13 +40,13 @@ provenance:
 # registers it. Only `reviewer` may hold decision rights.
 roles:
   analyst:
-    commands: []
+    commands: [screen]
     masked_fields:
       Person: [legal_name, aliases, registration_number]
     read_only: false
     decision_rights: []
   reviewer:
-    commands: []
+    commands: [screen]
     masked_fields: {}
     read_only: false
     decision_rights: [APPROVED, OVERRIDDEN, ESCALATED]

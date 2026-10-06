@@ -74,4 +74,5 @@ from ubo_sentinel.cli import (  # noqa: E402, F401
     eval_cmd,
     ingest_cmd,
     normalize_cmd,
+    screen_cmd,
 )

@@ -1,0 +1,107 @@
+{# The memo as Markdown. Conventions the guardrail relies on (agents/guardrail.py):
+   an entity name is bold, an id or a code is in backticks, and every number,
+   date and name printed here is a value of the memo. No other digits. #}
+{% macro cites(citations) %}{% for citation in citations %}{{ " [" if loop.first else "; " }}{{ citation | cite }}{{ "]" if loop.last }}{% endfor %}{% endmacro %}
+{% macro claims_of(codes) %}
+{% for claim in memo.claims if claim.code in codes %}
+{% set p = claim.params %}
+{% if claim.code == "DESIGNATED" %}
+- {{ name(claim.subject_id) }} is reached by an active designation and is blocked.{{ cites(claim.citations) }}
+{% elif claim.code == "POSSIBLY_DESIGNATED" %}
+- {{ name(claim.subject_id) }} may be a designated party: the match is not settled.{{ cites(claim.citations) }}
+{% elif claim.code == "BLOCKED_BY_OWNERSHIP" %}
+- {{ name(claim.subject_id) }} is blocked by ownership: blocked owners hold {{ p.aggregate_pct | pct }} % of it.{{ cites(claim.citations) }}
+{% elif claim.code == "POSSIBLY_BLOCKED_BY_OWNERSHIP" %}
+- {{ name(claim.subject_id) }} is possibly blocked: blocked and possibly-blocked owners hold {{ p.aggregate_pct | pct }} % of it.{{ cites(claim.citations) }}
+{% elif claim.code == "PRESUMED_MAJORITY" %}
+- {{ name(claim.subject_id) }} is possibly blocked: a blocked or possibly-blocked parent holds a stake of unknown size, presumed a majority.{{ cites(claim.citations) }}
+{% elif claim.code == "REASON" %}
+- `{{ p.reason }}` on {{ subject(claim.subject_id) }}{% if p.pct is defined %}: {{ p.pct | pct }} %{% endif %}.{{ cites(claim.citations) }}
+{% elif claim.code == "DATA_GAP" %}
+- `{{ p.gap }}` on {{ subject(claim.subject_id) }} ({{ "decides" if p.decision_relevant else "for information" }}).{{ cites(claim.citations) }}
+{% elif claim.code == "DIRECT_AGGREGATE" %}
+- Blocked owners hold {{ p.aggregate_pct | pct }} % of {{ name(claim.subject_id) }} directly.{{ cites(claim.citations) }}
+{% elif claim.code == "EFFECTIVE_EXPOSURE" %}
+- Effective exposure of {{ name(claim.subject_id) }} (a risk signal, not the legal test): {% if p.sum_pct is not none %}{{ p.sum_pct | pct }} % over all paths, {{ p.max_pct | pct }} % on the largest{% else %}not known{% endif %}{% if p.has_unknown %}; a path has a stake of unknown size, so this is a lower bound{% endif %}.{{ cites(claim.citations) }}
+{% elif claim.code == "NO_DESIGNATION_FOUND" %}
+- No active designation reaches any of the {{ p.nodes_checked }} entities checked.{{ cites(claim.citations) }}
+{% elif claim.code == "COVERAGE" %}
+- Checked {{ p.nodes_checked }} entities and {{ p.edges_checked }} relationships; reached depth {{ p.depth_reached }} of at most {{ p.max_depth }}.{{ cites(claim.citations) }}
+{% endif %}
+{% endfor %}
+{% endmacro %}
+# Screening memo
+
+{% if memo.target_id is not none %}
+Target: {{ name(memo.target_id) }}
+{% else %}
+Query: `{{ memo.query_norm }}` matched no entity.
+{% endif %}
+
+Rule recommendation: `{{ memo.recommendation }}`{% for reason in memo.reasons %}{{ " (" if loop.first else ", " }}`{{ reason }}`{{ ")" if loop.last }}{% endfor %}
+
+
+Rule pack: `{{ memo.rule_pack.id }}` (`{{ memo.rule_pack.hash[:16] }}`), blocking threshold `{{ memo.rule_pack.threshold_operator }}` {{ memo.rule_pack.ownership_threshold_pct | pct }} %
+
+## Why
+
+{{ claims_of(["REASON"]) }}
+{{- claims_of(["DESIGNATED", "POSSIBLY_DESIGNATED", "BLOCKED_BY_OWNERSHIP", "POSSIBLY_BLOCKED_BY_OWNERSHIP", "PRESUMED_MAJORITY"]) }}
+{{- claims_of(["DIRECT_AGGREGATE", "EFFECTIVE_EXPOSURE", "NO_DESIGNATION_FOUND"]) -}}
+{% if memo.paths %}
+
+## Evidence paths
+
+{% for path in memo.paths %}
+{% if path.edge_ids %}
+{% for edge_id in path.edge_ids %}
+{{ "- " if loop.first else "  " }}{{ edge(edge_id) }}
+{% endfor %}
+{% else %}
+- {{ name(path.node_ids[0]) }} is itself designated.
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if memo.matches %}
+
+## Designations
+
+{% for match in memo.matches %}
+- {{ name(match.entity_id) }}{% if match.designated_entity_id != match.entity_id %} matched to {{ name(match.designated_entity_id) }} at {{ match.confidence | score }}{% endif %} (`{{ match.match_type }}`, {{ "active" if match.is_active else "inactive" }}, effect `{{ match.effect }}`){% for program in match.programs %}{{ ": " if loop.first else ", " }}`{{ program }}`{% endfor %}.{{ cites(match.citations) }}
+{% endfor %}
+{% endif %}
+{% if memo.claims | selectattr("code", "equalto", "DATA_GAP") | list %}
+
+## Data gaps
+
+{{ claims_of(["DATA_GAP"]) }}
+{%- endif %}
+{% if memo.what_if is not none %}
+
+## What would settle this
+
+{% for item in memo.what_if.contested %}
+- Unsettled: {{ name(item.entity_id) }} matched to {{ name(item.designated_entity_id) }}.
+{% endfor %}
+- If confirmed, the rules recommend `{{ memo.what_if.if_confirmed }}`; if rejected, `{{ memo.what_if.if_rejected }}`.
+{% endif %}
+{% if memo.next_actions %}
+
+## Next actions
+
+{% for action in memo.next_actions %}
+- `{{ action.code }}` for {{ subject(action.subject_id) }}{% if action.params.linked_id is defined %}: screen {{ name(action.params.linked_id) }}{% endif %}{% if action.params.designated_id is defined %}: compare with {{ name(action.params.designated_id) }}{% endif %}{% if action.params.max_depth is defined %}: the screen stopped at {{ action.params.max_depth }} hops{% endif %}.
+{% endfor %}
+{% endif %}
+
+## Coverage
+
+{{ claims_of(["COVERAGE"]) }}
+{%- for dataset in memo.coverage.datasets %}
+- Dataset `{{ dataset.dataset }}`, snapshot `{{ dataset.snapshot_id }}`: {{ dataset.row_count }} records{% if dataset.as_of_min is not none %}, as of {{ dataset.as_of_min }} to {{ dataset.as_of_max }}{% endif %}{% if dataset.published_at is not none %}, published {{ dataset.published_at }}{% endif %}.
+{% endfor %}
+{% if memo.coverage.down_truncated %}
+- The target owns or controls more entities than were read for context.
+{% endif %}
+
+{{ memo.disclaimer }}

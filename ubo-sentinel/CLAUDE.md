@@ -11,9 +11,9 @@
 ## Conventions
 
 - **Determinism.** Same inputs and same snapshot set give a byte-identical canonical decision payload. No ids from wall-clock time or random UUIDs. Sort every collection before serialising. `canonical_json` is sorted keys, no whitespace, UTF-8.
-- **Canonical decision payload.** The `Decision` record minus `created_at`, `status`, `llm_annotations` and the reviewer fields (`reviewed_by`, `review_reason`, `reviewed_at`), produced only by `Decision.canonical_payload()`.
+- **Canonical decision payload.** The `Decision` record minus `created_at`, `status`, `llm_annotations`, `query` and the reviewer fields (`reviewed_by`, `review_reason`, `reviewed_at`), produced only by `Decision.canonical_payload()`. What the caller typed (the query, a snapshot alias, the role) is in the audit event, never in the payload: `Decision.snapshot_set_id` is the resolved id.
 - **Percentages are `Decimal`**, never `float` (DuckDB `DECIMAL(7,4)`); `canonical_json` writes them as strings quantised to 4 places.
-- **Hashed ids** are `sha256` over a `canonical_json` list, never string concatenation. `decision_id` uses the resolved per-dataset `snapshot_ids`, not the set alias.
+- **Hashed ids** are `sha256` over a `canonical_json` list, never string concatenation. `decision_id` uses the resolved per-dataset `snapshot_ids`, not the set alias, and includes the `graph_digest` and `PIPELINE_VERSION`.
 - **Stable bytes.** Snapshot ids hash file bytes. Files under `fixtures/`, `eval/`, `rules/` and `ontology/` are UTF-8 without BOM with LF endings (`.gitattributes`).
 - **Reasons and gaps are closed sets.** `ReasonCode` and `GapCode` in `models/evidence.py`. A truncated traversal is a `DEPTH_LIMIT_REACHED` gap, and a node linked by name to a record with owners of its own is a `POSSIBLE_DUPLICATE` gap: both always decide, so neither is a silent `CLEAR`.
 - **One name scorer.** Entity linking and query-time resolution both use `name_similarity()` in `pipeline/name_match.py`.
@@ -27,9 +27,15 @@
 - **Roles.** `analyst`, `reviewer`, `auditor`, `engineer`. Every CLI command calls `require_role()` from `cli/app.py`, which reads the matrix in `ontology/ontology.yaml`. `review` requires an explicit `--role reviewer`.
 - **Gold is built per snapshot set** from Silver and holds only what Silver lacks (edge ends, node degrees, links from both ends, name blocks). `gold_builds` records the Silver digest it was built from and a `gold_digest`; a graph built from an earlier Silver is stale and `ubo build-graph` rebuilds it.
 - **Queries.** Graph data is read only through the typed functions in `graph/queries.py`, each registered in `QUERIES` by `@query`. No free-form queries. Every query takes a `GraphStore`, which is bound to one connection and one built snapshot set.
-- **Store and view.** The screening pipeline reads the `GraphStore` unmasked, so a decision does not depend on who asked. Anything shown to a person, exported or sent to a model goes through `GraphView(role)`; what is masked comes from the role's `masked_fields` in the ontology.
+- **Store and view.** The screening pipeline reads the `GraphStore` unmasked, so a decision does not depend on who asked. Anything shown to a person, exported or sent to a model goes through `GraphView(role)`, or for a decision through `mask_decision()`, which reads what to mask from the memo's own entity table; what is masked comes from the role's `masked_fields` in the ontology.
 - **Connections.** DuckDB lets a file have one writer or readers, never both, and one process cannot mix the two. Open a store for one operation and close it; pass an existing connection where one is already open.
-- **Runtime output** goes to `var/` (gitignored).
+- **Agents.** A screen is seven agents run in order by the `Supervisor`; no model. Each declares the `PipelineState` fields it `requires` and `provides`, and `AGENT_CONTRACTS.md` must equal those declarations (`tests/unit/test_agent_contracts.py`). Raise `PIPELINE_VERSION` in `agents/base.py` when a change alters the decision a screen produces (how Intake selects, what the memo holds, what the guardrail checks).
+- **One id, one decision.** Screening the same inputs again computes the decision and compares it with the one on record: equal, the recorded one is returned and nothing is appended; different, `DeterminismViolation`.
+- **Failing closed.** A failure never lowers a recommendation and never produces a `CLEAR`. A guardrail fault raises the recommendation to at least `REVIEW`. An agent that raises is a `SCREEN_FAILED` event and no decision: it is shown as `REVIEW / PIPELINE_ERROR` and is not cached.
+- **Memo.** `models/memo.py` `Memo`: names are in the `entities` table only; claims, paths and matches refer to entities and edges by id, and every claim has citations. `build_memo()` is pure. A stored memo is unmasked.
+- **Two guardrails.** The decision guardrail reads only role-independent things and may change a decision. The render guardrail reads what one role is shown and may only withhold output. A warning names the kind of fault, never a value.
+- **Audit log.** `var/audit/events.jsonl` is the record; `var/decisions/` is a copy. An event's hash is taken over its JSON-mode dump without `hash`, and verification recomputes from the parsed line. Appending needs a role that may write (`require_write()` in `models/ontology.py`), not an open graph.
+- **Runtime output** goes to `var/` (gitignored). Env `UBO_VAR` moves the audit log and the decision copies; tests and `ubo eval` use a temporary directory.
 - **LLM use** is optional, advisory and recorded. Each LLM feature has its own flag, off by default. No LLM output can alter a recommendation, a decision's status or the canonical payload. Replay reads stored LLM text and never calls the model.
 - **No network in tests.** Downloading is separate from ingesting.
 - **Rule thresholds** live in the rule-pack YAML, never in Python. Every key of a pack is required. `rule_pack_hash` is over the parsed values and `RULES_VERSION`; raise `RULES_VERSION` in `rules/pack.py` when a change to the engine alters what a pack concludes.
@@ -76,5 +82,12 @@ Read by the skills in `.claude/skills/`. A value of "not yet created" is filled 
 | Rule engine | `src/ubo_sentinel/rules/engine.py` (`RuleEngine.evaluate()`); result model `src/ubo_sentinel/models/rule_result.py`; tests in `tests/unit/test_rules.py`, `tests/unit/test_rules_hypothesis.py` |
 | Gold-scenario file | `eval/gold_scenarios.yaml` (schema and loader: `models/gold_scenario.py`) |
 | Labelled ER set | `eval/er_labelled.csv` |
-| Evaluator command | `uv run ubo eval --suite all` (`src/ubo_sentinel/cli/eval_cmd.py`; comparison in `src/ubo_sentinel/rules/evaluator.py`). Needs a built graph: run ingest, normalize and build-graph first |
-| Runtime output directory | `var/` |
+| Evaluator command | `uv run ubo eval --suite all` (suites: `rules`, `pipeline`, `er`; `src/ubo_sentinel/cli/eval_cmd.py`; comparison in `src/ubo_sentinel/rules/evaluator.py`). Needs a built graph: run ingest, normalize and build-graph first |
+| Agents | `src/ubo_sentinel/agents/` (`base.py`: `ScreenRequest`, `PipelineState`, `ScreenContext`, `BaseAgent`, `PIPELINE_VERSION`; `supervisor.py`: `Supervisor`, `PIPELINE`; one module per agent; tests in `tests/unit/test_agents.py`) |
+| Agent contracts | `AGENT_CONTRACTS.md` (checked by `tests/unit/test_agent_contracts.py`) |
+| Memo | `src/ubo_sentinel/models/memo.py` (`Memo`, `Claim`, `Citation`, `DecisionView`); built and rendered in `agents/explainer.py`; template `src/ubo_sentinel/templates/memo.md.j2`; tests in `tests/unit/test_memo.py` |
+| Guardrails | `src/ubo_sentinel/agents/guardrail.py` (`check_memo()`, `check_prose()`, `check_render()`; tests in `tests/unit/test_guardrail.py`) |
+| Audit log | `src/ubo_sentinel/audit/log.py` (`AuditLog`: `append()`, `verify()`, `decision()`; tests in `tests/unit/test_audit_log.py`) |
+| Screen command | `uv run ubo screen "<name or LEI>" [--snapshot SET] [--role analyst\|reviewer] [--pick N \| --target-id ID] [--json]` (`src/ubo_sentinel/cli/screen_cmd.py`; tests in `tests/unit/test_screen_cli.py`) |
+| Pipeline evaluation | `uv run ubo eval --suite pipeline` (`src/ubo_sentinel/agents/evaluator.py`) |
+| Runtime output directory | `var/` (env `UBO_VAR` overrides it for the audit log and decisions) |

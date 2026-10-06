@@ -107,6 +107,8 @@ def make_decision(**overrides):
         "rule_pack_id": "ofac_50pct_v1",
         "rule_pack_hash": "f" * 64,
         "engine_version": "0.1.0",
+        "pipeline_version": 1,
+        "graph_digest": "d" * 64,
         "max_depth": 5,
         "created_at": CREATED_AT,
     } | overrides
@@ -118,6 +120,8 @@ def make_decision(**overrides):
             fields["rule_pack_hash"],
             fields["engine_version"],
             fields["max_depth"],
+            fields["graph_digest"],
+            fields["pipeline_version"],
         )
     return Decision(**fields)
 
@@ -331,6 +335,8 @@ def test_decision_id_uses_resolved_snapshots_not_the_alias():
         {"rule_pack_hash": "e" * 64},
         {"engine_version": "0.2.0"},
         {"max_depth": 3},
+        {"graph_digest": "c" * 64},
+        {"pipeline_version": 2},
     ],
 )
 def test_decision_id_changes_with_each_input(change):
@@ -410,6 +416,7 @@ def test_canonical_payload_excludes_non_deterministic_fields():
         "reviewed_by",
         "review_reason",
         "reviewed_at",
+        "query",
     }
     assert excluded.isdisjoint(payload)
     assert payload["decision_id"] == make_decision().decision_id
@@ -430,6 +437,12 @@ def test_canonical_payload_is_unchanged_by_time_review_and_llm_text():
     )
 
 
+def test_canonical_payload_is_unchanged_by_how_the_query_was_typed():
+    one, two = make_decision(), make_decision(query="  acme   TRADING fze ")
+    assert one.decision_id == two.decision_id
+    assert canonical_json(one.canonical_payload()) == canonical_json(two.canonical_payload())
+
+
 def test_canonical_payload_is_unchanged_by_input_order():
     one = make_decision(
         blocked_set=["owner-1", "asset-1"], reasons=["CONTROL_LINK", "DERIVED_50PCT"]
@@ -446,6 +459,7 @@ def test_canonical_payload_is_unchanged_by_input_order():
 def test_audit_event_type_and_role_are_closed_sets():
     with pytest.raises(ValidationError):
         make_audit_event(event_type="DELETED")
+    assert make_audit_event(event_type="SCREEN_FAILED").event_type == "SCREEN_FAILED"
     with pytest.raises(ValidationError):
         make_audit_event(role="intern")
     with pytest.raises(ValidationError):
