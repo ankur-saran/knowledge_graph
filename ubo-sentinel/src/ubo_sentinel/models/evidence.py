@@ -16,6 +16,9 @@ GapCode = Literal[
     "PCT_SUM_OVER_100",
     # The upward traversal stopped at max_depth with owners still unexplored.
     "DEPTH_LIMIT_REACHED",
+    # A node is linked by name to another record that has owners or controllers
+    # of its own; the screened graph does not show them.
+    "POSSIBLE_DUPLICATE",
 ]
 
 # Why a recommendation was made. The last two come from the agent pipeline, not the rules.

@@ -1,0 +1,38 @@
+# OFAC 50 Percent Rule pack. Schema and loader: ubo_sentinel.rules.pack.
+# Not legal advice: a rule pack must be validated by compliance counsel.
+id: ofac_50pct_v1
+
+# The legal test: an entity owned this much, in aggregate, by blocked persons is blocked.
+ownership_threshold_pct: 50
+threshold_operator: ">="
+aggregate_blocked_owners: true
+
+# A designation that reaches an entity by name only blocks at or above
+# `match_threshold` and is a review-band match down to `review_band_low`.
+match_threshold: 0.92
+review_band_low: 0.75
+
+# A consolidation edge without a percentage is presumed a majority: possibly
+# blocked, so REVIEW, never a silent CLEAR.
+presume_majority_for_consolidation: true
+
+# on_path: a gap decides only when it lies between the target and a blocked or
+# possibly-blocked party. any: every gap above the target decides.
+gap_scope: on_path
+
+# Risk signals below the legal test.
+review_exposure_pct: 25
+near_miss_pct: 40
+
+# A control link from a blocked party. upstream: anywhere above the target.
+# target: only a link into the target itself.
+control_link_review: true
+control_link_scope: upstream
+
+# An entity linked by name to a record that has owners of its own.
+duplicate_link_review: true
+
+max_depth: 5
+max_depth_down: 1
+# Evidence paths one screen may enumerate before it stops and asks for review.
+max_paths: 5000

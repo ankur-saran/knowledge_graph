@@ -5,6 +5,7 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
+from conftest import PACK
 from typer.testing import CliRunner
 
 from ubo_sentinel.cli.app import app
@@ -33,9 +34,7 @@ from ubo_sentinel.pipeline.transformer import build_silver
 T0 = Path("fixtures/snapshot_t0")
 T1 = Path("fixtures/snapshot_t1")
 
-# The OFAC pack's match threshold (BUILD_PLAN 6.1). Read it from
-# `rules/ofac.yaml` once Step 6 has created it.
-MATCH_THRESHOLD = 0.92
+MATCH_THRESHOLD = PACK.match_threshold
 
 runner = CliRunner()
 
@@ -343,8 +342,8 @@ def test_edges_that_cannot_be_loaded_are_rejected_with_a_reason(con, ontology, t
         ("repex", "s99-repex"): ("UNRESOLVED_REF", "fx_registry:s99-missing"),
     }
     # Nothing rejected was loaded, and nothing else was lost.
-    assert len(read_relationships(con, set_id)) == 71
-    assert len(read_sanctions(con, set_id)) == 28
+    assert len(read_relationships(con, set_id)) == 75
+    assert len(read_sanctions(con, set_id)) == 30
     assert len(read_reporting_exceptions(con, set_id)) == 4
 
 
@@ -383,7 +382,7 @@ def test_match_type_says_how_a_designation_reaches_its_entity(con, t0):
     review = reached["s14-des", "lei:FXS14OWNER0000000000"]
     assert review.match_confidence < MATCH_THRESHOLD
     assert reached["s26-des", "lei:FXS26OWNER0000000000"].match_confidence >= MATCH_THRESHOLD
-    assert len({sanction.id for sanction in reached.values()}) == len(reached) == 28
+    assert len({sanction.id for sanction in reached.values()}) == len(reached) == 30
 
 
 # --- gold scenarios -----------------------------------------------------------------

@@ -25,3 +25,5 @@ fx_list,s24-des,2026-09-15,1.0,fx_list:s24-owner,FX-PROGRAM-ALPHA,2022-07-21,FX-
 fx_list,s25-des-a,2026-09-15,1.0,fx_list:s25-owner-a,FX-PROGRAM-ALPHA,2022-03-15,FX-OFAC-SDN,true
 fx_list,s25-des-b,2026-09-15,1.0,fx_list:s25-owner-b,FX-PROGRAM-ALPHA,2022-03-15,FX-OFAC-SDN,true
 fx_list,s26-des,2026-09-15,1.0,fx_list:s26-listed,FX-PROGRAM-BRAVO,2024-06-05,FX-OFAC-SDN,true
+fx_list,s27-des,2026-09-15,1.0,fx_list:s27-owner,FX-PROGRAM-ALPHA,2023-04-18,FX-OFAC-SDN,true
+fx_list,s28-des,2026-09-15,1.0,fx_list:s28-director,FX-PROGRAM-BRAVO,2024-09-03,FX-OFAC-SDN,true

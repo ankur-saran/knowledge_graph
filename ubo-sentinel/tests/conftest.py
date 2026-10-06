@@ -12,11 +12,14 @@ from ubo_sentinel.pipeline.db import DB_ENV_VAR, connect
 from ubo_sentinel.pipeline.gold import build_gold
 from ubo_sentinel.pipeline.loaders.fixture_loader import ingest_fixtures
 from ubo_sentinel.pipeline.transformer import build_silver
+from ubo_sentinel.rules.pack import DEFAULT_PACK, load_rule_pack, pack_path
 
 # Commands are run from the repository root.
 T0 = Path("fixtures/snapshot_t0")
 T1 = Path("fixtures/snapshot_t1")
 GOLD_PATH = Path("eval/gold_scenarios.yaml")
+# The pack the fixtures and the gold scenarios are written for.
+PACK = load_rule_pack(pack_path(DEFAULT_PACK))
 
 
 @pytest.fixture(autouse=True)

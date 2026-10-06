@@ -71,3 +71,7 @@ fx_list,s25-rel-1,2026-09-15,1.0,fx_list:s25-owner-a,fx_registry:s25-target,OWNS
 fx_list,s25-rel-2,2026-09-15,1.0,fx_list:s25-owner-b,fx_registry:s25-target,OWNS,19.9999,shareholding,false
 fx_registry,s25-rel-3,2026-09-01,1.0,fx_registry:s25-other,fx_registry:s25-target,OWNS,50.0001,shareholding,false
 fx_registry,s26-rel-1,2026-09-01,1.0,fx_registry:s26-owner,fx_registry:s26-target,OWNS,70,shareholding,false
+fx_registry,s27-rel-1,2026-09-01,1.0,fx_registry:s27-parent,fx_registry:s27-target,OWNS,100,shareholding,false
+fx_list,s27-rel-2,2026-09-15,1.0,fx_list:s27-owner,fx_list:s27-dup,OWNS,80,shareholding,false
+fx_registry,s28-rel-1,2026-09-01,1.0,fx_registry:s28-parent,fx_registry:s28-target,OWNS,100,shareholding,false
+fx_list,s28-rel-2,2026-09-15,1.0,fx_list:s28-director,fx_registry:s28-parent,CONTROLS,,directorship,false

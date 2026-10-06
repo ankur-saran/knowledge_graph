@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import get_args
 
 import pytest
+from conftest import PACK
 
 from ubo_sentinel.cli.app import ONTOLOGY_PATH
 from ubo_sentinel.models import (
@@ -37,10 +38,9 @@ GOLD_PATH = Path("eval/gold_scenarios.yaml")
 ER_PATH = Path("eval/er_labelled.csv")
 DATA_FILES = sorted([*T0.glob("*.csv"), *T1.glob("*.csv"), GOLD_PATH, ER_PATH])
 
-# The OFAC pack's match thresholds (BUILD_PLAN 6.1). Read them from
-# `rules/ofac.yaml` once Step 6 has created it.
-REVIEW_BAND_LOW = 0.75
-MATCH_THRESHOLD = 0.92
+# The names are calibrated against the OFAC pack's match thresholds.
+REVIEW_BAND_LOW = PACK.review_band_low
+MATCH_THRESHOLD = PACK.match_threshold
 
 # Reasons that only the agent pipeline can produce, so no fixture can cover them.
 PIPELINE_FAILURE_REASONS = {"GUARDRAIL_FAILED", "PIPELINE_ERROR"}

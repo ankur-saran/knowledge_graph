@@ -98,3 +98,10 @@ fx_registry,s25-other,2026-09-01,1.0,FXS25OTHER0000000000,RA-FX-GB,25-OTHER,Stok
 fx_registry,s26-target,2026-09-01,1.0,FXS26TARGET000000000,RA-FX-GB,26-TARGET,Harrowgate Grain Terminals Ltd,,GB,ACTIVE,LegalEntity
 fx_registry,s26-owner,2026-09-01,1.0,FXS26OWNER0000000000,RA-FX-UA,26-OWNER,Azovzerno Export LLC,,UA,ACTIVE,LegalEntity
 fx_list,s26-listed,2026-09-15,1.0,,,,AZOVZERNO EXPORT L.L.C.,,UA,ACTIVE,LegalEntity
+fx_registry,s27-target,2026-09-01,1.0,FXS27TARGET000000000,RA-FX-GB,27-TARGET,Pendlewick Salt Refiners Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s27-parent,2026-09-01,1.0,FXS27PARENT000000000,RA-FX-GB,27-PARENT,Marazion Brine Estates Ltd,,GB,ACTIVE,LegalEntity
+fx_list,s27-dup,2026-09-15,1.0,,,,Pendlewick Salt Refiners Limited,,GB,ACTIVE,LegalEntity
+fx_list,s27-owner,2026-09-15,1.0,,,,Verkhnekamsk Galit PAO,,RU,ACTIVE,LegalEntity
+fx_registry,s28-target,2026-09-01,1.0,FXS28TARGET000000000,RA-FX-GB,28-TARGET,Quernmore Saddlery Ltd,,GB,ACTIVE,LegalEntity
+fx_registry,s28-parent,2026-09-01,1.0,FXS28PARENT000000000,RA-FX-GB,28-PARENT,Hathersage Bridleworks Ltd,,GB,ACTIVE,LegalEntity
+fx_list,s28-director,2026-09-15,1.0,,,,Anvar Sodiqzoda,,TJ,UNKNOWN,Person

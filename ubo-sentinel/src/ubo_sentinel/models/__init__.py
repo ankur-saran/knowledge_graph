@@ -35,6 +35,7 @@ from ubo_sentinel.models.ontology import OntologyConfig, Role, load_ontology
 from ubo_sentinel.models.provenance import Provenance
 from ubo_sentinel.models.relationship import Basis, Relationship, RelType, relationship_id
 from ubo_sentinel.models.reporting_exception import RepexCategory, ReportingException
+from ubo_sentinel.models.rule_result import NodeDerivation, ReasonFinding, RuleResult
 from ubo_sentinel.models.sanction import MatchType, Sanction, sanction_id
 
 __all__ = [
@@ -55,10 +56,12 @@ __all__ = [
     "GapCode",
     "GoldScenario",
     "MatchType",
+    "NodeDerivation",
     "OntologyConfig",
     "OwnerEdge",
     "Provenance",
     "ReasonCode",
+    "ReasonFinding",
     "Recommendation",
     "RelType",
     "Relationship",
@@ -67,6 +70,7 @@ __all__ = [
     "RepexRow",
     "ReportingException",
     "Role",
+    "RuleResult",
     "Sanction",
     "SanctionMatch",
     "SanctionRow",

@@ -4,7 +4,7 @@ import inspect
 from pathlib import Path
 
 import pytest
-from conftest import T1, build_graph
+from conftest import PACK, T1, build_graph
 from typer.testing import CliRunner
 
 from ubo_sentinel.cli.app import app
@@ -21,10 +21,8 @@ from ubo_sentinel.pipeline.transformer import build_silver
 
 ER_PATH = Path("eval/er_labelled.csv")
 
-# The OFAC pack's depths (BUILD_PLAN 6.1). Read them from `rules/ofac.yaml`
-# once Step 6 has created it.
-MAX_DEPTH = 5
-MAX_DEPTH_DOWN = 1
+MAX_DEPTH = PACK.max_depth
+MAX_DEPTH_DOWN = PACK.max_depth_down
 
 HUB = "lei:FXS00HUB000000000000"
 MID = "lei:FXS00MID000000000000"
@@ -192,7 +190,7 @@ def test_a_subgraph_carries_its_exceptions_gaps_and_links(store, gold):
     assert [(l.node_id, l.linked_node_id, l.match_type) for l in links] == [  # noqa: E741
         ("lei:FXS14OWNER0000000000", "fx_list:s14-listed", "FUZZY_NAME")
     ]
-    assert LINK_FLOOR <= links[0].confidence < 0.92
+    assert LINK_FLOOR <= links[0].confidence < PACK.match_threshold
     assert links[0].linked_name == "Petrakos Aegean Navigators"
     assert not links[0].linked_has_upstream
 
@@ -288,7 +286,7 @@ def test_sanctioned_nodes_say_how_and_whose(store, gold):
         "fx_list:s14-listed",
         "FUZZY_NAME",
     )
-    assert LINK_FLOOR <= match.confidence < 0.92 and match.is_active
+    assert LINK_FLOOR <= match.confidence < PACK.match_threshold and match.is_active
     assert [s.provenance.source_record_id for s in match.sanction_records] == ["s14-des"]
 
     direct = queries.get_sanctioned_nodes(store, subgraph_of(store, by_id["SCEN-03"].target_id))

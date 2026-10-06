@@ -15,7 +15,7 @@
 - **Percentages are `Decimal`**, never `float` (DuckDB `DECIMAL(7,4)`); `canonical_json` writes them as strings quantised to 4 places.
 - **Hashed ids** are `sha256` over a `canonical_json` list, never string concatenation. `decision_id` uses the resolved per-dataset `snapshot_ids`, not the set alias.
 - **Stable bytes.** Snapshot ids hash file bytes. Files under `fixtures/`, `eval/`, `rules/` and `ontology/` are UTF-8 without BOM with LF endings (`.gitattributes`).
-- **Reasons and gaps are closed sets.** `ReasonCode` and `GapCode` in `models/evidence.py`. A truncated traversal is a `DEPTH_LIMIT_REACHED` gap, never a silent `CLEAR`.
+- **Reasons and gaps are closed sets.** `ReasonCode` and `GapCode` in `models/evidence.py`. A truncated traversal is a `DEPTH_LIMIT_REACHED` gap, and a node linked by name to a record with owners of its own is a `POSSIBLE_DUPLICATE` gap: both always decide, so neither is a silent `CLEAR`.
 - **One name scorer.** Entity linking and query-time resolution both use `name_similarity()` in `pipeline/name_match.py`.
 - **Provenance.** Every node, edge and sanction carries one `Provenance(source, source_record_id, snapshot_id, as_of, confidence)` in Bronze, Silver, Gold and the Pydantic models.
 - **Edge direction.** `OWNS` is owner → asset. `CONSOLIDATED_BY` is child → parent. `CONTROLS` is controller → controlled. Gold stores every edge's `upper_id` (owner, parent or controller) and `lower_id`; only `pipeline/gold.py` and code under `graph/` reason about raw direction.
@@ -32,7 +32,9 @@
 - **Runtime output** goes to `var/` (gitignored).
 - **LLM use** is optional, advisory and recorded. Each LLM feature has its own flag, off by default. No LLM output can alter a recommendation, a decision's status or the canonical payload. Replay reads stored LLM text and never calls the model.
 - **No network in tests.** Downloading is separate from ingesting.
-- **Rule thresholds** live in the rule-pack YAML, never in Python.
+- **Rule thresholds** live in the rule-pack YAML, never in Python. Every key of a pack is required. `rule_pack_hash` is over the parsed values and `RULES_VERSION`; raise `RULES_VERSION` in `rules/pack.py` when a change to the engine alters what a pack concludes.
+- **The rule engine is pure.** `RuleEngine.evaluate()` reads one `SubGraph` and its sanction matches: no database, no clock. It uses only the nodes above the target, classifies a match by `designated_entity_id` (not `match_type`), reads all edges of one pair as one hop (never added together), and counts exposure from the last blocked entity on a path. Aggregates and exposure are exact fractions; a figure is rounded only when it is reported, never before it is compared.
+- **Gold scenarios are exact.** The evaluator requires reasons, both sets and the gaps to be equal; expected paths are a minimum. A new rule that adds a gap or a reason changes existing scenarios.
 
 ## Project facts
 
@@ -62,7 +64,7 @@ Read by the skills in `.claude/skills/`. A value of "not yet created" is filled 
 | Entity resolution | `src/ubo_sentinel/graph/entity_resolution.py` (`resolve()`, `evaluate_labelled()`) |
 | Role views | `src/ubo_sentinel/graph/views.py` (`GraphView`; tests in `tests/unit/test_views.py`) |
 | Graph models | `src/ubo_sentinel/models/graph.py` (`SubGraph`, `EntityMatch`, `SanctionMatch`, `OwnerEdge`) |
-| Shared test fixtures | `tests/conftest.py` (`database`, `con`, `ontology`, `gold`, `graph_t0`, `build_graph()`) |
+| Shared test fixtures | `tests/conftest.py` (`database`, `con`, `ontology`, `gold`, `graph_t0`, `build_graph()`, `PACK`: the shipped rule pack); hand-built subgraphs in `tests/graphs.py` |
 | Normalize command | `uv run ubo normalize [--snapshot SET] [--rebuild]` (`src/ubo_sentinel/cli/normalize_cmd.py`) |
 | Ingest command | `uv run ubo ingest --source <name> [--path DIR] [--base SET]` (`src/ubo_sentinel/cli/ingest_cmd.py`) |
 | Fixture directory | `fixtures/snapshot_t0/` (changed sanctions list: `fixtures/snapshot_t1/`); format in `fixtures/README.md` |
@@ -70,8 +72,9 @@ Read by the skills in `.claude/skills/`. A value of "not yet created" is filled 
 | Fixture-integrity test | `uv run pytest tests/unit/test_fixtures.py -v` |
 | Name-matching module | `src/ubo_sentinel/pipeline/name_match.py` |
 | Rule-pack directory | `rules/` |
-| Reference rule pack | `rules/ofac.yaml` — not yet created (Step 6) |
+| Reference rule pack | `rules/ofac.yaml` (schema and loader: `RulePack`, `load_rule_pack()`, `pack_path()` in `src/ubo_sentinel/rules/pack.py`) |
+| Rule engine | `src/ubo_sentinel/rules/engine.py` (`RuleEngine.evaluate()`); result model `src/ubo_sentinel/models/rule_result.py`; tests in `tests/unit/test_rules.py`, `tests/unit/test_rules_hypothesis.py` |
 | Gold-scenario file | `eval/gold_scenarios.yaml` (schema and loader: `models/gold_scenario.py`) |
 | Labelled ER set | `eval/er_labelled.csv` |
-| Evaluator command | `uv run ubo eval --suite all` — not yet created (Step 6) |
+| Evaluator command | `uv run ubo eval --suite all` (`src/ubo_sentinel/cli/eval_cmd.py`; comparison in `src/ubo_sentinel/rules/evaluator.py`). Needs a built graph: run ingest, normalize and build-graph first |
 | Runtime output directory | `var/` |

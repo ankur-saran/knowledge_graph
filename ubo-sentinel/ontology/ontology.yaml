@@ -51,12 +51,12 @@ roles:
     read_only: false
     decision_rights: [APPROVED, OVERRIDDEN, ESCALATED]
   auditor:
-    commands: []
+    commands: [eval]
     masked_fields: {}
     read_only: true
     decision_rights: []
   engineer:
-    commands: [ingest, normalize, build-graph]
+    commands: [ingest, normalize, build-graph, eval]
     masked_fields: {}
     read_only: false
     decision_rights: []

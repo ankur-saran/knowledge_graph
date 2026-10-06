@@ -536,3 +536,42 @@
     band: blocked
   rationale: The 70 % owner shares no identifier with the designated record, but the names match at
     or above the match threshold, so the owner is in the seed set.
+
+- id: SCEN-27
+  query: Pendlewick Salt Refiners Ltd
+  target_id: lei:FXS27TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - DECISION_RELEVANT_GAP
+  expected_gaps:
+  - code: POSSIBLE_DUPLICATE
+    node: lei:FXS27TARGET000000000
+    decision_relevant: true
+  declared_name_pairs:
+  - a: fx_list:s27-dup
+    b: lei:FXS27TARGET000000000
+    band: blocked
+  rationale: The registry record has a clean parent. The list holds a record of the same company,
+    linked to it by name only, and that record is 80 % owned by a designated party. Only designations
+    cross a link, so the screened graph does not show that owner; the link to a record with owners
+    of its own is a decision-relevant gap whatever gap_scope says.
+
+- id: SCEN-28
+  query: Quernmore Saddlery Ltd
+  target_id: lei:FXS28TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - CONTROL_LINK
+  expected_blocked:
+  - fx_list:s28-director
+  expected_paths:
+  - nodes:
+    - fx_list:s28-director
+    - lei:FXS28PARENT000000000
+    - lei:FXS28TARGET000000000
+    via:
+    - CONTROLS
+    - OWNS
+  rationale: A designated person is a director of the company that owns all of the target. Control
+    is not ownership, so there is no exposure, but with control_link_scope 'upstream' a control link
+    from a blocked party anywhere above the target is a reason to review.
