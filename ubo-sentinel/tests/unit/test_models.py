@@ -122,6 +122,7 @@ def make_decision(**overrides):
             fields["max_depth"],
             fields["graph_digest"],
             fields["pipeline_version"],
+            fields.get("query_identifiers"),
         )
     return Decision(**fields)
 
@@ -173,6 +174,7 @@ def make_audit_event(**overrides):
             reviewed_by="mlro",
             review_reason="Ownership confirmed by filing",
             reviewed_at=CREATED_AT,
+            final_outcome="CLEAR",
         ),
         make_audit_event(),
     ],
@@ -386,15 +388,28 @@ def test_recommended_decision_has_no_reviewer_fields():
         make_decision(reviewed_by="mlro", reviewed_at=CREATED_AT)
 
 
-def test_reviewed_decision_needs_a_reviewer():
+def test_reviewed_decision_needs_a_reviewer_and_an_outcome():
     with pytest.raises(ValidationError):
         make_decision(status="APPROVED")
+    with pytest.raises(ValidationError, match="final_outcome"):
+        make_decision(status="APPROVED", reviewed_by="mlro", reviewed_at=CREATED_AT)
+    # REVIEW is what the rules say when they cannot conclude; a review ends in an outcome.
+    with pytest.raises(ValidationError):
+        make_decision(
+            status="APPROVED", reviewed_by="mlro", reviewed_at=CREATED_AT, final_outcome="REVIEW"
+        )
+    with pytest.raises(ValidationError):
+        make_decision(final_outcome="CLEAR")
 
 
 def test_override_needs_a_reason():
     with pytest.raises(ValidationError, match="review_reason"):
         make_decision(
-            status="OVERRIDDEN", reviewed_by="mlro", reviewed_at=CREATED_AT, review_reason="  "
+            status="OVERRIDDEN",
+            reviewed_by="mlro",
+            reviewed_at=CREATED_AT,
+            review_reason="  ",
+            final_outcome="CLEAR",
         )
 
 
@@ -416,7 +431,9 @@ def test_canonical_payload_excludes_non_deterministic_fields():
         "reviewed_by",
         "review_reason",
         "reviewed_at",
+        "final_outcome",
         "query",
+        "query_identifiers",
     }
     assert excluded.isdisjoint(payload)
     assert payload["decision_id"] == make_decision().decision_id
@@ -429,6 +446,7 @@ def test_canonical_payload_is_unchanged_by_time_review_and_llm_text():
         status="APPROVED",
         reviewed_by="mlro",
         reviewed_at=CREATED_AT + timedelta(hours=1),
+        final_outcome="ESCALATE",
         created_at=CREATED_AT + timedelta(days=1),
         llm_annotations={"memo_prose": "text"},
     )
@@ -464,3 +482,18 @@ def test_audit_event_type_and_role_are_closed_sets():
         make_audit_event(role="intern")
     with pytest.raises(ValidationError):
         make_audit_event(seq=-1)
+
+
+def test_a_screen_that_found_nothing_is_named_by_all_it_was_asked_for():
+    """Two unknown LEIs screened without a name are two decisions, not one."""
+    not_found = {"target_id": None, "recommendation": "REVIEW", "blocked_set": [], "paths": []}
+    one = make_decision(query="", query_identifiers={"lei": "A" * 20}, **not_found)
+    two = make_decision(query="", query_identifiers={"lei": "B" * 20}, **not_found)
+    assert one.decision_id != two.decision_id
+    # A name alone names the decision as it did before identifiers counted.
+    by_name = make_decision(query="Zzyzx  Ventures", **not_found)
+    assert by_name.decision_id == make_decision(query="zzyzx ventures", **not_found).decision_id
+    # With a target, what was typed does not matter.
+    assert make_decision(query_identifiers={"lei": "A" * 20}).decision_id == (
+        make_decision().decision_id
+    )

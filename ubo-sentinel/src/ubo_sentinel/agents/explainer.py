@@ -14,7 +14,7 @@ import jinja2
 from ubo_sentinel.agents.base import BaseAgent, PipelineState, ScreenContext
 from ubo_sentinel.agents.traversal import screen_depth
 from ubo_sentinel.graph import queries
-from ubo_sentinel.models.decision import normalise_query
+from ubo_sentinel.models.decision import not_found_subject
 from ubo_sentinel.models.entity import Entity
 from ubo_sentinel.models.evidence import DataGap, GapCode
 from ubo_sentinel.models.graph import SanctionMatch, SubGraph, upper_lower
@@ -136,6 +136,7 @@ def build_memo(
     max_depth: int,
     datasets: list[DatasetRef],
     query: str = "",
+    identifiers: dict[str, str] | None = None,
     subgraph: SubGraph | None = None,
     matches: list[SanctionMatch] | None = None,
     rule_result: RuleResult | None = None,
@@ -148,7 +149,7 @@ def build_memo(
     result, the graph had more evidence paths than the pack allows.
     """
     if subgraph is None:
-        return _memo_not_found(pack, max_depth, datasets, query)
+        return _memo_not_found(pack, max_depth, datasets, query, identifiers)
 
     evidence = _Evidence(subgraph, matches or [], datasets)
     entities = [_entity(node, subgraph.depth_up[node.id]) for node in evidence.nodes.values()]
@@ -244,7 +245,13 @@ def build_memo(
     )
 
 
-def _memo_not_found(pack: RulePack, max_depth: int, datasets: list[DatasetRef], query: str) -> Memo:
+def _memo_not_found(
+    pack: RulePack,
+    max_depth: int,
+    datasets: list[DatasetRef],
+    query: str,
+    identifiers: dict[str, str] | None,
+) -> Memo:
     claim = Claim(
         code="REASON",
         subject_id=None,
@@ -253,7 +260,7 @@ def _memo_not_found(pack: RulePack, max_depth: int, datasets: list[DatasetRef], 
     )
     return Memo(
         target_id=None,
-        query_norm=normalise_query(query),
+        query_norm=not_found_subject(query, identifiers),
         recommendation="REVIEW",
         reasons=["ENTITY_NOT_FOUND"],
         claims=[claim],
@@ -507,6 +514,7 @@ class ExplainerAgent(BaseAgent):
             max_depth=screen_depth(state, ctx),
             datasets=datasets_of(ctx),
             query=state.request.query,
+            identifiers=state.request.identifiers(),
             subgraph=subgraph,
             matches=matches,
             rule_result=state.rule_result,

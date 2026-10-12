@@ -21,6 +21,33 @@ def id_list(placeholder: str = "?") -> str:
     return f"(SELECT unnest(CAST({placeholder} AS VARCHAR[])))"
 
 
+def evidence_info(con: duckdb.DuckDBPyConnection, snapshot_set_id: str) -> dict[str, Any]:
+    """The registries' digests of a set: each snapshot's rows, and Silver.
+
+    Takes a connection and not a store: a replay reads them before it knows
+    whether the set still has a graph.
+    """
+    build = silver.load_build(con, snapshot_set_id)
+    rows = con.execute(
+        "SELECT s.dataset, s.snapshot_id, b.row_count, b.rows_digest, b.content_sha256"
+        " FROM snapshot_sets s JOIN bronze_snapshots b USING (snapshot_id)"
+        " WHERE s.snapshot_set_id = ? ORDER BY s.dataset",
+        [snapshot_set_id],
+    ).fetchall()
+    return {
+        "silver_digest": build["silver_digest"] if build else None,
+        "snapshots": {
+            dataset: {
+                "snapshot_id": snapshot_id,
+                "row_count": row_count,
+                "rows_digest": rows_digest,
+                "content_sha256": content_sha256,
+            }
+            for dataset, snapshot_id, row_count, rows_digest, content_sha256 in rows
+        },
+    }
+
+
 class GraphNotBuilt(LookupError):
     """The snapshot set has no Gold graph, or Silver changed after it was built."""
 
@@ -114,6 +141,14 @@ class GraphStore:
             " WHERE s.snapshot_set_id = ? ORDER BY s.dataset",
             [self.set_id],
         )
+
+    def evidence_info(self) -> dict[str, Any]:
+        """Digests of what this set's graph was built from, as the registries hold them.
+
+        Stored with a decision's audit event, so that a replay can tell
+        whether the rows behind the decision are the rows it finds.
+        """
+        return evidence_info(self.con, self.set_id)
 
     def build_info(self) -> dict[str, Any]:
         """What was built for this set, and from what."""

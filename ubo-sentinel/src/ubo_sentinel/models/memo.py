@@ -10,7 +10,12 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ubo_sentinel.models.decision import DecisionStatus, Recommendation, UtcDatetime
+from ubo_sentinel.models.decision import (
+    DecisionStatus,
+    FinalOutcome,
+    Recommendation,
+    UtcDatetime,
+)
 from ubo_sentinel.models.entity import EntityStatus, EntityType
 from ubo_sentinel.models.evidence import (
     DataGap,
@@ -374,6 +379,7 @@ class DecisionView(_Model):
 
     decision_id: NonEmptyStr
     query: str
+    query_identifiers: dict[str, str] = {}
     target_id: str | None
     recommendation: Recommendation
     status: DecisionStatus
@@ -398,6 +404,7 @@ class DecisionView(_Model):
     reviewed_by: str | None = None
     review_reason: str | None = None
     reviewed_at: UtcDatetime | None = None
+    final_outcome: FinalOutcome | None = None
     # SHA-256 of the decision's canonical payload: the same for every role.
     payload_sha256: NonEmptyStr
     viewer_role: NonEmptyStr

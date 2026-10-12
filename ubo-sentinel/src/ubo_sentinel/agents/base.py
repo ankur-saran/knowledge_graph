@@ -67,6 +67,14 @@ class ScreenRequest(_Model):
     role: Role = "analyst"
     actor: str = "analyst"
 
+    def identifiers(self) -> dict[str, str]:
+        """The identifiers given with the query. They name a screen that finds nothing."""
+        given = {
+            "lei": (self.lei or "").strip().upper(),
+            "registration_number": (self.registration_number or "").strip(),
+        }
+        return {name: value for name, value in given.items() if value}
+
 
 class Resolution(_Model):
     """How the query became a target: what was found, what was chosen, and by whom."""

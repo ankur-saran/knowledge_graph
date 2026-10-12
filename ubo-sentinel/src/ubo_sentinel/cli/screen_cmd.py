@@ -9,19 +9,16 @@ from pydantic import ValidationError
 
 from ubo_sentinel.agents.audit import DeterminismViolation
 from ubo_sentinel.agents.base import Resolution, ScreenRequest, ScreenUsageError
-from ubo_sentinel.agents.explainer import render_memo
-from ubo_sentinel.agents.guardrail import check_render
 from ubo_sentinel.agents.supervisor import (
     NeedsDisambiguation,
-    Recommended,
     ScreenFailed,
     Supervisor,
 )
 from ubo_sentinel.audit.log import AuditChainError, AuditLog
 from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
+from ubo_sentinel.cli.show import RenderWithheld, audit_head, decision_text, utf8_stdout
 from ubo_sentinel.graph.store import GraphNotBuilt
-from ubo_sentinel.graph.views import mask_candidates, mask_decision
-from ubo_sentinel.models.memo import DecisionView
+from ubo_sentinel.graph.views import mask_candidates
 from ubo_sentinel.models.ontology import OntologyConfig, load_ontology
 from ubo_sentinel.pipeline import bronze
 from ubo_sentinel.pipeline.bronze import UnknownSnapshotSet
@@ -40,20 +37,6 @@ def _candidate_lines(resolution: Resolution, role: str, ontology: OntologyConfig
             f"  {match.status}  {match.match_type} {match.confidence:.2f}{lei}  ({match.entity_id})"
         )
     return lines
-
-
-def _summary(view: DecisionView, outcome: Recommended) -> str:
-    recorded = "recorded" if outcome.is_new else "already on record, unchanged"
-    lines = [
-        f"Decision {view.decision_id}: {view.recommendation}  (status {view.status}; {recorded})",
-        f"Reasons: {', '.join(view.reasons) or 'none'}",
-        f"Resolved by: {outcome.resolution.method}",
-        f"Snapshot set: {view.snapshot_set_id}   Rule pack: {view.rule_pack_id}"
-        f"   Depth: {view.max_depth}",
-        f"Payload SHA-256: {view.payload_sha256}",
-    ]
-    lines += [f"GUARDRAIL WARNING: {warning}" for warning in view.guardrail_warnings]
-    return "\n".join(lines)
 
 
 @app.command()
@@ -87,9 +70,7 @@ def screen(
 ) -> None:
     """Screen an entity: resolve it, walk its owners, apply the rule pack, write the memo."""
     require_role(role, "screen")
-    if hasattr(sys.stdout, "reconfigure"):
-        # A non-Latin name must not fail a piped or redirected run on Windows.
-        sys.stdout.reconfigure(encoding="utf-8")
+    utf8_stdout()
     if not query and not (lei or registration_number or target_id):
         typer.echo("Give a name or an LEI to screen, or --target-id.", err=True)
         raise typer.Exit(code=2)
@@ -109,7 +90,8 @@ def screen(
             role=role,
             actor=actor or role,
         )
-        supervisor = Supervisor(ontology, AuditLog())
+        log = AuditLog()
+        supervisor = Supervisor(ontology, log)
         outcome = supervisor.run(request)
         if isinstance(outcome, NeedsDisambiguation):
             typer.echo(f"'{query}' has {len(outcome.candidates)} candidates:")
@@ -148,17 +130,20 @@ def screen(
         typer.echo("Run again with --pick N.", err=True)
         raise typer.Exit(code=EXIT_NEEDS_PICK)
 
-    view = mask_decision(outcome.decision, role, ontology)
-    if as_json:
-        text = view.model_dump_json(indent=2)
-    else:
-        text = f"{_summary(view, outcome)}\n\n{render_memo(view.memo)}"
-    if check_render(text, outcome.decision, role, ontology):
-        # Fail closed: nothing of the memo is shown when the render guardrail trips.
-        typer.echo(
-            f"Decision {view.decision_id} is recorded, but its memo is not shown: the output"
-            f" held a value that is masked for role '{role}'.",
-            err=True,
+    try:
+        text = decision_text(
+            outcome.decision,
+            role,
+            ontology,
+            as_json=as_json,
+            recorded="recorded" if outcome.is_new else "already on record, unchanged",
+            resolved_by=outcome.resolution.method,
         )
-        raise typer.Exit(code=1)
+    except RenderWithheld as exc:
+        # Fail closed: nothing of the memo is shown when the render guardrail trips.
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(text)
+    if not as_json:
+        # A receipt: `ubo audit verify --expect-head` later shows a log cut short.
+        typer.echo(audit_head(log))

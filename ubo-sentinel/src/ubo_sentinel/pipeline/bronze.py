@@ -199,6 +199,20 @@ def resolve_set(con: duckdb.DuckDBPyConnection, id_or_alias: str) -> SnapshotSet
     return found
 
 
+def newest_set_of_family(con: duckdb.DuckDBPyConnection, snapshot_set_id: str) -> str | None:
+    """The newest set of the family a set belongs to; None for an unknown set.
+
+    A decision made on any other set of the family was made on older data.
+    """
+    row = con.execute(
+        "SELECT snapshot_set_id FROM snapshot_set_info WHERE family ="
+        " (SELECT family FROM snapshot_set_info WHERE snapshot_set_id = ?)"
+        " ORDER BY seq DESC LIMIT 1",
+        [snapshot_set_id],
+    ).fetchone()
+    return row[0] if row else None
+
+
 class SnapshotManager:
     """Registers snapshots and snapshot sets.
 

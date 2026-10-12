@@ -173,7 +173,7 @@ def test_a_decision_is_rebuilt_from_its_events(log, append):
 
     reviewed_at = AT + timedelta(hours=2)
     append(decision, "OVERRIDDEN", "reviewer", note="Ownership sold in August.", **{
-        "created_at": reviewed_at, "payload": {}
+        "created_at": reviewed_at, "payload": {"outcome": "CLEAR"}
     })  # fmt: skip
     reviewed = log.decision(decision.decision_id)
     assert (
@@ -188,6 +188,7 @@ def test_a_decision_is_rebuilt_from_its_events(log, append):
         reviewed_at,
     )
     # A review changes who decided, not what was recommended.
+    assert reviewed.final_outcome == "CLEAR"
     assert reviewed.canonical_payload() == decision.canonical_payload()
     assert Decision.model_validate_json(view.read_text(encoding="utf-8")) == reviewed
     assert log.decisions() == [reviewed]
@@ -199,3 +200,79 @@ def test_a_failed_screen_is_an_event_and_not_a_decision(log, append):
     assert log.verify().count == 1
     assert log.decision(decision.decision_id) is None and log.decisions() == []
     assert not log.decisions_dir.exists()
+
+
+REVIEW = {"created_at": AT, "payload": {"outcome": "ESCALATE"}}
+
+
+def test_an_event_that_cannot_follow_the_log_is_not_written(log, append):
+    decision = make_decision()
+    # A review of nothing, and a second recommendation.
+    with pytest.raises(ValueError, match="not recommended"):
+        append(decision, "APPROVED", "reviewer", **REVIEW)
+    append(decision)
+    with pytest.raises(ValueError, match="second recommendation"):
+        append(decision)
+    # A review says what it ends in, and an override says why.
+    with pytest.raises(ValueError, match="without an outcome"):
+        append(decision, "APPROVED", "reviewer", payload={})
+    with pytest.raises(ValueError, match="without a reason"):
+        append(decision, "OVERRIDDEN", "reviewer", note="  ", **REVIEW)
+    # Only a role with the right reviews, whatever else it may write.
+    with pytest.raises(PermissionError, match="may not mark"):
+        append(decision, "APPROVED", "analyst", **REVIEW)
+    assert log.verify().count == 1 and log.decision(decision.decision_id) == decision
+
+    append(decision, "APPROVED", "reviewer", **REVIEW)
+    with pytest.raises(ValueError, match="already APPROVED"):
+        append(decision, "ESCALATED", "reviewer", **REVIEW)
+    assert log.verify().count == 2
+
+
+def test_a_guard_runs_on_the_log_as_it_stands_and_can_refuse(log, append):
+    append()
+    seen = []
+
+    def refuse(records):
+        seen.append(len(records))
+        raise ValueError("no")
+
+    with pytest.raises(ValueError, match="no"):
+        append(make_decision(target_id="asset-2"), guard=refuse)
+    assert seen == [1] and log.verify().count == 1
+    # The lock is released: the next append goes through.
+    append(make_decision(target_id="asset-2"), guard=lambda records: None)
+    assert log.verify().count == 2
+
+
+def rewrite(log, change):
+    """Change the events and hash the chain again, as someone who can write the file can."""
+    records, head = [json.loads(line) for line in lines(log)], GENESIS_HASH
+    change(records)
+    for seq, record in enumerate(records):
+        record.update(seq=seq, prev_hash=head)
+        record["hash"] = head = event_hash(record)
+    log.path.write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+
+
+def test_verify_reads_what_the_events_say_and_not_only_the_chain(log, append, ontology):
+    decision = make_decision()
+    append(decision)
+    rewrite(log, lambda records: records[0]["payload"].update(payload_sha256="0"))
+    report = log.verify()
+    assert report.broken_line == 1
+    assert report.problem == "payload_sha256 is not the hash of the decision"
+
+    log.path.unlink()
+    append(decision)
+    append(decision, "APPROVED", "reviewer", **REVIEW)
+    assert log.verify(ontology).intact
+
+    # A chain that is consistent, in which an analyst made the review.
+    rewrite(log, lambda records: records[1].update(role="analyst"))
+    assert log.verify().intact
+    report = log.verify(ontology)
+    assert (report.broken_line, report.count) == (2, 1) and "no such right" in report.problem
+    # A review whose recommendation was taken out.
+    rewrite(log, lambda records: records.pop(0))
+    assert log.verify().problem == "a review of a decision that was not recommended"

@@ -17,16 +17,35 @@ from ubo_sentinel.models.provenance import NonEmptyStr
 
 Recommendation = Literal["CLEAR", "REVIEW", "ESCALATE"]
 DecisionStatus = Literal["RECOMMENDED", "APPROVED", "OVERRIDDEN", "ESCALATED"]
+# What a review ends in. REVIEW is a recommendation, never an outcome.
+FinalOutcome = Literal["CLEAR", "ESCALATE"]
 
 UtcDatetime = Annotated[AwareDatetime, AfterValidator(lambda value: value.astimezone(UTC))]
 
-REVIEWER_FIELDS = frozenset({"reviewed_by", "review_reason", "reviewed_at"})
-# `query` is what the caller typed: two spellings of one name reach one decision.
-NON_CANONICAL_FIELDS = REVIEWER_FIELDS | {"created_at", "status", "llm_annotations", "query"}
+REVIEWER_FIELDS = frozenset({"reviewed_by", "review_reason", "reviewed_at", "final_outcome"})
+# `query` and `query_identifiers` are what the caller typed: two spellings of
+# one name reach one decision.
+NON_CANONICAL_FIELDS = REVIEWER_FIELDS | {
+    "created_at",
+    "status",
+    "llm_annotations",
+    "query",
+    "query_identifiers",
+}
 
 
 def normalise_query(query: str) -> str:
     return " ".join(query.split()).casefold()
+
+
+def not_found_subject(query: str, identifiers: dict[str, str] | None = None) -> str:
+    """What a screen that found nothing was asked for: the query and any identifier given.
+
+    Without the identifiers, two unknown LEIs screened with no name would be
+    one subject, and so one decision.
+    """
+    pairs = [f"{name}={value}" for name, value in sorted((identifiers or {}).items())]
+    return normalise_query(" ".join([query, *pairs]))
 
 
 def compute_decision_id(
@@ -38,15 +57,16 @@ def compute_decision_id(
     max_depth: int,
     graph_digest: str,
     pipeline_version: int,
+    query_identifiers: dict[str, str] | None = None,
 ) -> str:
     """Deterministic id over the resolved snapshot ids, never the set alias.
 
-    When no target was resolved, the normalised query takes its place. The
+    When no target was resolved, what was asked for takes its place. The
     graph digest and the pipeline version are part of it, so a change to the
     transform or to the agents gives a new id even when the package version
     has not moved.
     """
-    subject = target_id if target_id is not None else normalise_query(query)
+    subject = target_id if target_id is not None else not_found_subject(query, query_identifiers)
     return short_id(
         [
             subject,
@@ -65,6 +85,8 @@ class Decision(BaseModel):
 
     decision_id: NonEmptyStr
     query: str
+    # The identifiers given with the query (`lei`, `registration_number`), as typed.
+    query_identifiers: dict[str, str] = {}
     target_id: NonEmptyStr | None
     recommendation: Recommendation
     status: DecisionStatus
@@ -94,6 +116,8 @@ class Decision(BaseModel):
     reviewed_by: str | None = None
     review_reason: str | None = None
     reviewed_at: UtcDatetime | None = None
+    # What the review ended in. A reviewed decision always has one.
+    final_outcome: FinalOutcome | None = None
 
     @field_validator("reasons", "blocked_set", "possibly_blocked_set", "guardrail_warnings")
     @classmethod
@@ -121,6 +145,7 @@ class Decision(BaseModel):
             self.max_depth,
             self.graph_digest,
             self.pipeline_version,
+            self.query_identifiers,
         )
         if self.decision_id != expected:
             raise ValueError(f"decision_id does not match its inputs (expected {expected})")
@@ -130,11 +155,13 @@ class Decision(BaseModel):
             raise ValueError(f"blocked and possibly-blocked sets overlap: {sorted(overlap)}")
 
         if self.status == "RECOMMENDED":
-            if self.reviewed_by or self.review_reason or self.reviewed_at:
+            if self.reviewed_by or self.review_reason or self.reviewed_at or self.final_outcome:
                 raise ValueError("a RECOMMENDED decision has no reviewer fields")
         else:
             if not self.reviewed_by or self.reviewed_at is None:
                 raise ValueError(f"a {self.status} decision needs reviewed_by and reviewed_at")
+            if self.final_outcome is None:
+                raise ValueError(f"a {self.status} decision needs a final_outcome")
             if self.status == "OVERRIDDEN" and not (self.review_reason or "").strip():
                 raise ValueError("an OVERRIDDEN decision needs a review_reason")
         return self

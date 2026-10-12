@@ -46,17 +46,17 @@ roles:
     read_only: false
     decision_rights: []
   reviewer:
-    commands: [screen]
+    commands: [screen, review, audit-verify, audit-replay]
     masked_fields: {}
     read_only: false
     decision_rights: [APPROVED, OVERRIDDEN, ESCALATED]
   auditor:
-    commands: [eval]
+    commands: [eval, audit-verify, audit-replay]
     masked_fields: {}
     read_only: true
     decision_rights: []
   engineer:
-    commands: [ingest, normalize, build-graph, eval]
+    commands: [ingest, normalize, build-graph, eval, audit-verify]
     masked_fields: {}
     read_only: false
     decision_rights: []

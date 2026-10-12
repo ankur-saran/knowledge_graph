@@ -36,6 +36,7 @@ def decision_id_of(state: PipelineState, ctx: ScreenContext) -> str:
         screen_depth(state, ctx),
         ctx.store.gold_digest,
         PIPELINE_VERSION,
+        state.request.identifiers(),
     )
 
 
@@ -49,6 +50,7 @@ def assemble(state: PipelineState, ctx: ScreenContext) -> Decision:
     return Decision(
         decision_id=decision_id_of(state, ctx),
         query=state.request.query,
+        query_identifiers=state.request.identifiers(),
         target_id=state.target_id,
         recommendation=recommendation,
         status="RECOMMENDED",
@@ -109,6 +111,9 @@ class AuditAgent(BaseAgent):
             "rule_pack": ctx.pack.model_dump(mode="json"),
             "request": state.request.model_dump(mode="json"),
             "resolution": state.resolution.model_dump(mode="json"),
+            # What the screen read, as digests: replay compares the database with
+            # these, which the chain protects, and not with the database's own registry.
+            "evidence": ctx.store.evidence_info(),
             "trace": ctx.trace,
         }
         ctx.audit.append(

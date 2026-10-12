@@ -13,17 +13,19 @@ import hashlib
 import json
 import os
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, get_args
 
+from pydantic import ValidationError
+
 from ubo_sentinel.models.audit_event import AuditEvent, EventType
 from ubo_sentinel.models.canonical import canonical_json, sha256_hex
-from ubo_sentinel.models.decision import Decision, DecisionStatus
-from ubo_sentinel.models.ontology import OntologyConfig, require_write
+from ubo_sentinel.models.decision import Decision, DecisionStatus, FinalOutcome
+from ubo_sentinel.models.ontology import OntologyConfig, require_decision_right, require_write
 
 # Commands are run from the repository root.
 DEFAULT_VAR_DIR = Path("var")
@@ -33,6 +35,9 @@ VAR_ENV_VAR = "UBO_VAR"
 GENESIS_HASH = hashlib.sha256(b"genesis").hexdigest()
 
 REVIEW_EVENTS = frozenset(get_args(DecisionStatus)) - {"RECOMMENDED"}
+
+# Called inside the lock with the log as it stands; raises to refuse the append.
+Guard = Callable[[list[dict[str, Any]]], None]
 
 # How long an append waits for another writer, and when a lock is taken to be abandoned.
 _LOCK_WAIT_SECONDS = 10.0
@@ -68,6 +73,49 @@ class ChainReport:
         return self.broken_line is None
 
 
+class _Ledger:
+    """The status of each decision as the events read so far leave it.
+
+    A chain shows that no event was changed. This shows that the events make
+    sense together: one recommendation per decision, carrying the decision it
+    names, and at most one review after it.
+    """
+
+    def __init__(self) -> None:
+        self.status: dict[str, str] = {}
+
+    def problem(self, record: dict[str, Any]) -> str | None:
+        """Why the event cannot follow the ones before it, or None after taking it in."""
+        decision_id, event_type = record["decision_id"], record["event_type"]
+        payload = record["payload"]
+        status = self.status.get(decision_id)
+        if event_type == "RECOMMENDED":
+            if status is not None:
+                return "a second recommendation for one decision"
+            try:
+                decision = Decision.model_validate(payload.get("decision"))
+            except ValidationError:
+                return "the recommendation does not hold a valid decision"
+            if decision.decision_id != decision_id or decision.status != "RECOMMENDED":
+                return "the recommendation holds another decision"
+            recorded = payload.get("payload_sha256")
+            if recorded is not None and recorded != sha256_hex(decision.canonical_payload()):
+                return "payload_sha256 is not the hash of the decision"
+        elif event_type in REVIEW_EVENTS:
+            if status is None:
+                return "a review of a decision that was not recommended"
+            if status != "RECOMMENDED":
+                return f"a review of a decision that is already {status}"
+            if payload.get("outcome") not in get_args(FinalOutcome):
+                return "a review without an outcome"
+            if event_type == "OVERRIDDEN" and not (record["note"] or "").strip():
+                return "an override without a reason"
+        else:
+            return None
+        self.status[decision_id] = event_type
+        return None
+
+
 class AuditLog:
     def __init__(self, root: Path | None = None) -> None:
         root = var_dir() if root is None else root
@@ -78,19 +126,36 @@ class AuditLog:
 
     def records(self) -> list[dict[str, Any]]:
         """Every event in its JSON form, in order. Raises `AuditChainError` on a broken log."""
-        records, report = self._read()
+        return self._checked()[0]
+
+    def verify(self, ontology: OntologyConfig | None = None) -> ChainReport:
+        """Check the chain and what the events say. With an ontology, also who reviewed."""
+        records, report, _ = self._read()
+        if not report.intact or ontology is None:
+            return report
+        head = GENESIS_HASH
+        for number, record in enumerate(records, start=1):
+            if record["event_type"] in REVIEW_EVENTS:
+                try:
+                    require_decision_right(ontology, record["role"], record["event_type"])
+                except PermissionError:
+                    problem = f"a review by role '{record['role']}', which has no such right"
+                    return ChainReport(number - 1, head, number, problem)
+            head = record["hash"]
+        return report
+
+    def _checked(self) -> tuple[list[dict[str, Any]], _Ledger]:
+        records, report, ledger = self._read()
         if not report.intact:
             raise AuditChainError(f"{self.path}, line {report.broken_line}: {report.problem}")
-        return records
+        return records, ledger
 
-    def verify(self) -> ChainReport:
-        return self._read()[1]
-
-    def _read(self) -> tuple[list[dict[str, Any]], ChainReport]:
+    def _read(self) -> tuple[list[dict[str, Any]], ChainReport, _Ledger]:
         records: list[dict[str, Any]] = []
+        ledger = _Ledger()
         head = GENESIS_HASH
         if not self.path.exists():
-            return records, ChainReport(0, head)
+            return records, ChainReport(0, head), ledger
         with self.path.open(encoding="utf-8") as f:
             for number, line in enumerate(f, start=1):
                 problem = None
@@ -106,11 +171,13 @@ class AuditLog:
                         problem = "prev_hash is not the hash of the event before it"
                     elif record["hash"] != event_hash(record):
                         problem = "hash does not match the event"
+                    else:
+                        problem = ledger.problem(record)
                 if problem:
-                    return records, ChainReport(len(records), head, number, problem)
+                    return records, ChainReport(len(records), head, number, problem), ledger
                 records.append(record)
                 head = record["hash"]
-        return records, ChainReport(len(records), head)
+        return records, ChainReport(len(records), head), ledger
 
     def events_of(self, decision_id: str) -> list[dict[str, Any]]:
         return [record for record in self.records() if record["decision_id"] == decision_id]
@@ -140,14 +207,21 @@ class AuditLog:
         created_at: datetime,
         payload: dict[str, Any],
         note: str | None = None,
+        guard: Guard | None = None,
     ) -> AuditEvent:
         """Add one event to the end of the chain.
 
-        Raises `PermissionError` for a read-only role, `AuditChainError` when
-        the log as it stands does not verify, and `ValueError` for a
-        recommendation that does not carry its decision.
+        `guard` is called inside the lock with the events on record, so what it
+        checks still holds when the event is written.
+
+        Raises `PermissionError` for a role that may not write or may not
+        review, `AuditChainError` when the log as it stands does not verify,
+        and `ValueError` for an event that cannot follow the ones on record: a
+        recommendation that does not carry its decision, a second review.
         """
         require_write(ontology, role)
+        if event_type in REVIEW_EVENTS:
+            require_decision_right(ontology, role, event_type)
         # The payload is stored as JSON; anything that is not JSON is refused here.
         payload = json.loads(canonical_json(payload))
         if event_type == "RECOMMENDED":
@@ -157,7 +231,9 @@ class AuditLog:
                     f"the event's decision is {recorded.decision_id}, not {decision_id}"
                 )
         with self._lock():
-            records = self.records()
+            records, ledger = self._checked()
+            if guard is not None:
+                guard(records)
             unhashed = AuditEvent(
                 seq=len(records),
                 decision_id=decision_id,
@@ -172,6 +248,10 @@ class AuditLog:
             ).model_dump(mode="json")
             record = unhashed | {"hash": event_hash(unhashed)}
             event = AuditEvent.model_validate(record)
+            # An event the log could not be read with is never written.
+            problem = ledger.problem(record)
+            if problem:
+                raise ValueError(f"Decision {decision_id}: {problem}.")
             with self.path.open("ab") as f:
                 f.write(canonical_json(record) + b"\n")
                 f.flush()
@@ -230,6 +310,7 @@ def _fold(events: list[dict[str, Any]]) -> Decision | None:
                     "reviewed_by": record["actor"],
                     "review_reason": record["note"],
                     "reviewed_at": record["created_at"],
+                    "final_outcome": record["payload"]["outcome"],
                 }
             )
     return decision

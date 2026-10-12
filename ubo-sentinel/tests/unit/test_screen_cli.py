@@ -39,6 +39,8 @@ def test_screen_prints_a_recommendation_and_its_memo(built):
     assert "Resolved by: SOLE_NAME" in result.output
     assert "Target: **Acme Trading FZE** (`lei:FXS01TARGET000000000`)" in result.output
     assert "No active designation reaches any of the 3 entities checked." in result.output
+    # A receipt for `ubo audit verify --expect-head`.
+    assert f"Audit head: {AuditLog().verify().head} (#1)" in result.output
 
     # Run again, however the name is typed: the decision on record, and no new event.
     again = run("screen", "acme trading fze")
@@ -149,6 +151,8 @@ def test_eval_runs_every_scenario_from_query_to_decision(built):
     assert result.exit_code == 0, result.output
     assert "28/28 scenarios passed" in result.output
     assert "Uncited claims" in result.output and "(target 0)   ok" in result.output
+    # Each decision the suite recorded is replayed from its event.
+    assert "Replay fidelity         100.0%  (target 100%)  ok" in result.output
     # The suite records nothing.
     assert AuditLog().verify().count == 0
 

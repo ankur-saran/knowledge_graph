@@ -4,7 +4,7 @@ The screening pipeline is seven agents run in a fixed order by the Supervisor (`
 
 `Intake → Traversal → SanctionsMatch → RuleEngine → Explainer → Guardrail → Audit`
 
-Human review (`RECOMMENDED → APPROVED | OVERRIDDEN | ESCALATED`) is a later command, not a step of a screen (Step 8 of [BUILD_PLAN.md](BUILD_PLAN.md)).
+Human review (`RECOMMENDED → APPROVED | OVERRIDDEN | ESCALATED`) is a command of its own, not a step of a screen: see [Review and replay](#review-and-replay).
 
 ## The contract
 
@@ -67,7 +67,15 @@ It raises, and records nothing, for what is not a fault of the screen: `UnknownR
 - The *decision guardrail* (`check_memo`) reads the memo, the rule result and the store. It checks that the memo survives a JSON round trip, that every claim is cited, that every id is described, that the memo agrees with the rules, that every citation leads to a record of the screened set, and that the rendered text states only values the memo holds. A fault is a warning in the decision, adds the reason `GUARDRAIL_FAILED`, and raises the recommendation to at least `REVIEW`. It never lowers an `ESCALATE`.
 - The *render guardrail* (`check_render`) reads what one role is about to be shown. On a fault the output is not shown. It cannot change a decision, so an analyst and a reviewer get the same one.
 
-**Audit.** Builds the `Decision` and appends a `RECOMMENDED` event whose payload holds the decision, its payload hash, the rule pack's values, the request, the resolution and the trace. If the `decision_id` is already on record, the new decision is compared with the recorded one: equal, the recorded one is returned and nothing is written; different, `DeterminismViolation` is raised.
+**Audit.** Builds the `Decision` and appends a `RECOMMENDED` event whose payload holds the decision, its payload hash, the rule pack's values, the request, the resolution, the `evidence` digests (Silver, and each snapshot's rows) and the trace. If the `decision_id` is already on record, the new decision is compared with the recorded one: equal, the recorded one is returned and nothing is written; different, `DeterminismViolation` is raised.
+
+## Review and replay
+
+Neither is an agent, and neither runs in a screen. Both work from the audit event of a decision.
+
+**Review** (`audit/review.py` `review_decision()`, `ubo review`). Input: a `decision_id`, an action (`approve`, `override`, `escalate`), the reviewing actor and role, and where needed an outcome, a reason, or a ruling on the unsettled matches. Output: the `Decision` with its status, reviewer fields and `final_outcome` (`CLEAR` or `ESCALATE`), and one review event in the log. It reads the log only. It refuses a decision that is already reviewed, a role without the decision right, the actor who screened the decision, and an outcome `CLEAR` for a decision that says nothing was screened.
+
+**Replay** (`audit/replay.py` `replay_decision()`, `ubo audit replay`). Input: a `decision_id`. It runs the Supervisor on the recorded `ScreenRequest` with the rule pack from the event and no audit log, so nothing is written. Output: a `ReplayReport` whose `verdict` is `IDENTICAL`, `NOT_REPLAYABLE`, `SOURCE_DATA_CHANGED`, `GRAPH_CHANGED`, `RESOLUTION_DIFFERS`, `PAYLOAD_DIFFERS` or `REPLAY_FAILED`.
 
 ## Rules that hold across agents
 

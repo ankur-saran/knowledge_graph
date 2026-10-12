@@ -12,6 +12,7 @@ from pydantic import BaseModel, ValidationError
 from ubo_sentinel.agents.evaluator import run_pipeline_suite
 from ubo_sentinel.agents.supervisor import Supervisor
 from ubo_sentinel.audit.log import AuditLog
+from ubo_sentinel.audit.replay import replay_all
 from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
 from ubo_sentinel.graph.entity_resolution import ErReport, evaluate_labelled
 from ubo_sentinel.graph.store import GraphNotBuilt, GraphStore
@@ -31,6 +32,7 @@ ER_PATH = Path("eval/er_labelled.csv")
 DECISION_ACCURACY_TARGET = 1.0
 PATH_RECALL_TARGET = 0.98
 ER_PRECISION_TARGET = 0.95
+REPLAY_FIDELITY_TARGET = 1.0
 
 
 class Suite(StrEnum):
@@ -145,15 +147,31 @@ def evaluate(
             if suite in (Suite.pipeline, Suite.all):
                 # The suite records nothing: its log is a directory that is thrown away.
                 with tempfile.TemporaryDirectory() as scratch:
-                    supervisor = Supervisor(load_ontology(ONTOLOGY_PATH), AuditLog(Path(scratch)))
+                    ontology, log = load_ontology(ONTOLOGY_PATH), AuditLog(Path(scratch))
                     reports = run_pipeline_suite(
-                        supervisor,
+                        Supervisor(ontology, log),
                         load_gold_scenarios(GOLD_PATH),
                         store.set_id,
                         store.con,
                         engine.pack,
                     )
+                    # Every decision the suite recorded, replayed from its event.
+                    replays = replay_all(log, ontology, store.con)
                 ok = _print_pipeline(reports) and ok
+                for replay in replays:
+                    if not replay.identical:
+                        typer.echo(
+                            f"  REPLAY {replay.decision_id}  {replay.verdict}  {replay.detail}"
+                        )
+                identical = sum(replay.identical for replay in replays)
+                ok = (
+                    _metric(
+                        "Replay fidelity",
+                        identical / len(replays) if replays else 1.0,
+                        REPLAY_FIDELITY_TARGET,
+                    )
+                    and ok
+                )
             if suite in (Suite.er, Suite.all):
                 ok = _print_er(evaluate_labelled(store, ER_PATH)) and ok
     except UnknownSnapshotSet as exc:

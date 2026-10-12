@@ -100,6 +100,13 @@ def require_write(ontology: OntologyConfig, role: str) -> None:
         raise PermissionError(f"Role '{role}' is read-only.")
 
 
+def require_decision_right(ontology: OntologyConfig, role: str, status: str) -> None:
+    """Raise unless the role may move a decision to `status`."""
+    require_write(ontology, role)
+    if status not in ontology.roles[role].decision_rights:
+        raise PermissionError(f"Role '{role}' may not mark a decision {status}.")
+
+
 def load_ontology(path: Path) -> OntologyConfig:
     """Load and validate the ontology.
 
