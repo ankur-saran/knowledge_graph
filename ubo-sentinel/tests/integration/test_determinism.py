@@ -42,10 +42,13 @@ def test_two_databases_built_apart_give_the_same_bytes(tmp_path, ontology, gold)
     try:
         assert one_set == two_set
         assert evidence_info(one, one_set) == evidence_info(two, two_set)
-        assert gold_layer.load_build(one, one_set)["gold_digest"] == (
-            gold_layer.load_build(two, two_set)["gold_digest"]
+        assert (
+            gold_layer.load_build(one, one_set)["gold_digest"]
+            == (gold_layer.load_build(two, two_set)["gold_digest"])
         )
-        assert fingerprint(one, ontology, gold, one_set) == fingerprint(two, ontology, gold, two_set)
+        assert fingerprint(one, ontology, gold, one_set) == fingerprint(
+            two, ontology, gold, two_set
+        )
     finally:
         one.close()
         two.close()
@@ -118,13 +121,13 @@ def test_a_rebuild_gives_the_same_graph_and_the_same_decisions(fresh_db, ontolog
     assert log.path.stat().st_size == size
 
 
-def test_the_decisions_are_the_golden_ones(fresh_db, con, ontology, gold):
+def test_the_decisions_are_the_golden_ones(fresh_con, ontology, gold):
     """A change to what a screen produces that raised no version is caught across commits.
 
     `ubo eval --suite pipeline --update-golden` writes the file again; a reviewer
     of that change sees which payloads moved.
     """
-    (t0,) = fresh_db("t0")
+    con, (t0,) = fresh_con("t0")
     reports = run_pipeline_suite(Supervisor(ontology), gold, t0, con)
     current = golden_of(reports, t0, PACK.rule_pack_hash)
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))

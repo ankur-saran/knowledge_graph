@@ -158,3 +158,19 @@ def fresh_db(database, templates):
         return set_ids
 
     return copy
+
+
+@pytest.fixture
+def fresh_con(fresh_db):
+    """Copy a template, then open it: (connection, set ids). Not with `con`, which
+    opens the file first (Windows will not replace an open file)."""
+    opened = []
+
+    def open_(name="t0"):
+        set_ids = fresh_db(name)
+        opened.append(connect())
+        return opened[-1], set_ids
+
+    yield open_
+    for connection in opened:
+        connection.close()

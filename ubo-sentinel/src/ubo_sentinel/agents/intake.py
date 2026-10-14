@@ -5,6 +5,8 @@ identifier match, or one name at or above the rule pack's `match_threshold`.
 Anything else goes to the analyst. A query that matches nothing is never CLEAR.
 """
 
+import re
+
 from ubo_sentinel.agents.base import (
     BaseAgent,
     PipelineState,
@@ -17,6 +19,9 @@ from ubo_sentinel.models.graph import EntityMatch
 from ubo_sentinel.pipeline.sources import SOURCE_RANK
 
 IDENTIFIER_MATCHES = frozenset({"LEI", "REGISTRATION"})
+
+# What `graph/views.py` `pseudonym_for()` makes of a masked entity's id.
+_PSEUDONYM = re.compile(r"^[a-z]+:[0-9a-f]{16}$")
 
 
 def fold_linked(
@@ -77,8 +82,14 @@ class IntakeAgent(BaseAgent):
         request = state.request
         if request.target_id is not None:
             if queries.get_entity_by_id(ctx.store, request.target_id) is None:
+                hint = (
+                    " It looks like a pseudonym, which stands for a masked entity and cannot"
+                    " be screened by id: screen the entity by name, or ask a reviewer."
+                    if _PSEUDONYM.match(request.target_id)
+                    else ""
+                )
                 raise ScreenUsageError(
-                    f"No entity '{request.target_id}' in snapshot set {ctx.store.set_id}."
+                    f"No entity '{request.target_id}' in snapshot set {ctx.store.set_id}.{hint}"
                 )
             resolution = Resolution(method="TARGET_ID", target_id=request.target_id)
             return state.with_(resolution=resolution, target_id=request.target_id)

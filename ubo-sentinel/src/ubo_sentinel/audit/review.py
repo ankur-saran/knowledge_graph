@@ -116,6 +116,11 @@ def _memo(decision: Decision) -> Memo | None:
         return None
 
 
+def same_actor(one: str, other: str) -> bool:
+    """Two actor names that stand for one person: "a.analyst" and " A.Analyst"."""
+    return one.strip().casefold() == other.strip().casefold()
+
+
 def review_decision(
     log: AuditLog,
     ontology: OntologyConfig,
@@ -164,7 +169,7 @@ def review_decision(
                 f" (by {reviewed['actor']})."
             )
         screened_by = next(e["actor"] for e in events if e["event_type"] == "RECOMMENDED")
-        if screened_by == actor:
+        if same_actor(screened_by, actor):
             raise ReviewError(
                 f"'{actor}' screened decision {decision_id} and cannot also review it."
             )

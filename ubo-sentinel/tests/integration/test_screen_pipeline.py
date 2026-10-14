@@ -36,8 +36,8 @@ def screen_all(ontology, gold, snapshot, con, log):
     return {scenario.id: screen_gold(supervisor, scenario, snapshot, con) for scenario in gold}
 
 
-def test_every_scenario_is_one_recorded_decision(fresh_db, con, ontology, gold, log):
-    (t0,) = fresh_db("t0")
+def test_every_scenario_is_one_recorded_decision(fresh_con, ontology, gold, log):
+    con, (t0,) = fresh_con("t0")
     outcomes = screen_all(ontology, gold, t0, con, log)
 
     for scenario in gold:
@@ -55,8 +55,8 @@ def test_every_scenario_is_one_recorded_decision(fresh_db, con, ontology, gold, 
     assert (report.intact, report.count) == (True, 28)
 
 
-def test_each_event_carries_what_replay_needs(fresh_db, con, ontology, gold, log):
-    (t0,) = fresh_db("t0")
+def test_each_event_carries_what_replay_needs(fresh_con, ontology, gold, log):
+    con, (t0,) = fresh_con("t0")
     outcomes = screen_all(ontology, gold, t0, con, log)
     registry = evidence_info(con, t0)
     by_id = {outcome.decision.decision_id: scenario for scenario, outcome in outcomes.items()}
@@ -79,8 +79,8 @@ def test_each_event_carries_what_replay_needs(fresh_db, con, ontology, gold, log
         assert Decision.model_validate(json.loads(copy.read_text(encoding="utf-8"))) == decision
 
 
-def test_screening_everything_again_writes_nothing(fresh_db, con, ontology, gold, log):
-    (t0,) = fresh_db("t0")
+def test_screening_everything_again_writes_nothing(fresh_con, ontology, gold, log):
+    con, (t0,) = fresh_con("t0")
     first = screen_all(ontology, gold, t0, con, log)
     before = log.path.read_bytes()
     # By the alias this time: the set it resolves to is what names a decision.
@@ -115,10 +115,10 @@ def broken(agent):
 @pytest.mark.parametrize("agent", BREAKABLE, ids=lambda agent: agent.name)
 @pytest.mark.parametrize("scenario_id", ["SCEN-01", "SCEN-03"])
 def test_an_agent_that_raises_never_gives_a_decision(
-    fresh_db, con, ontology, gold, log, agent, scenario_id
+    fresh_con, ontology, gold, log, agent, scenario_id
 ):
     """SCEN-01 is CLEAR and SCEN-03 ESCALATE: neither is cleared by a failure, nor cached."""
-    (t0,) = fresh_db("t0")
+    con, (t0,) = fresh_con("t0")
     scenario = next(item for item in gold if item.id == scenario_id)
     failed = screen_gold(Supervisor(ontology, log, agents=broken(agent)), scenario, t0, con)
     assert isinstance(failed, ScreenFailed)
@@ -138,10 +138,10 @@ def test_an_agent_that_raises_never_gives_a_decision(
     assert unscreened(log) == []
 
 
-def test_an_audit_agent_that_raises_records_nothing(fresh_db, con, ontology, gold, log):
+def test_an_audit_agent_that_raises_records_nothing(fresh_con, ontology, gold, log):
     from ubo_sentinel.agents.audit import AuditAgent
 
-    (t0,) = fresh_db("t0")
+    con, (t0,) = fresh_con("t0")
     scenario = next(item for item in gold if item.id == "SCEN-01")
     failed = screen_gold(Supervisor(ontology, log, agents=broken(AuditAgent)), scenario, t0, con)
     assert isinstance(failed, ScreenFailed) and failed.agent == "Audit"
@@ -151,8 +151,8 @@ def test_an_audit_agent_that_raises_records_nothing(fresh_db, con, ontology, gol
 # --- the changed list --------------------------------------------------------------------
 
 
-def test_the_changed_list_through_the_whole_pipeline(fresh_db, con, ontology, gold, log):
-    t0, t1 = fresh_db("t0_t1")
+def test_the_changed_list_through_the_whole_pipeline(fresh_con, ontology, gold, log):
+    con, (t0, t1) = fresh_con("t0_t1")
     before = screen_all(ontology, gold, t0, con, log)
     after = screen_all(ontology, gold, t1, con, log)
 

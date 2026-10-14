@@ -154,14 +154,18 @@ def test_two_writers_keep_one_chain(append, ontology):
 def test_an_append_waits_for_the_lock_and_gives_up(log, append, monkeypatch):
     log.path.parent.mkdir(parents=True)
     lock = log.path.with_suffix(".lock")
-    lock.touch()
     monkeypatch.setattr(audit_log, "_LOCK_WAIT_SECONDS", 0.1)
-    with pytest.raises(AuditChainError, match="locked"):
-        append()
-    # A lock nobody released is taken over once it is old.
-    monkeypatch.setattr(audit_log, "_LOCK_STALE_SECONDS", -1.0)
+    # Another writer holds the lock.
+    with lock.open("a+b") as held:
+        audit_log._try_lock(held)
+        with pytest.raises(AuditChainError, match="locked"):
+            append()
+        audit_log._unlock(held)
+    assert not log.path.exists()
+    # A lock file left behind is not a lock: only a holder is.
+    assert lock.exists()
     append()
-    assert not lock.exists() and log.verify().count == 1
+    assert log.verify().count == 1
 
 
 def test_a_decision_is_rebuilt_from_its_events(log, append):

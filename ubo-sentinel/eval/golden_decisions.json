@@ -1,0 +1,120 @@
+{
+  "decisions": {
+    "SCEN-01": {
+      "decision_id": "958c7ffa2720eceb",
+      "payload_sha256": "ff250e1cf2433a555997fbc3ac5bb4c60681e1a4c1768c3ed979464b74984c25"
+    },
+    "SCEN-02": {
+      "decision_id": "9e26a6955603bb69",
+      "payload_sha256": "88c5b837eaa94cb703798b0609c75830106f8445455fbb3c0535b337533182c8"
+    },
+    "SCEN-03": {
+      "decision_id": "eb3c962f7647108f",
+      "payload_sha256": "12400768f350597b43aaafc3cad001133cf4a77b7cf976b42ce335c7e582b135"
+    },
+    "SCEN-04": {
+      "decision_id": "c2bb0c65f346d03c",
+      "payload_sha256": "c2a9a7b3430eb8f4b8c86ff77249a0202f255683dfdbaeefc0b1763ab930d721"
+    },
+    "SCEN-05": {
+      "decision_id": "c5d4f74c51347131",
+      "payload_sha256": "b6d517bcb668ea1e609baaee5ac42c6c21067b4ad828e99cff0d6d608518fc61"
+    },
+    "SCEN-06": {
+      "decision_id": "9ea00f1aca025def",
+      "payload_sha256": "42c24b787178e9893f428526e2eb5a125eedd712b90320ff74caeb0347a433df"
+    },
+    "SCEN-07": {
+      "decision_id": "7de763702cced4c0",
+      "payload_sha256": "e009d2a94df761874c067947e7bc4d1621531969e1443306f3cd6365a622d44b"
+    },
+    "SCEN-08": {
+      "decision_id": "3452183181d5078e",
+      "payload_sha256": "640879594fd95faefa0316383f4503843833e0f06481c99f34542fa116c9668d"
+    },
+    "SCEN-09": {
+      "decision_id": "0f0efe36d287904a",
+      "payload_sha256": "9b21cab9b8f051d4a28e197e8fc042659cd1ce3913ad7e0f1e93b758aab3edd6"
+    },
+    "SCEN-10": {
+      "decision_id": "043e4061a8cfb96f",
+      "payload_sha256": "420cde1fd6055f98d17129c4dd7223f082b3c37bd3f0f47ddf10b62d1b7ef305"
+    },
+    "SCEN-11": {
+      "decision_id": "c5968b70dc0a1cc0",
+      "payload_sha256": "1d1feba90e8931b3d7f77077b1a6dc36c4deee789f3def8e17f2dd847708bb78"
+    },
+    "SCEN-12": {
+      "decision_id": "3ae21e1dd87c562a",
+      "payload_sha256": "356509389da39c4d56cf32a3be0d3da99ba432c8c871f9185eef304fc0f3b55d"
+    },
+    "SCEN-13": {
+      "decision_id": "ded433aa91eeffa5",
+      "payload_sha256": "e7bdf8ca7c087328d3bdbf5934037c8d3db2f7f3468e0e93bd31ff656b4f454d"
+    },
+    "SCEN-14": {
+      "decision_id": "fd6cc4f1237533fb",
+      "payload_sha256": "15eeb8cfde005f56fdd82222961d8eb39751a3f1b3ca2ced8cb3bdf62abb6b2e"
+    },
+    "SCEN-15": {
+      "decision_id": "3ad25d3147fb014b",
+      "payload_sha256": "81bc4f711b1d9c8f04f7ee15c18efd888c18c9a3474d5e60ab35d46123a060ff"
+    },
+    "SCEN-16": {
+      "decision_id": "fe0e6292398e619c",
+      "payload_sha256": "e24bd31d445901f6449bc33b892237c35cefa9f775a396d18c1c29a138effbd8"
+    },
+    "SCEN-17": {
+      "decision_id": "7275cd580c1aba7d",
+      "payload_sha256": "2dce9294f030b62be36f2df4b0284dea6c42f3f544730c9821586682ea4fcdff"
+    },
+    "SCEN-18": {
+      "decision_id": "447041f58bd88ed4",
+      "payload_sha256": "0da42963f8d052e135ad9b34a4b32ebb56eebd426bb1cce18a6a350c4d892e8c"
+    },
+    "SCEN-19": {
+      "decision_id": "6054c3c097072021",
+      "payload_sha256": "1842fcdbf63990547e56c89006efe66486569c2047ddc2f2e8c3fa2c0a8a08e2"
+    },
+    "SCEN-20": {
+      "decision_id": "27ddf05f2195fbc3",
+      "payload_sha256": "61bf721e7908699b760071aa2baa7c0b0eb2c1f57b581453c356b0c0e184cf10"
+    },
+    "SCEN-21": {
+      "decision_id": "5ef61d7520eb00e0",
+      "payload_sha256": "af0be3b502655d9269e3c159344f6156c688c7de0bc429a9ba7a065930e9abcc"
+    },
+    "SCEN-22": {
+      "decision_id": "2c6deebc48d260e8",
+      "payload_sha256": "7408fc426fc46a367c9b6e51d3e79b16eb45c0f6494939ce61e7df3fe42bd32e"
+    },
+    "SCEN-23": {
+      "decision_id": "742462d95f315ac1",
+      "payload_sha256": "9068b30595329941c313f78d620f27824c165680d5312ec21d04fb6b64cb20e7"
+    },
+    "SCEN-24": {
+      "decision_id": "0bfe17bdaed0f854",
+      "payload_sha256": "9f359d51ded70ee92ffa5c75faeccec392b927d4ba6192ff4657eb21132f5ae1"
+    },
+    "SCEN-25": {
+      "decision_id": "50b5c2b96b9daa60",
+      "payload_sha256": "8c6d085a1fa4ccf94829e6589716694c91681790e24f7283cd0f426109f6a27c"
+    },
+    "SCEN-26": {
+      "decision_id": "2b0d370d80674c40",
+      "payload_sha256": "3d2d835a0d507bc162421a76eccd24f74c9fedb8142776f36571e8c2e295eef8"
+    },
+    "SCEN-27": {
+      "decision_id": "8724b44cddcec439",
+      "payload_sha256": "532d8e08102112d4f8885b0e2ef42fe26c36691814290fdc0f5eac93b850f50d"
+    },
+    "SCEN-28": {
+      "decision_id": "18b2c5e1e2d539fd",
+      "payload_sha256": "7db9ab741c5f705f937f7ef555b90ade77cce41c1b207f1aeed7e2aa8f65a8f0"
+    }
+  },
+  "engine_version": "0.1.0",
+  "pipeline_version": 1,
+  "rule_pack_hash": "fbaafb7562a0055c12cf6897daa6847e6b0390ef8676d063a89e5015f1c72457",
+  "snapshot_set_id": "1499ebef980c6a4b"
+}

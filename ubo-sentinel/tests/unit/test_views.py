@@ -329,9 +329,10 @@ def test_an_identifier_that_found_a_person_is_not_shown_back(con, graph_t0, onto
     for as_json in (False, True):
         text = decision_text(person, "analyst", ontology, as_json=as_json)
         assert number not in text and "Cordelia Ashdowne" not in text
-    assert mask_decision(person, "reviewer", ontology).query_identifiers[
-        "registration_number"
-    ] == number
+    assert (
+        mask_decision(person, "reviewer", ontology).query_identifiers["registration_number"]
+        == number
+    )
 
 
 def test_candidates_are_masked_without_a_store(store, view, ontology):

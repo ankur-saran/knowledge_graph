@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, BinaryIO, get_args
 
 from pydantic import ValidationError
 
@@ -39,9 +39,28 @@ REVIEW_EVENTS = frozenset(get_args(DecisionStatus)) - {"RECOMMENDED"}
 # Called inside the lock with the log as it stands; raises to refuse the append.
 Guard = Callable[[list[dict[str, Any]]], None]
 
-# How long an append waits for another writer, and when a lock is taken to be abandoned.
+# How long an append waits for another writer.
 _LOCK_WAIT_SECONDS = 10.0
-_LOCK_STALE_SECONDS = 60.0
+
+if os.name == "nt":
+    import msvcrt
+
+    def _try_lock(handle: BinaryIO) -> None:
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+
+    def _unlock(handle: BinaryIO) -> None:
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+
+else:
+    import fcntl
+
+    def _try_lock(handle: BinaryIO) -> None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _unlock(handle: BinaryIO) -> None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 class AuditChainError(RuntimeError):
@@ -279,30 +298,30 @@ class AuditLog:
 
     @contextmanager
     def _lock(self) -> Iterator[None]:
-        """One writer at a time: two appends that read the same tail would fork the chain."""
+        """One writer at a time: two appends that read the same tail would fork the chain.
+
+        The lock is the operating system's, on a file beside the log. It is
+        released when its holder lets go or dies, so there is no stale lock to
+        take over, and no race between two writers that both decide to.
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
         lock = self.path.with_suffix(".lock")
         deadline = time.monotonic() + _LOCK_WAIT_SECONDS
-        while True:
-            try:
-                os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-                break
-            except FileExistsError:
+        with lock.open("a+b") as handle:
+            while True:
                 try:
-                    if time.time() - lock.stat().st_mtime > _LOCK_STALE_SECONDS:
-                        lock.unlink(missing_ok=True)
-                        continue
-                except FileNotFoundError:
-                    continue
-                if time.monotonic() > deadline:
-                    raise AuditChainError(
-                        f"{self.path} is locked by another writer ({lock})."
-                    ) from None
-                time.sleep(0.05)
-        try:
-            yield
-        finally:
-            lock.unlink(missing_ok=True)
+                    _try_lock(handle)
+                    break
+                except OSError:
+                    if time.monotonic() > deadline:
+                        raise AuditChainError(
+                            f"{self.path} is locked by another writer ({lock})."
+                        ) from None
+                    time.sleep(0.05)
+            try:
+                yield
+            finally:
+                _unlock(handle)
 
 
 def decision_of(records: list[dict[str, Any]], decision_id: str) -> Decision | None:

@@ -153,6 +153,9 @@ def test_only_a_reviewer_reviews_and_only_once(screened, review, log, ontology):
     # Whoever made the recommendation does not also approve it.
     with pytest.raises(ReviewError, match="cannot also review"):
         review(decision, "approve", actor="a.analyst")
+    # However the name is typed.
+    with pytest.raises(ReviewError, match="cannot also review"):
+        review(decision, "approve", actor=" A.Analyst ")
     with pytest.raises(ReviewError, match="No decision"):
         review_decision(
             log, ontology, "0" * 16, action="approve", actor="r", role="reviewer", now=lambda: NOW

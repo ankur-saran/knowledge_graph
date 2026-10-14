@@ -65,8 +65,8 @@ def test_each_role_runs_exactly_its_commands(fresh_db, ontology, command, role):
 
 
 @pytest.fixture
-def decisions(fresh_db, con, ontology, gold):
-    (t0,) = fresh_db("t0")
+def decisions(fresh_con, ontology, gold):
+    con, (t0,) = fresh_con("t0")
     supervisor = Supervisor(ontology, AuditLog())
     return {s.id: screen_gold(supervisor, s, t0, con).decision for s in gold}
 
@@ -88,13 +88,15 @@ def test_an_analyst_is_shown_no_person_in_any_scenario(decisions, ontology, enti
     assert len(shown_somewhere) >= 4
 
 
-def test_a_decision_is_the_same_whoever_screens(fresh_db, con, ontology, gold):
-    (t0,) = fresh_db("t0")
+def test_a_decision_is_the_same_whoever_screens(fresh_con, ontology, gold):
+    con, (t0,) = fresh_con("t0")
     payloads = {}
     for role in ("analyst", "reviewer"):
         supervisor = Supervisor(ontology)
         payloads[role] = [
-            canonical_json(screen_gold(supervisor, s, t0, con, role=role).decision.canonical_payload())
+            canonical_json(
+                screen_gold(supervisor, s, t0, con, role=role).decision.canonical_payload()
+            )
             for s in gold
         ]
     assert payloads["analyst"] == payloads["reviewer"]

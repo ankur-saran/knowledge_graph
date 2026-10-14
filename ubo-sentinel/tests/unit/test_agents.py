@@ -130,6 +130,9 @@ def test_a_target_id_skips_resolution(screen):
     assert outcome.decision.decision_id == screen(HOMONYM, pick=2).decision.decision_id
     with pytest.raises(ScreenUsageError, match="No entity"):
         screen(target_id="lei:NOSUCHENTITY00000000")
+    # The stand-in an analyst is shown for a masked person is not an id the graph holds.
+    with pytest.raises(ScreenUsageError, match="looks like a pseudonym"):
+        screen(target_id="person:883b816ca8cc2dbd")
 
 
 def test_a_query_that_matches_nothing_is_never_clear(screen):
