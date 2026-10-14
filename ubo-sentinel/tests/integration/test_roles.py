@@ -78,10 +78,11 @@ def test_an_analyst_is_shown_no_person_in_any_scenario(decisions, ontology, enti
         for as_json in (False, True):
             text = decision_text(decision, "analyst", ontology, as_json=as_json)
             assert [value for value in pii if value in text] == [], scenario_id
-        # The reviewer sees every person the memo describes.
+        # The reviewer sees every person the memo describes. (The text names only
+        # the entities a claim is about; the JSON view holds the entity table.)
         memo = Memo.model_validate(decision.memo_json)
         persons = [e.legal_name for e in memo.entities if e.entity_type == "Person"]
-        shown = decision_text(decision, "reviewer", ontology)
+        shown = decision_text(decision, "reviewer", ontology, as_json=True)
         assert all(name in shown for name in persons), scenario_id
         shown_somewhere.update(persons)
     # The sweep looked at persons, not at an empty set.

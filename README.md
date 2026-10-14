@@ -6,34 +6,49 @@ Given an entity name or LEI, `ubo-sentinel` walks the ownership graph, applies t
 
 > **Not a production sanctions-screening system; not legal advice; rule packs must be validated by compliance counsel.**
 
+The project lives in [`ubo-sentinel/`](ubo-sentinel/). Run every command from that directory.
+
 ## Status
 
-Under construction. The build follows [BUILD_PLAN.md](BUILD_PLAN.md) one step at a time; Step 0 (project skeleton) is done. The CLI exists but has no commands yet.
+Steps 0–9 of the build plan are done, on synthetic fixtures:
+
+- ingest, normalise and build the graph (`ubo ingest`, `ubo normalize`, `ubo build-graph`);
+- screen an entity into a recommendation with a cited memo (`ubo screen`);
+- review it, verify the audit log and replay a decision (`ubo review`, `ubo audit verify`, `ubo audit replay`);
+- measure the PRD's success metrics (`ubo eval`), with unit and integration tests.
+
+Real data (GLEIF, OpenSanctions), the review UI and the re-screen queue are the next steps.
 
 ## Setup
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
 
 ```
-uv sync --all-extras        # or: make install
-uv run ubo --help
-uv run pytest
+cd ubo-sentinel
+uv sync --all-extras
+uv run ubo ingest --source fixtures
+uv run ubo normalize
+uv run ubo build-graph
+uv run ubo screen "Acme Trading FZE"
+uv run pytest --cov            # the full suite with the coverage gate (same as: make test)
 ```
 
-Run every command from the repository root. Runtime output (database, audit log, decisions, downloads) is written to `var/`, which is gitignored.
+Runtime output (database, audit log, decisions, downloads) is written to `ubo-sentinel/var/`, which is gitignored.
 
 ## Documentation
 
 | File | Contents |
 |---|---|
-| [BUILD_PLAN.md](BUILD_PLAN.md) | Step-by-step implementation plan |
-| [ONTOLOGY.md](ONTOLOGY.md) | Node labels, edge types, roles and permissions |
-| [AGENT_CONTRACTS.md](AGENT_CONTRACTS.md) | Typed input and output of each agent |
-| [RUNBOOK.md](RUNBOOK.md) | Demo script |
-| [CLAUDE.md](CLAUDE.md) | Conventions for building this repo with Claude Code |
+| [ONTOLOGY.md](ubo-sentinel/ONTOLOGY.md) | Node labels, edge types, roles and permissions |
+| [AGENT_CONTRACTS.md](ubo-sentinel/AGENT_CONTRACTS.md) | Typed input and output of each agent |
+| [RUNBOOK.md](ubo-sentinel/RUNBOOK.md) | Demo script (Step 11) |
+| [CLAUDE.md](ubo-sentinel/CLAUDE.md) | Conventions for building this repo with Claude Code |
+| [fixtures/README.md](ubo-sentinel/fixtures/README.md) | The synthetic fixtures and their format |
+
+The step-by-step build plan (`ubo-sentinel/BUILD_PLAN.md`) and the PRD are kept locally and are not in the repository.
 
 ## Data licences
 
 - **OpenSanctions** data is licensed **CC BY-NC 4.0**. This project uses it for demo and personal use only; commercial use requires a licence from OpenSanctions.
 - **GLEIF** LEI data is published under CC0.
-- The files in `fixtures/` are synthetic. Any resemblance to real entities is unintended.
+- The files in `ubo-sentinel/fixtures/` are synthetic. Any resemblance to real entities is unintended.

@@ -3,14 +3,14 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from typer.testing import CliRunner
+from e2e import cli as run
+from e2e import decision_id_of
 
 from ubo_sentinel.agents.base import ScreenRequest
 from ubo_sentinel.agents.supervisor import PIPELINE, Supervisor
 from ubo_sentinel.agents.traversal import TraversalAgent
 from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.audit.review import ReviewError, pending, review_decision, unscreened
-from ubo_sentinel.cli.app import app
 from ubo_sentinel.models.canonical import sha256_hex
 
 NOW = datetime(2026, 10, 6, 9, 30, tzinfo=UTC)
@@ -215,21 +215,11 @@ def test_the_queue_is_the_gravest_first_and_shows_what_was_never_screened(
 
 # --- the command -----------------------------------------------------------------------
 
-runner = CliRunner()
-
-
-def run(*args):
-    return runner.invoke(app, [str(arg) for arg in args])
-
 
 @pytest.fixture
 def built():
     for command in (["ingest", "--source", "fixtures"], ["normalize"], ["build-graph"]):
         assert run(*command).exit_code == 0
-
-
-def decision_id_of(output):
-    return output.split()[1].rstrip(":")
 
 
 def test_review_shows_a_decision_and_records_what_the_reviewer_decides(built):

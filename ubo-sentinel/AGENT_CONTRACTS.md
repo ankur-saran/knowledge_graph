@@ -46,9 +46,9 @@ An agent may also set `halt`. The agents between it and the Explainer are then s
 |---|---|
 | `NeedsDisambiguation` | Several entities answer to the query. |
 | `Recommended` | A decision in status `RECOMMENDED`. `is_new` is false when the same inputs were screened before and the recorded decision is returned. |
-| `ScreenFailed` | An agent raised. Shown as `REVIEW / PIPELINE_ERROR`; a `SCREEN_FAILED` event is logged; no decision is recorded. |
+| `ScreenFailed` | An agent raised. Shown as `REVIEW / PIPELINE_ERROR` with the agent and the exception's type (`error_type`); the exception's text (`error`) may quote the data and goes only into the `SCREEN_FAILED` event, with the request and the resolved set. No decision is recorded. |
 
-It raises, and records nothing, for what is not a fault of the screen: `UnknownRulePack`, `UnknownSnapshotSet`, `GraphNotBuilt`, `ScreenUsageError` (an unknown `target_id`, a `pick` out of range), `PermissionError` (a read-only role), `AuditChainError`, `DeterminismViolation`.
+It raises, and records nothing, for what is not a fault of the screen: `UnknownRulePack`, `UnknownSnapshotSet`, `GraphNotBuilt`, `ScreenUsageError` (an unknown `target_id`, a `pick` out of range), `PermissionError` (a role that may not run `screen`, checked by `require_command()` before anything is read), `AuditChainError`, `DeterminismViolation`.
 
 ## What each agent does
 
@@ -67,13 +67,13 @@ It raises, and records nothing, for what is not a fault of the screen: `UnknownR
 - The *decision guardrail* (`check_memo`) reads the memo, the rule result and the store. It checks that the memo survives a JSON round trip, that every claim is cited, that every id is described, that the memo agrees with the rules, that every citation leads to a record of the screened set, and that the rendered text states only values the memo holds. A fault is a warning in the decision, adds the reason `GUARDRAIL_FAILED`, and raises the recommendation to at least `REVIEW`. It never lowers an `ESCALATE`.
 - The *render guardrail* (`check_render`) reads what one role is about to be shown. On a fault the output is not shown. It cannot change a decision, so an analyst and a reviewer get the same one.
 
-**Audit.** Builds the `Decision` and appends a `RECOMMENDED` event whose payload holds the decision, its payload hash, the rule pack's values, the request, the resolution, the `evidence` digests (Silver, and each snapshot's rows) and the trace. If the `decision_id` is already on record, the new decision is compared with the recorded one: equal, the recorded one is returned and nothing is written; different, `DeterminismViolation` is raised.
+**Audit.** Builds the `Decision` and appends a `RECOMMENDED` event whose payload holds the decision, its payload hash, the rule pack's values, the request, the resolution, the `evidence` digests (Silver, and each snapshot's rows) and the trace. If the `decision_id` is already on record, the new decision is compared with the recorded one: equal, the recorded one is returned and nothing is written; different, `DeterminismViolation` is raised. The lookup runs as the append's guard, inside the log's lock, so a screen reads the log once.
 
 ## Review and replay
 
 Neither is an agent, and neither runs in a screen. Both work from the audit event of a decision.
 
-**Review** (`audit/review.py` `review_decision()`, `ubo review`). Input: a `decision_id`, an action (`approve`, `override`, `escalate`), the reviewing actor and role, and where needed an outcome, a reason, or a ruling on the unsettled matches. Output: the `Decision` with its status, reviewer fields and `final_outcome` (`CLEAR` or `ESCALATE`), and one review event in the log. It reads the log only. It refuses a decision that is already reviewed, a role without the decision right, the actor who screened the decision, and an outcome `CLEAR` for a decision that says nothing was screened.
+**Review** (`audit/review.py` `review_decision()`, `ubo review`). Input: a `decision_id`, an action (`approve`, `override`, `escalate`), the reviewing actor and role, and where needed an outcome, a reason, or a ruling on the unsettled matches. Output: the `Decision` with its status, reviewer fields and `final_outcome` (`CLEAR` or `ESCALATE`), and one review event in the log. It reads the log only. It refuses a decision that is already reviewed, a role without the decision right, the actor who screened the decision (however the name is typed), an outcome `CLEAR` for a decision that says nothing was screened, and an outcome `CLEAR` for a decision made on a snapshot set that newer data has superseded, unless the reviewer accepts that (`accept_stale`) and gives a reason.
 
 **Replay** (`audit/replay.py` `replay_decision()`, `ubo audit replay`). Input: a `decision_id`. It runs the Supervisor on the recorded `ScreenRequest` with the rule pack from the event and no audit log, so nothing is written. Output: a `ReplayReport` whose `verdict` is `IDENTICAL`, `NOT_REPLAYABLE`, `SOURCE_DATA_CHANGED`, `GRAPH_CHANGED`, `RESOLUTION_DIFFERS`, `PAYLOAD_DIFFERS` or `REPLAY_FAILED`.
 

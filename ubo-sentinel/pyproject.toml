@@ -2,7 +2,6 @@
 name = "ubo-sentinel"
 version = "0.1.0"
 description = "Knowledge-graph-driven beneficial ownership and sanctions exposure screening"
-readme = "README.md"
 authors = [
     { name = "ankur-saran", email = "ankur.mechengr@gmail.com" }
 ]

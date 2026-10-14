@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime
 
 import pytest
-from typer.testing import CliRunner
+from e2e import cli as run
 
 from ubo_sentinel.agents import intake
 from ubo_sentinel.agents.base import ScreenRequest
@@ -14,7 +14,6 @@ from ubo_sentinel.agents.traversal import TraversalAgent
 from ubo_sentinel.audit import replay as replay_module
 from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.audit.replay import UnknownDecision, replay_all, replay_decision
-from ubo_sentinel.cli.app import app
 from ubo_sentinel.cli.audit_cmd import EXIT_NOT_REPLAYABLE
 from ubo_sentinel.rules import pack as pack_module
 
@@ -211,12 +210,6 @@ def test_an_event_without_digests_is_compared_with_the_registry(con, graph_t0, o
 
 
 # --- the commands ----------------------------------------------------------------------
-
-runner = CliRunner()
-
-
-def run(*args):
-    return runner.invoke(app, [str(arg) for arg in args])
 
 
 @pytest.fixture

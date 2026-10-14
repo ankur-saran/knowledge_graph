@@ -3,27 +3,16 @@
 import json
 
 import pytest
-from typer.testing import CliRunner
+from e2e import cli as run
+from e2e import head_of
 
 from ubo_sentinel.audit.log import GENESIS_HASH, AuditLog
-from ubo_sentinel.cli.app import app
-
-runner = CliRunner()
-
-
-def run(*args):
-    return runner.invoke(app, [str(arg) for arg in args])
 
 
 @pytest.fixture
 def built():
     for command in (["ingest", "--source", "fixtures"], ["normalize"], ["build-graph"]):
         assert run(*command).exit_code == 0
-
-
-def head_of(output):
-    line = next(line for line in output.splitlines() if line.startswith("Audit head: "))
-    return line.split()[2]
 
 
 def test_an_empty_log_is_intact():

@@ -3,22 +3,15 @@
 import json
 
 import pytest
-from typer.testing import CliRunner
+from e2e import cli as run
 
 from ubo_sentinel.agents import supervisor
 from ubo_sentinel.audit.log import AuditLog
-from ubo_sentinel.cli.app import app
 from ubo_sentinel.cli.screen_cmd import EXIT_NEEDS_PICK
 from ubo_sentinel.graph.views import MASK
 from ubo_sentinel.models.memo import DecisionView
 
-runner = CliRunner()
-
 PII = ["Dmitri Volkanov", "Дмитрий Волканов", "Yusuf Al-Qahdari", "يوسف القحدري"]
-
-
-def run(*args):
-    return runner.invoke(app, [str(arg) for arg in args])
 
 
 @pytest.fixture
