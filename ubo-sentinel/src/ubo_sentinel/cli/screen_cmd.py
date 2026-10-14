@@ -119,10 +119,13 @@ def screen(
         raise typer.Exit(code=1) from exc
 
     if isinstance(outcome, ScreenFailed):
+        # The exception's text may quote what it failed on, and no view masks
+        # it: the role is shown its kind, and the log holds the rest.
         typer.echo(
             f"{outcome.recommendation} ({outcome.reason}): the screen failed in the"
-            f" {outcome.agent} agent: {outcome.error}\n"
-            "No decision was recorded. Treat the entity as not screened.",
+            f" {outcome.agent} agent ({outcome.error_type}).\n"
+            "No decision was recorded. Treat the entity as not screened."
+            " The audit log holds the error.",
             err=True,
         )
         raise typer.Exit(code=1)

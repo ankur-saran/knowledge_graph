@@ -159,8 +159,10 @@ def mask_decision(decision: Decision, role: str, ontology: OntologyConfig) -> De
 
     data = replace(data)
     if decision.target_id in ids:
-        # The query that found a masked party is that party's name.
+        # The query that found a masked party is that party's name, and an
+        # identifier given with it is that party's too.
         data["query"] = MASK
+        data["query_identifiers"] = dict.fromkeys(data["query_identifiers"], MASK)
     data |= {"llm_annotations": {}, "masked": True}
     return DecisionView.model_validate(data)
 

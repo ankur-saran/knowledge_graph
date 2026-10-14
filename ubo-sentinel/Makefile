@@ -5,10 +5,11 @@ Q ?= Acme Trading FZE
 install:
 	uv sync --all-extras
 
-# Coverage gate lives here only (not in pytest addopts), so single-file test
-# commands are not failed by it.
+# The coverage gate is in pyproject.toml ([tool.coverage]) and applies when --cov
+# is given, so single-file test commands are not failed by it. Without make:
+# uv run pytest --cov
 test:
-	uv run pytest --cov=src/ubo_sentinel/rules --cov=src/ubo_sentinel/graph --cov-fail-under=85
+	uv run pytest --cov
 
 lint:
 	uv run ruff check .

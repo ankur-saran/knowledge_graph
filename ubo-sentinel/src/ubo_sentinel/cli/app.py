@@ -11,7 +11,7 @@ import yaml
 from pydantic import ValidationError
 
 from ubo_sentinel import __version__
-from ubo_sentinel.models.ontology import load_ontology
+from ubo_sentinel.models.ontology import load_ontology, require_command
 
 # Commands are run from the repository root.
 ONTOLOGY_PATH = Path("ontology/ontology.yaml")
@@ -33,18 +33,20 @@ def load_permissions(ontology_path: Path = ONTOLOGY_PATH) -> dict[str, set[str]]
 def require_role(role: str, command: str, ontology_path: Path = ONTOLOGY_PATH) -> None:
     """Exit with an error unless `role` may run `command`. Fails closed."""
     try:
-        permissions = load_permissions(ontology_path)
+        ontology = load_ontology(ontology_path)
     except (OSError, yaml.YAMLError, ValidationError) as exc:
         typer.echo(f"Cannot read permission matrix from {ontology_path}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 
-    if role not in permissions:
-        known = ", ".join(sorted(permissions)) or "none defined"
+    if role not in ontology.roles:
+        known = ", ".join(sorted(ontology.roles)) or "none defined"
         typer.echo(f"Unknown role '{role}' (known roles: {known}).", err=True)
         raise typer.Exit(code=2)
-    if command not in permissions[role]:
-        typer.echo(f"Role '{role}' is not permitted to run '{command}'.", err=True)
-        raise typer.Exit(code=1)
+    try:
+        require_command(ontology, role, command)
+    except PermissionError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 def _print_version(value: bool) -> None:

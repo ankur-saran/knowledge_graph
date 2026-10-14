@@ -51,6 +51,24 @@ def is_superseded(decision: Decision) -> bool | None:
     return None if newest is None else newest != decision.snapshot_set_id
 
 
+def _history_lines(log: AuditLog, decision: Decision) -> list[str]:
+    """The other decisions on record for the same entity: ids, sets and outcomes only."""
+    if decision.target_id is None:
+        return []
+    others = [d for d in log.history(decision.target_id) if d.decision_id != decision.decision_id]
+    if not others:
+        return []
+    lines = ["", f"Other decisions on this entity ({len(others)}):"]
+    for other in others:
+        outcome = f", outcome {other.final_outcome}" if other.final_outcome else ""
+        lines.append(
+            f"  {other.decision_id}  {other.recommendation:<8}  {other.status}{outcome}"
+            f"  set {other.snapshot_set_id}  depth {other.max_depth}"
+            f"  {other.created_at:%Y-%m-%d %H:%M}"
+        )
+    return lines
+
+
 def _queue(log: AuditLog, role: str, ontology: OntologyConfig) -> None:
     waiting = pending(log)
     typer.echo(f"{len(waiting)} decisions wait for a review.")
@@ -88,6 +106,10 @@ def review(
     reject_matches: Annotated[
         bool, typer.Option("--reject-matches", help="The unsettled matches are someone else.")
     ] = False,
+    accept_stale: Annotated[
+        bool,
+        typer.Option("--accept-stale", help="Clear although newer data exists. Needs --reason."),
+    ] = False,
     as_json: Annotated[bool, typer.Option("--json", help="Print the decision as JSON.")] = False,
 ) -> None:
     """Show a recommended decision and record the reviewer's decision on it."""
@@ -110,6 +132,9 @@ def review(
             raise typer.Exit(code=2)
         # Nothing is decided on a memo that could not be shown.
         typer.echo(decision_text(decision, role, ontology, as_json=as_json))
+        if not as_json:
+            for line in _history_lines(log, decision):
+                typer.echo(line)
 
         if action is None and not as_json and sys.stdin.isatty():
             if decision.status != "RECOMMENDED":
@@ -145,6 +170,7 @@ def review(
             reason=reason,
             matches=matches,
             superseded=is_superseded(decision),
+            accept_stale=accept_stale,
         )
     except ValueError as exc:
         typer.echo(str(exc), err=True)

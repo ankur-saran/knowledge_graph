@@ -1,9 +1,11 @@
 """Fixtures shared by the test modules."""
 
 import shutil
+import socket
 from collections import defaultdict
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from ubo_sentinel.audit.log import VAR_ENV_VAR
@@ -30,6 +32,19 @@ def database(tmp_path, monkeypatch):
     monkeypatch.setenv(DB_ENV_VAR, str(path))
     monkeypatch.setenv(VAR_ENV_VAR, str(tmp_path / "var"))
     return path
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """No test opens a socket: downloading is separate from everything tested here."""
+
+    def refuse(*args, **kwargs):
+        raise RuntimeError("The tests do not use the network.")
+
+    for name in ("connect", "connect_ex"):
+        monkeypatch.setattr(socket.socket, name, refuse)
+    for name in ("getaddrinfo", "create_connection"):
+        monkeypatch.setattr(socket, name, refuse)
 
 
 @pytest.fixture
@@ -106,3 +121,40 @@ def canonical(entities):
         group_id = min(with_lei or [row.canonical_id() for row in group])
         ids.update({row.ref: group_id for row in group})
     return ids
+
+
+@pytest.fixture(scope="session")
+def templates(tmp_path_factory, ontology):
+    """Databases built once per session: `t0`, and `t0_t1` (the t1 list loaded after t0).
+
+    Returns name -> (database file, the set ids it holds in the order built).
+    Ids are content-derived, so a copy of a template is the database a test
+    would have built itself, in a fraction of the time.
+    """
+    built = {}
+    root = tmp_path_factory.mktemp("templates")
+
+    def get(name):
+        if name not in built:
+            path = root / f"{name}.duckdb"
+            connection = duckdb.connect(str(path))
+            paths = {"t0": [None], "t0_t1": [None, T1]}[name]
+            set_ids = [build_graph(connection, ontology, item) for item in paths]
+            connection.close()
+            built[name] = (path, set_ids)
+        return built[name]
+
+    return get
+
+
+@pytest.fixture
+def fresh_db(database, templates):
+    """Copy a template to this test's database. Returns the set ids it holds."""
+
+    def copy(name="t0"):
+        path, set_ids = templates(name)
+        database.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, database)
+        return set_ids
+
+    return copy

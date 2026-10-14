@@ -29,6 +29,8 @@ class ScenarioReport:
     paths_found: int
     # Statements of the memo that cite nothing (pipeline suite).
     uncited_claims: int = 0
+    # How long the screen took, picks included (pipeline suite). Never part of a decision.
+    seconds: float = 0.0
 
     @property
     def passed(self) -> bool:

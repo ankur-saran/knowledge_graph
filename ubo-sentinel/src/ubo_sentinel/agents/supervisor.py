@@ -41,7 +41,7 @@ from ubo_sentinel.models.canonical import sha256_hex
 from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.evidence import ReasonCode
 from ubo_sentinel.models.graph import EntityMatch
-from ubo_sentinel.models.ontology import OntologyConfig
+from ubo_sentinel.models.ontology import OntologyConfig, require_command
 from ubo_sentinel.rules.pack import RulePack, load_rule_pack, pack_path
 
 PIPELINE: tuple[type[BaseAgent], ...] = (
@@ -94,7 +94,11 @@ class ScreenFailed:
     """An agent raised. Shown as REVIEW; no decision is recorded, so nothing is cached."""
 
     agent: str
+    # The exception's own text. It may quote the data it failed on (a name, an
+    # alias), so it is for the audit log and not for a role's screen.
     error: str
+    # What any role may be shown of the failure.
+    error_type: str = ""
     recommendation: str = "REVIEW"
     reason: ReasonCode = "PIPELINE_ERROR"
 
@@ -129,8 +133,10 @@ class Supervisor:
 
         Raises `UnknownRulePack`, `UnknownSnapshotSet` or `GraphNotBuilt` when
         there is nothing to screen against, `ScreenUsageError` for a request
-        that cannot be run, `DeterminismViolation` and `AuditChainError`.
+        that cannot be run, `DeterminismViolation` and `AuditChainError`, and
+        `PermissionError` for a role that may not screen.
         """
+        require_command(self.ontology, request.role, "screen")
         pack = pack or load_rule_pack(pack_path(request.rule_pack))
         with GraphStore.open(request.snapshot, con) as store:
             ctx = ScreenContext(
@@ -173,7 +179,11 @@ class Supervisor:
     def _failed(
         self, agent: BaseAgent, exc: Exception, state: PipelineState, ctx: ScreenContext
     ) -> ScreenFailed:
-        failed = ScreenFailed(agent=agent.name, error=f"{type(exc).__name__}: {exc}")
+        failed = ScreenFailed(
+            agent=agent.name,
+            error=f"{type(exc).__name__}: {exc}",
+            error_type=type(exc).__name__,
+        )
         if self.audit is not None:
             self.audit.append(
                 ontology=self.ontology,
@@ -186,6 +196,9 @@ class Supervisor:
                 payload={
                     "agent": agent.name,
                     "request": state.request.model_dump(mode="json"),
+                    # With the request, what was to be screened: a failure
+                    # before Intake has no target, so its id names only the query.
+                    "snapshot_set_id": ctx.store.set_id,
                     "traceback": traceback.format_exception(exc),
                     "trace": ctx.trace,
                 },

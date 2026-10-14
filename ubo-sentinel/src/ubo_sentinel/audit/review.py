@@ -14,7 +14,12 @@ from typing import Any, Literal
 
 from ubo_sentinel.audit.log import REVIEW_EVENTS, AuditLog
 from ubo_sentinel.models.canonical import sha256_hex
-from ubo_sentinel.models.decision import Decision, DecisionStatus, FinalOutcome
+from ubo_sentinel.models.decision import (
+    Decision,
+    DecisionStatus,
+    FinalOutcome,
+    not_found_subject,
+)
 from ubo_sentinel.models.evidence import ReasonCode
 from ubo_sentinel.models.memo import Memo
 from ubo_sentinel.models.ontology import OntologyConfig
@@ -124,11 +129,14 @@ def review_decision(
     reason: str | None = None,
     matches: MatchRuling | None = None,
     superseded: bool | None = None,
+    accept_stale: bool = False,
 ) -> Decision:
     """Review a recommended decision and return it as reviewed.
 
     `superseded` says whether a newer snapshot set of the same family existed
-    when the review was made; it is recorded, not judged.
+    when the review was made; None when that is not known. A superseded
+    decision is not cleared unless the reviewer says so (`accept_stale`) and
+    why: the newer data may list a party that the older data did not.
 
     Raises `ReviewError`, `PermissionError` for a role without the right, and
     `AuditChainError`.
@@ -137,6 +145,15 @@ def review_decision(
     if decision is None:
         raise ReviewError(f"No decision '{decision_id}' is on record.")
     status, outcome, basis = settle(decision, action, outcome, reason, matches)
+    if outcome == "CLEAR" and superseded:
+        if not accept_stale:
+            raise ReviewError(
+                f"Decision {decision_id} was made on snapshot set {decision.snapshot_set_id},"
+                " and newer data exists: screen the entity again on it, or escalate."
+                " To clear on the older data all the same, accept it as stale and give a reason."
+            )
+        if not (reason or "").strip():
+            raise ReviewError("Clearing a decision made on older data needs a reason.")
 
     def guard(records: list[dict[str, Any]]) -> None:
         events = [record for record in records if record["decision_id"] == decision_id]
@@ -167,6 +184,8 @@ def review_decision(
             "payload_sha256": sha256_hex(decision.canonical_payload()),
             "basis": basis,
             "superseded": superseded,
+            # True when the reviewer cleared in the knowledge that newer data existed.
+            "accepted_stale": bool(superseded and accept_stale and outcome == "CLEAR"),
         },
         guard=guard,
     )
@@ -184,11 +203,47 @@ def unscreened(log: AuditLog) -> list[dict[str, Any]]:
 
     A screen that failed and was not run again is an entity nobody screened.
     """
-    decided = set()
+    decided: set[str] = set()
+    asked: set[tuple] = set()
     failed: dict[str, dict[str, Any]] = {}
     for record in log.records():
+        payload = record["payload"]
         if record["event_type"] == "RECOMMENDED":
             decided.add(record["decision_id"])
+            subject = _asked_for(payload.get("request"), payload["decision"]["snapshot_set_id"])
+            if subject is not None:
+                asked.add(subject)
         elif record["event_type"] == "SCREEN_FAILED":
             failed[record["decision_id"]] = record
-    return [record for decision_id, record in failed.items() if decision_id not in decided]
+    return [
+        record
+        for decision_id, record in failed.items()
+        if decision_id not in decided
+        and _asked_for(record["payload"].get("request"), record["payload"].get("snapshot_set_id"))
+        not in asked
+    ]
+
+
+def _asked_for(request: dict[str, Any] | None, snapshot_set_id: str | None) -> tuple | None:
+    """What a screen was asked for, on which set; None when the event does not say.
+
+    A screen that fails before Intake has resolved the query has no target, so
+    its id is not the id of the decision the same request gives when it is run
+    again. The request is what the two have in common.
+    """
+    if request is None or snapshot_set_id is None:
+        return None
+    return (
+        not_found_subject(
+            request.get("query") or "",
+            {
+                "lei": (request.get("lei") or "").strip().upper(),
+                "registration_number": (request.get("registration_number") or "").strip(),
+            },
+        ),
+        request.get("target_id"),
+        request.get("pick"),
+        request.get("rule_pack"),
+        request.get("max_depth"),
+        snapshot_set_id,
+    )

@@ -11,6 +11,7 @@ from typing import Any
 from ubo_sentinel import __version__
 from ubo_sentinel.agents.base import PIPELINE_VERSION, BaseAgent, PipelineState, ScreenContext
 from ubo_sentinel.agents.traversal import screen_depth
+from ubo_sentinel.audit.log import decision_of
 from ubo_sentinel.models.canonical import sha256_hex
 from ubo_sentinel.models.decision import Decision, Recommendation, compute_decision_id
 
@@ -19,6 +20,10 @@ SEVERITY: dict[Recommendation, int] = {"CLEAR": 0, "REVIEW": 1, "ESCALATE": 2}
 
 class DeterminismViolation(RuntimeError):
     """The same inputs gave a decision that differs from the one on record."""
+
+
+class _OnRecord(Exception):
+    """Raised by the append's guard: the decision id already has a recommendation."""
 
 
 def at_least_review(recommendation: Recommendation) -> Recommendation:
@@ -90,18 +95,15 @@ class AuditAgent(BaseAgent):
         if ctx.audit is None:
             return state.with_(decision=decision)
 
-        recorded = ctx.audit.decision(decision.decision_id)
-        if recorded is not None:
-            fields = differing_fields(decision, recorded)
-            if fields:
-                raise DeterminismViolation(
-                    f"Decision {decision.decision_id} is on record with a different"
-                    f" {', '.join(fields)}. The same inputs must give the same decision:"
-                    " code that changes a result must raise PIPELINE_VERSION, RULES_VERSION"
-                    " or TRANSFORM_VERSION."
-                )
-            ctx.is_new = False
-            return state.with_(decision=recorded)
+        on_record: list[Decision] = []
+
+        def not_on_record(records: list[dict[str, Any]]) -> None:
+            # Inside the log's lock, on the one read the append makes: the
+            # lookup and the write see the same log, and a screen reads it once.
+            recorded = decision_of(records, decision.decision_id)
+            if recorded is not None:
+                on_record.append(recorded)
+                raise _OnRecord
 
         payload: dict[str, Any] = {
             "decision": decision.model_dump(mode="json"),
@@ -116,13 +118,27 @@ class AuditAgent(BaseAgent):
             "evidence": ctx.store.evidence_info(),
             "trace": ctx.trace,
         }
-        ctx.audit.append(
-            ontology=ctx.ontology,
-            decision_id=decision.decision_id,
-            event_type="RECOMMENDED",
-            actor=state.request.actor,
-            role=state.request.role,
-            created_at=decision.created_at,
-            payload=payload,
-        )
+        try:
+            ctx.audit.append(
+                ontology=ctx.ontology,
+                decision_id=decision.decision_id,
+                event_type="RECOMMENDED",
+                actor=state.request.actor,
+                role=state.request.role,
+                created_at=decision.created_at,
+                payload=payload,
+                guard=not_on_record,
+            )
+        except _OnRecord:
+            recorded = on_record[0]
+            fields = differing_fields(decision, recorded)
+            if fields:
+                raise DeterminismViolation(
+                    f"Decision {decision.decision_id} is on record with a different"
+                    f" {', '.join(fields)}. The same inputs must give the same decision:"
+                    " code that changes a result must raise PIPELINE_VERSION, RULES_VERSION"
+                    " or TRANSFORM_VERSION."
+                ) from None
+            ctx.is_new = False
+            return state.with_(decision=recorded)
         return state.with_(decision=decision)

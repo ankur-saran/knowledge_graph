@@ -89,6 +89,7 @@ def test_a_review_ends_in_an_outcome(screened, review, log, query, action, field
         "payload_sha256": sha256_hex(decision.canonical_payload()),
         "basis": None,
         "superseded": None,
+        "accepted_stale": False,
     }
     assert log.verify().intact
 
@@ -279,6 +280,49 @@ def test_a_review_records_that_newer_data_existed(built):
     decision_id = decision_id_of(run("screen", CLEAR, "--actor", "a.analyst").output)
     assert run("ingest", "--source", "fixtures", "--path", "fixtures/snapshot_t1").exit_code == 0
     assert "[newer data exists]" in run("review", "--role", "reviewer").output
-    done = run("review", decision_id, "--role", "reviewer", "--actor", "r", "--action", "approve")
+    act = ["review", decision_id, "--role", "reviewer", "--actor", "r", "--action"]
+    # Clearing on older data is refused unless the reviewer says so; escalating is not.
+    refused = run(*act, "approve")
+    assert refused.exit_code == 2 and "newer data exists" in refused.output
+    done = run(*act, "escalate")
     assert done.exit_code == 0, done.output
-    assert AuditLog().records()[-1]["payload"]["superseded"] is True
+    payload = AuditLog().records()[-1]["payload"]
+    assert (payload["superseded"], payload["accepted_stale"]) == (True, False)
+
+
+def test_clearing_on_older_data_needs_the_reviewer_to_say_so(screened, review, log):
+    decision = screened(CLEAR)
+    with pytest.raises(ReviewError, match="newer data exists"):
+        review(decision, "approve", superseded=True)
+    with pytest.raises(ReviewError, match="needs a reason"):
+        review(decision, "approve", superseded=True, accept_stale=True)
+    # An override to ESCALATE is not a clear, whatever the data's age.
+    other = screened(ESCALATE)
+    with pytest.raises(ReviewError, match="newer data exists"):
+        review(other, "override", reason="Sold.", superseded=True)
+    reviewed = review(decision, "approve", superseded=True, accept_stale=True, reason="Checked.")
+    assert reviewed.final_outcome == "CLEAR"
+    assert log.records()[-1]["payload"]["accepted_stale"] is True
+    # Unknown is not superseded: a review with no database is not refused for it.
+    assert review(other, "approve", superseded=None).final_outcome == "ESCALATE"
+
+
+def test_a_failure_before_intake_is_cleared_by_the_screen_that_follows(
+    screened, log, con, graph_t0, ontology
+):
+    from ubo_sentinel.agents.intake import IntakeAgent
+
+    class Broken(IntakeAgent):
+        def run(self, state, ctx):
+            raise RuntimeError("disk on fire")
+
+    agents = tuple(Broken if agent is IntakeAgent else agent for agent in PIPELINE)
+    request = ScreenRequest(query=CLEAR, snapshot=graph_t0)
+    Supervisor(ontology, log, agents=agents).run(request, con)
+    assert len(unscreened(log)) == 1
+    # Another query, or another set, does not stand for it.
+    Supervisor(ontology, log).run(request.model_copy(update={"query": ESCALATE}), con)
+    assert len(unscreened(log)) == 1
+    # The same request, typed differently: the entity was screened after all.
+    Supervisor(ontology, log).run(request.model_copy(update={"query": " acme TRADING fze"}), con)
+    assert unscreened(log) == []

@@ -9,7 +9,7 @@ fx_registry,s00-sub-5,2026-09-01,1.0,FXS00SUB500000000000,RA-FX-GB,00-SUB-5,Elms
 fx_registry,s00-sub-6,2026-09-01,1.0,FXS00SUB600000000000,RA-FX-GB,00-SUB-6,Furzeham Paint Depot Ltd,,GB,ACTIVE,LegalEntity
 fx_registry,s00-sub-7,2026-09-01,1.0,FXS00SUB700000000000,RA-FX-GB,00-SUB-7,Gorsebank Joinery Ltd,,GB,ACTIVE,LegalEntity
 fx_registry,s00-sub-8,2026-09-01,1.0,FXS00SUB800000000000,RA-FX-GB,00-SUB-8,Hazelmere Ironmongers Ltd,,GB,ACTIVE,LegalEntity
-fx_list,s00-founder,2026-09-15,1.0,,,,Cordelia Ashdowne,,GB,UNKNOWN,Person
+fx_list,s00-founder,2026-09-15,1.0,,RA-FX-ID,FXID-7781-ASHD,Cordelia Ashdowne,,GB,UNKNOWN,Person
 fx_registry,s01-target,2026-09-01,1.0,FXS01TARGET000000000,RA-FX-AE,01-TARGET,Acme Trading FZE,Acme FZE,AE,ACTIVE,LegalEntity
 fx_registry,s01-parent,2026-09-01,1.0,FXS01PARENT000000000,RA-FX-AE,01-PARENT,Quillon Harbour Group Ltd,,AE,ACTIVE,LegalEntity
 fx_list,s01-minority,2026-09-15,1.0,,,,Tobias Wrenfield,,GB,UNKNOWN,Person

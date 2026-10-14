@@ -100,6 +100,18 @@ def require_write(ontology: OntologyConfig, role: str) -> None:
         raise PermissionError(f"Role '{role}' is read-only.")
 
 
+def require_command(ontology: OntologyConfig, role: str, command: str) -> None:
+    """Raise unless the role may run the command (`screen`, `review`, ...).
+
+    The CLI checks this before it runs a command; the Supervisor checks it too,
+    so a caller that is not the CLI (the review UI) is held to the same matrix.
+    """
+    if role not in ontology.roles:
+        raise PermissionError(f"Unknown role '{role}'.")
+    if command not in ontology.roles[role].commands:
+        raise PermissionError(f"Role '{role}' is not permitted to run '{command}'.")
+
+
 def require_decision_right(ontology: OntologyConfig, role: str, status: str) -> None:
     """Raise unless the role may move a decision to `status`."""
     require_write(ontology, role)

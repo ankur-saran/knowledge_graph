@@ -135,6 +135,8 @@ def test_a_failed_screen_is_not_a_clear(built, monkeypatch):
     assert result.exit_code == 1
     assert "REVIEW (PIPELINE_ERROR)" in result.output and "not screened" in result.output
     assert "CLEAR" not in result.output
+    # The exception's text may quote the data; the role is shown its kind only.
+    assert "(RuntimeError)" in result.output and "disk on fire" not in result.output
     assert [event["event_type"] for event in AuditLog().records()] == ["SCREEN_FAILED"]
 
 

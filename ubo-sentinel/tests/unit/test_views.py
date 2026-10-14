@@ -8,6 +8,7 @@ from conftest import T1, build_graph
 from ubo_sentinel.agents.base import ScreenRequest
 from ubo_sentinel.agents.supervisor import Supervisor
 from ubo_sentinel.audit.log import AuditLog
+from ubo_sentinel.cli.show import decision_text
 from ubo_sentinel.graph import queries
 from ubo_sentinel.graph.store import GraphStore
 from ubo_sentinel.graph.views import MASK, GraphView, mask_candidates, mask_decision
@@ -311,6 +312,26 @@ def test_a_query_that_is_a_persons_name_is_not_shown_back(con, graph_t0, ontolog
     assert person.target_id == PERSON
     assert mask_decision(person, "analyst", ontology).query == MASK
     assert mask_decision(person, "reviewer", ontology).query == "Dmitri Volkanov"
+
+
+def test_an_identifier_that_found_a_person_is_not_shown_back(con, graph_t0, ontology):
+    """The background founder has a registration number, which an analyst does not see."""
+    number = "FXID-7781-ASHD"
+    request = ScreenRequest(registration_number=number, snapshot=graph_t0)
+    person = Supervisor(ontology).run(request, con).decision
+    assert (person.target_id, person.query_identifiers) == (
+        "fx_list:s00-founder",
+        {"registration_number": number},
+    )
+    view = mask_decision(person, "analyst", ontology)
+    assert view.query_identifiers == {"registration_number": MASK}
+    # Shown, not withheld: nothing the role may not see is left in either form.
+    for as_json in (False, True):
+        text = decision_text(person, "analyst", ontology, as_json=as_json)
+        assert number not in text and "Cordelia Ashdowne" not in text
+    assert mask_decision(person, "reviewer", ontology).query_identifiers[
+        "registration_number"
+    ] == number
 
 
 def test_candidates_are_masked_without_a_store(store, view, ontology):

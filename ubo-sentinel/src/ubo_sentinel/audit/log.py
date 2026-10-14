@@ -184,7 +184,15 @@ class AuditLog:
 
     def decision(self, decision_id: str) -> Decision | None:
         """The decision as its events leave it, or None when none was recorded."""
-        return _fold(self.events_of(decision_id))
+        return decision_of(self.records(), decision_id)
+
+    def history(self, target_id: str) -> list[Decision]:
+        """Every recorded decision on one entity, in the order each was recommended.
+
+        A new snapshot set gives a new decision id; this is what links the
+        decisions on an entity across sets, depths and rule packs.
+        """
+        return [decision for decision in self.decisions() if decision.target_id == target_id]
 
     def decisions(self) -> list[Decision]:
         """Every recorded decision, in the order each was first recommended."""
@@ -256,7 +264,8 @@ class AuditLog:
                 f.write(canonical_json(record) + b"\n")
                 f.flush()
                 os.fsync(f.fileno())
-        decision = self.decision(decision_id)
+        # From the events already in hand: the log is not read a second time.
+        decision = decision_of([*records, record], decision_id)
         if decision is not None:
             self._write_view(decision)
         return event
@@ -294,6 +303,15 @@ class AuditLog:
             yield
         finally:
             lock.unlink(missing_ok=True)
+
+
+def decision_of(records: list[dict[str, Any]], decision_id: str) -> Decision | None:
+    """The decision that the events of one id add up to, from events already read.
+
+    For a caller that holds the log's events (a guard, inside the lock) and
+    must not read the file again.
+    """
+    return _fold([record for record in records if record["decision_id"] == decision_id])
 
 
 def _fold(events: list[dict[str, Any]]) -> Decision | None:

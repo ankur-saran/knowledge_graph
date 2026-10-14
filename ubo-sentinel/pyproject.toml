@@ -46,6 +46,23 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: end-to-end tests under tests/integration/",
+    "slow: starts other processes or measures time",
+]
+
+# The gate applies when coverage is asked for (`uv run pytest --cov`, `make test`);
+# a single test file run without `--cov` is not failed by it.
+[tool.coverage.run]
+source = [
+    "src/ubo_sentinel/rules",
+    "src/ubo_sentinel/graph",
+    "src/ubo_sentinel/audit",
+    "src/ubo_sentinel/agents",
+]
+
+[tool.coverage.report]
+fail_under = 95
 
 [tool.ruff]
 line-length = 100

@@ -350,9 +350,11 @@ def test_an_agent_must_provide_what_it_declares(screen):
     assert failed.error == "ContractError: Forgetful did not provide: subgraph"
 
 
-def test_a_read_only_role_cannot_record_a_decision(screen):
-    with pytest.raises(PermissionError, match="read-only"):
-        screen("Acme Trading FZE", role="auditor")
+def test_a_role_that_may_not_screen_is_refused_by_the_supervisor(screen):
+    """The matrix holds for any caller, not only the CLI."""
+    for role in ("auditor", "engineer"):
+        with pytest.raises(PermissionError, match=f"'{role}' is not permitted to run 'screen'"):
+            screen("Acme Trading FZE", role=role)
 
 
 # --- what would settle a review --------------------------------------------------------
