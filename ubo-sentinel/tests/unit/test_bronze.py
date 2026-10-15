@@ -10,11 +10,15 @@ from ubo_sentinel.cli.app import app
 from ubo_sentinel.models import read_rows, sha256_hex
 from ubo_sentinel.pipeline.bronze import (
     BRONZE_COLUMNS,
+    BRONZE_SCHEMA_VERSION,
     BRONZE_TABLES,
     IngestError,
+    SnapshotManager,
     UnknownSnapshotSet,
+    create_schema,
     resolve_set,
     rows_digest,
+    schema_version,
 )
 from ubo_sentinel.pipeline.db import DB_ENV_VAR, connect, db_path
 from ubo_sentinel.pipeline.loaders.fixture_loader import DATASETS, ingest_fixtures
@@ -31,9 +35,13 @@ def count(con, table):
 
 
 def assert_nothing_written(con):
-    """A refused ingest leaves no rows; one refused before any write leaves no tables."""
+    """A refused ingest leaves no rows; one refused before any write leaves no tables.
+
+    `bronze_schema` records the schema the tables were made with, not data.
+    """
     for (table,) in con.execute("SHOW TABLES").fetchall():
-        assert count(con, table) == 0, table
+        if table != "bronze_schema":
+            assert count(con, table) == 0, table
 
 
 def bronze_rows(con, table):
@@ -322,3 +330,61 @@ def test_sources_of_later_steps_are_not_available_yet(con):
     con.close()
     result = runner.invoke(app, ["ingest", "--source", "gleif"])
     assert result.exit_code == 2
+
+
+# --- schema evolution -------------------------------------------------------------
+
+
+def test_an_older_bronze_is_brought_up_to_date_in_place(con):
+    """Bronze cannot be rebuilt, so a newer schema is added to the rows already there."""
+    ingest_fixtures(con, T0)
+    registry = con.execute(
+        "SELECT snapshot_id, row_count, rows_digest FROM bronze_snapshots ORDER BY snapshot_id"
+    ).fetchall()
+    # The schema as Step 9 made it.
+    con.execute("ALTER TABLE bronze_snapshots DROP COLUMN reject_count")
+    con.execute("ALTER TABLE bronze_snapshots DROP COLUMN source_meta")
+    con.execute("DROP TABLE bronze_rejects")
+    con.execute("DROP TABLE bronze_schema")
+    assert schema_version(con) is None
+
+    create_schema(con)
+
+    assert schema_version(con) == BRONZE_SCHEMA_VERSION
+    assert con.execute(
+        "SELECT snapshot_id, row_count, rows_digest FROM bronze_snapshots ORDER BY snapshot_id"
+    ).fetchall() == registry
+    for snapshot_id, table in con.execute(
+        "SELECT snapshot_id, table_name FROM bronze_snapshots"
+    ).fetchall():
+        recorded = con.execute(
+            "SELECT rows_digest FROM bronze_snapshots WHERE snapshot_id = ?", [snapshot_id]
+        ).fetchone()[0]
+        assert rows_digest(con, table, snapshot_id) == recorded
+    assert con.execute("SELECT DISTINCT reject_count FROM bronze_snapshots").fetchall() == [(0,)]
+    # Bringing it up again changes nothing, and ingesting still works.
+    create_schema(con)
+    assert ingest_fixtures(con, T0).snapshot_set.is_new is False
+
+
+def test_a_newer_bronze_is_refused(con):
+    create_schema(con)
+    con.execute("UPDATE bronze_schema SET version = ?", [BRONZE_SCHEMA_VERSION + 1])
+    with pytest.raises(IngestError, match="Bronze schema"):
+        SnapshotManager(con)
+
+
+def test_a_snapshot_records_its_rejects_and_its_source(con, tmp_path):
+    manager = SnapshotManager(con)
+    path = tmp_path / "entities.csv"
+    path.write_bytes((T0 / "entities.csv").read_bytes())
+    snapshot = manager.open_snapshot("entities", "fixtures", "bronze_entities", path)
+    again = manager.open_snapshot(
+        "entities", "fixtures", "bronze_entities", path, content_sha256=snapshot.content_sha256
+    )
+    assert again == snapshot
+    manager.register_snapshot(snapshot, reject_count=3, source_meta={"url": "u", "licence": "l"})
+    assert con.execute(
+        "SELECT reject_count, source_meta FROM bronze_snapshots WHERE snapshot_id = ?",
+        [snapshot.snapshot_id],
+    ).fetchone() == (3, '{"licence":"l","url":"u"}')

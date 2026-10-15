@@ -85,6 +85,38 @@ CREATE TABLE IF NOT EXISTS snapshot_set_info (
 """
 
 
+# Bronze is not derived: it cannot be dropped and built again as Silver and Gold
+# can. A change to its schema is therefore an addition made in place, recorded
+# by raising this number; `create_schema` brings an older database up to it.
+BRONZE_SCHEMA_VERSION = 2
+
+# Columns added after version 1, in the order they were added. Each is nullable
+# or has a default, so the rows of an older database stay as they were.
+_ADDED_COLUMNS = (
+    # Records of the snapshot that could not be read, in `bronze_rejects` (real sources).
+    ("bronze_snapshots", "reject_count", "BIGINT DEFAULT 0"),
+    # Where the file came from: canonical JSON of its download manifest entry
+    # (URL, publisher's timestamp and checksum, licence). Null for fixtures.
+    ("bronze_snapshots", "source_meta", "JSON"),
+)
+
+_REJECTS_DDL = """
+CREATE TABLE IF NOT EXISTS bronze_rejects (
+    snapshot_id TEXT NOT NULL,
+    row_num INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    raw TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, row_num)
+)
+"""
+
+_SCHEMA_VERSION_DDL = """
+CREATE TABLE IF NOT EXISTS bronze_schema (
+    version INTEGER NOT NULL
+)
+"""
+
+
 class IngestError(ValueError):
     """The input cannot be ingested. Nothing was written."""
 
@@ -132,9 +164,32 @@ class SnapshotSet:
 
 
 def create_schema(con: duckdb.DuckDBPyConnection) -> None:
+    """Create Bronze, or bring a database made by an earlier version up to this one."""
     for table in BRONZE_TABLES:
         con.execute(_BRONZE_DDL.format(table=table))
     con.execute(_REGISTRY_DDL)
+    con.execute(_REJECTS_DDL)
+    for table, column, definition in _ADDED_COLUMNS:
+        con.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}")
+    con.execute(_SCHEMA_VERSION_DDL)
+    version = con.execute("SELECT max(version) FROM bronze_schema").fetchone()[0]
+    if version is None or version < BRONZE_SCHEMA_VERSION:
+        con.execute("DELETE FROM bronze_schema")
+        con.execute("INSERT INTO bronze_schema VALUES (?)", [BRONZE_SCHEMA_VERSION])
+    elif version > BRONZE_SCHEMA_VERSION:
+        raise IngestError(
+            f"The database has Bronze schema {version}; this code knows {BRONZE_SCHEMA_VERSION}."
+        )
+
+
+def schema_version(con: duckdb.DuckDBPyConnection) -> int | None:
+    """The Bronze schema version of a database, or None when it predates the record."""
+    present = con.execute(
+        "SELECT 1 FROM information_schema.tables WHERE table_name = 'bronze_schema'"
+    ).fetchone()
+    if present is None:
+        return None
+    return con.execute("SELECT max(version) FROM bronze_schema").fetchone()[0]
 
 
 @contextmanager
@@ -147,6 +202,12 @@ def transaction(con: duckdb.DuckDBPyConnection) -> Iterator[None]:
         con.rollback()
         raise
     con.commit()
+
+
+def file_sha256(path: Path) -> str:
+    """SHA-256 of a file's bytes, read as a stream."""
+    with path.open("rb") as f:
+        return hashlib.file_digest(f, "sha256").hexdigest()
 
 
 def snapshot_id_for(dataset: str, content_sha256: str) -> str:
@@ -225,10 +286,19 @@ class SnapshotManager:
         self.con = con
         create_schema(con)
 
-    def open_snapshot(self, dataset: str, family: str, table_name: str, path: Path) -> Snapshot:
+    def open_snapshot(
+        self,
+        dataset: str,
+        family: str,
+        table_name: str,
+        path: Path,
+        content_sha256: str | None = None,
+    ) -> Snapshot:
+        """`content_sha256` may be given when the file was hashed already: one
+        file can feed several datasets."""
         _check_table(table_name)
-        with path.open("rb") as f:
-            content_sha256 = hashlib.file_digest(f, "sha256").hexdigest()
+        if content_sha256 is None:
+            content_sha256 = file_sha256(path)
         snapshot_id = snapshot_id_for(dataset, content_sha256)
         present = self.con.execute(
             "SELECT 1 FROM bronze_snapshots WHERE snapshot_id = ?", [snapshot_id]
@@ -267,7 +337,13 @@ class SnapshotManager:
                 rows,
             )
 
-    def register_snapshot(self, snapshot: Snapshot, published_at: date | None = None) -> None:
+    def register_snapshot(
+        self,
+        snapshot: Snapshot,
+        published_at: date | None = None,
+        reject_count: int = 0,
+        source_meta: dict[str, Any] | None = None,
+    ) -> None:
         """Record a snapshot whose rows are now in its Bronze table."""
         row_count, as_of_min, as_of_max = self.con.execute(
             f"SELECT count(*), min(_as_of), max(_as_of) FROM {snapshot.table_name}"
@@ -275,7 +351,10 @@ class SnapshotManager:
             [snapshot.snapshot_id],
         ).fetchone()
         self.con.execute(
-            "INSERT INTO bronze_snapshots VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO bronze_snapshots (snapshot_id, dataset, family, table_name, file_name,"
+            " content_sha256, byte_size, row_count, rows_digest, as_of_min, as_of_max,"
+            " published_at, ingested_at, reject_count, source_meta)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 snapshot.snapshot_id,
                 snapshot.dataset,
@@ -290,6 +369,8 @@ class SnapshotManager:
                 as_of_max,
                 published_at,
                 datetime.now(UTC).replace(tzinfo=None),
+                reject_count,
+                None if source_meta is None else canonical_json(source_meta).decode("utf-8"),
             ],
         )
 

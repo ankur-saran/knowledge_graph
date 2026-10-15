@@ -23,12 +23,10 @@ from ubo_sentinel.pipeline.bronze import (
     FAMILY_FIXTURES,
     IngestError,
     SnapshotManager,
-    SnapshotSet,
     SourceRecord,
-    UnknownSnapshotSet,
-    resolve_set,
     transaction,
 )
+from ubo_sentinel.pipeline.loaders.base import DatasetSummary, IngestSummary, resolve_alias
 
 # Commands are run from the repository root.
 DEFAULT_PATH = Path("fixtures/snapshot_t0")
@@ -48,26 +46,6 @@ DATASETS: dict[str, FixtureDataset] = {
     "sanctions.csv": FixtureDataset("sanctions", "bronze_sanctions", SanctionRow),
     "repex.csv": FixtureDataset("repex", "bronze_repex", RepexRow),
 }
-
-
-@dataclass(frozen=True)
-class DatasetSummary:
-    dataset: str
-    table: str
-    snapshot_id: str
-    row_count: int
-    # "new", "already present" or "inherited".
-    status: str
-
-
-@dataclass(frozen=True)
-class IngestSummary:
-    source: str
-    path: Path
-    datasets: list[DatasetSummary]
-    snapshot_set: SnapshotSet
-    # Alias -> the set id it resolves to after this ingest; None when it resolves to nothing.
-    aliases: dict[str, str | None]
 
 
 def check_stable_bytes(path: Path) -> None:
@@ -153,12 +131,6 @@ def ingest_fixtures(
         path=path,
         datasets=datasets,
         snapshot_set=snapshot_set,
-        aliases={alias: _resolve(con, alias) for alias in (ALIAS_FIXTURES, ALIAS_LATEST)},
+        aliases={alias: resolve_alias(con, alias) for alias in (ALIAS_FIXTURES, ALIAS_LATEST)},
     )
 
-
-def _resolve(con: duckdb.DuckDBPyConnection, alias: str) -> str | None:
-    try:
-        return resolve_set(con, alias).snapshot_set_id
-    except UnknownSnapshotSet:
-        return None
