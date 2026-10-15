@@ -4,18 +4,17 @@ Silver merges records across datasets, so it is built per snapshot set; two
 sets live side by side. It is derived from Bronze and can be rebuilt.
 """
 
-import hashlib
 import json
 from typing import Any
 
 import duckdb
 
-from ubo_sentinel.models.canonical import canonical_json
 from ubo_sentinel.models.entity import Entity
 from ubo_sentinel.models.provenance import Provenance
 from ubo_sentinel.models.relationship import Relationship
 from ubo_sentinel.models.reporting_exception import ReportingException
 from ubo_sentinel.models.sanction import Sanction
+from ubo_sentinel.pipeline.digest import fold_tables
 
 _PROVENANCE = """
     source TEXT NOT NULL,
@@ -181,16 +180,7 @@ def silver_digest(con: duckdb.DuckDBPyConnection, snapshot_set_id: str) -> str:
 
     The same Bronze rows and the same code give the same digest on any machine.
     """
-    digest = hashlib.sha256()
-    for table, (_, key) in _TABLES.items():
-        digest.update(table.encode("ascii") + b"\n")
-        con.execute(
-            f"SELECT * FROM {table} WHERE snapshot_set_id = ? ORDER BY {key}", [snapshot_set_id]
-        )
-        while batch := con.fetchmany(10_000):
-            for row in batch:
-                digest.update(canonical_json(list(row)) + b"\n")
-    return digest.hexdigest()
+    return fold_tables(con, ((table, key) for table, (_, key) in _TABLES.items()), snapshot_set_id)
 
 
 def load_build(con: duckdb.DuckDBPyConnection, snapshot_set_id: str) -> dict[str, Any] | None:

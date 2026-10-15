@@ -56,6 +56,16 @@ def append(path, *lines):
         f.writelines(line + "\n" for line in lines)
 
 
+def add_entity(path, **fields):
+    """Append an entity row to `path`/entities.csv, by column name; other cells are empty."""
+    entities = path / "entities.csv"
+    header = entities.read_text(encoding="utf-8").splitlines()[0].split(",")
+    row = {"as_of": "2026-09-01", "confidence": "1.0", "status": "ACTIVE"} | fields
+    unknown = set(row) - set(header)
+    assert not unknown, unknown
+    append(entities, ",".join(row.get(column, "") for column in header))
+
+
 def by_id(rows):
     return {row.id: row for row in rows}
 
@@ -235,6 +245,62 @@ def test_two_leis_that_share_a_registration_are_linked_not_merged(con, ontology,
         for sanction in read_sanctions(con, set_id)
         if sanction.provenance.source_record_id == "s02-des"
     } == {"lei:FXS02TARGET000000000"}
+
+
+def test_similar_names_link_only_across_sources_and_within_one_entity_type(con, ontology, t0_copy):
+    name = {"legal_name": "Zephyrine Glassworks", "jurisdiction": "GB"}
+    add_entity(
+        t0_copy, source="fx_list", source_record_id="s99-list", entity_type="LegalEntity", **name
+    )
+    # The same source's near-duplicate: that source's own business.
+    add_entity(
+        t0_copy,
+        source="fx_list",
+        source_record_id="s99-list-2",
+        entity_type="LegalEntity",
+        legal_name="Zephyrine Glasworks",
+        jurisdiction="GB",
+    )
+    # A registry record of the same company, without an LEI.
+    add_entity(
+        t0_copy, source="fx_registry", source_record_id="s99-reg", entity_type="LegalEntity", **name
+    )
+    # A person who shares the name is not the company.
+    add_entity(
+        t0_copy, source="fx_registry", source_record_id="s99-person", entity_type="Person", **name
+    )
+    set_id = build(con, ontology, t0_copy)
+
+    found = {
+        pair: link["match_type"]
+        for pair, link in links(con, set_id).items()
+        if any(end.startswith(("fx_list:s99", "fx_registry:s99")) for end in pair)
+    }
+    assert found == {
+        ("fx_list:s99-list", "fx_registry:s99-reg"): "FUZZY_NAME",
+        ("fx_list:s99-list-2", "fx_registry:s99-reg"): "FUZZY_NAME",
+    }
+
+
+def test_blocks_a_name_does_not_try_are_counted(con, ontology, monkeypatch):
+    monkeypatch.setattr(transformer, "LINK_BLOCK_MAX", 0)
+    set_id = build(con, ontology)
+    counts = json.loads(
+        con.execute(
+            "SELECT counts FROM silver_builds WHERE snapshot_set_id = ?", [set_id]
+        ).fetchone()[0]
+    )
+    assert counts["link_blocks_skipped"] > 0
+    assert links(con, set_id) == {}
+    # The limits are build parameters: a set built under others is not reused.
+    assert (
+        json.loads(
+            con.execute(
+                "SELECT params FROM silver_builds WHERE snapshot_set_id = ?", [set_id]
+            ).fetchone()[0]
+        )["link_block_max"]
+        == 0
+    )
 
 
 def test_resolve_groups_keeps_the_first_join_and_refuses_the_conflicting_one():

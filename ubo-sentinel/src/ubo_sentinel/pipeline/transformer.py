@@ -21,12 +21,14 @@ from ubo_sentinel.pipeline.entity_linking import (
     BLOCK_PREFIX_LENGTH,
     KEY_LEI,
     KEY_REGISTRATION,
+    LINK_BLOCK_MAX,
+    LINK_CANDIDATE_CAP,
     LINK_FLOOR,
     resolve_groups,
 )
 from ubo_sentinel.pipeline.jurisdiction import normalise_jurisdiction
 from ubo_sentinel.pipeline.mappers import MAPPERS, create_stage_tables, stage
-from ubo_sentinel.pipeline.name_match import name_similarity, normalise_name
+from ubo_sentinel.pipeline.name_match import normalise_name, similarity_normalised
 from ubo_sentinel.pipeline.silver import (
     SILVER_TABLES,
     SilverError,
@@ -38,7 +40,7 @@ from ubo_sentinel.pipeline.sources import SOURCE_RANK
 
 # Raise this when a change here alters the rows Silver holds for the same Bronze
 # rows. A set built by another version is not reused.
-TRANSFORM_VERSION = 2
+TRANSFORM_VERSION = 3
 
 REJECT_UNRESOLVED_REF = "UNRESOLVED_REF"
 REJECT_SELF_LOOP = "SELF_LOOP_AFTER_MERGE"
@@ -60,7 +62,7 @@ _PROV_ORDER = "source, source_record_id, snapshot_id, as_of"
 _FUNCTIONS = {
     "ubo_normalise_name": (normalise_name, ["VARCHAR"], "VARCHAR"),
     "ubo_jurisdiction": (normalise_jurisdiction, ["VARCHAR"], "VARCHAR"),
-    "ubo_name_similarity": (name_similarity, ["VARCHAR", "VARCHAR"], "DOUBLE"),
+    "ubo_similarity_normalised": (similarity_normalised, ["VARCHAR", "VARCHAR"], "DOUBLE"),
     "ubo_relationship_id": (
         relationship_id,
         ["VARCHAR", "VARCHAR", "VARCHAR", "BOOLEAN"],
@@ -84,6 +86,8 @@ def build_params() -> dict[str, Any]:
     """Everything outside Bronze that decides what Silver holds."""
     return {
         "link_floor": LINK_FLOOR,
+        "link_candidate_cap": LINK_CANDIDATE_CAP,
+        "link_block_max": LINK_BLOCK_MAX,
         "source_rank": SOURCE_RANK,
         "transform_version": TRANSFORM_VERSION,
     }
@@ -360,38 +364,95 @@ def _write_links(
         [set_id],
     )
 
-    # Names are compared only within a block: a shared word prefix. Two entities
-    # that both have an LEI are different entities whatever their names, and so
-    # are two whose jurisdictions differ.
+    # Names are compared only within a block: a shared word prefix, among names
+    # of entities of one type. Never linked: two entities that both have an LEI
+    # (different entities whatever their names), two whose jurisdictions differ,
+    # and two described by records of one source (a source's own duplicates are
+    # its own to resolve). So every pair has an entity without an LEI, and the
+    # search starts from those, each name trying its rarest blocks first
+    # (`LINK_CANDIDATE_CAP`, `LINK_BLOCK_MAX`).
     con.execute(
         """
         CREATE OR REPLACE TEMP TABLE stg_blocks AS
-        SELECT DISTINCT entity_id, name, left(token, ?) AS block FROM (
-            SELECT entity_id, name, unnest(string_split(name_norm, ' ')) AS token
+        SELECT DISTINCT t.entity_id, t.name, t.name_norm, e.entity_type,
+               left(t.token, ?) AS block
+        FROM (
+            SELECT entity_id, name, name_norm, unnest(string_split(name_norm, ' ')) AS token
             FROM silver_entity_names WHERE snapshot_set_id = ?
-        ) WHERE token <> ''
+        ) t
+        JOIN stg_entity e ON e.entity_id = t.entity_id
+        WHERE t.token <> ''
         """,
         [BLOCK_PREFIX_LENGTH, set_id],
     )
     con.execute(
         """
+        CREATE OR REPLACE TEMP TABLE stg_block_sizes AS
+        SELECT entity_type, block, count(*) AS size FROM stg_blocks GROUP BY entity_type, block
+        """
+    )
+    # Each name of an entity without an LEI, and the blocks it tries: the rarest
+    # first, while the names in hand stay within the cap. The first block is
+    # tried whatever its size, unless it is over `LINK_BLOCK_MAX`.
+    con.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE stg_probes AS
+        WITH probes AS (
+            SELECT b.entity_id, b.name, b.entity_type, b.block, z.size
+            FROM stg_blocks b
+            JOIN stg_entity e ON e.entity_id = b.entity_id AND e.lei IS NULL
+            JOIN stg_block_sizes z ON z.entity_type = b.entity_type AND z.block = b.block
+        ), ranked AS (
+            SELECT *, coalesce(sum(size) OVER (
+                PARTITION BY entity_id, name ORDER BY size, block
+                ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+            ), 0) AS in_hand
+            FROM probes
+        )
+        SELECT *, size <= ? AND (in_hand = 0 OR in_hand + size <= ?) AS tried FROM ranked
+        """,
+        [LINK_BLOCK_MAX, LINK_CANDIDATE_CAP],
+    )
+    con.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE stg_link_pairs AS
+        SELECT DISTINCT
+            least(p.entity_id, b.entity_id) AS a_id,
+            greatest(p.entity_id, b.entity_id) AS b_id,
+            CASE WHEN p.entity_id < b.entity_id THEN pn.name ELSE b.name END AS name_a,
+            CASE WHEN p.entity_id < b.entity_id THEN b.name ELSE pn.name END AS name_b,
+            CASE WHEN p.entity_id < b.entity_id THEN pn.name_norm ELSE b.name_norm END AS norm_a,
+            CASE WHEN p.entity_id < b.entity_id THEN b.name_norm ELSE pn.name_norm END AS norm_b
+        FROM stg_probes p
+        JOIN stg_blocks pn
+            ON pn.entity_id = p.entity_id AND pn.name = p.name AND pn.block = p.block
+        JOIN stg_blocks b
+            ON b.entity_type = p.entity_type AND b.block = p.block AND b.entity_id <> p.entity_id
+        JOIN stg_entity ea ON ea.entity_id = p.entity_id
+        JOIN stg_entity eb ON eb.entity_id = b.entity_id
+        WHERE p.tried
+          AND ea.source <> eb.source
+          AND (ea.jurisdiction IS NULL OR eb.jurisdiction IS NULL
+               OR ea.jurisdiction = eb.jurisdiction)
+        """
+    )
+    # Each pair of normalised names is scored once, by the one scorer.
+    con.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE stg_link_scores AS
+        SELECT norm_a, norm_b, ubo_similarity_normalised(norm_a, norm_b) AS score
+        FROM (SELECT DISTINCT norm_a, norm_b FROM stg_link_pairs)
+        """
+    )
+    con.execute(
+        """
         INSERT INTO silver_entity_links
-        WITH pairs AS (
-            SELECT DISTINCT a.entity_id AS a_id, b.entity_id AS b_id,
-                   a.name AS name_a, b.name AS name_b
-            FROM stg_blocks a
-            JOIN stg_blocks b ON b.block = a.block AND a.entity_id < b.entity_id
-            JOIN stg_entity ea ON ea.entity_id = a.entity_id
-            JOIN stg_entity eb ON eb.entity_id = b.entity_id
-            WHERE NOT (ea.lei IS NOT NULL AND eb.lei IS NOT NULL)
-              AND (ea.jurisdiction IS NULL OR eb.jurisdiction IS NULL
-                   OR ea.jurisdiction = eb.jurisdiction)
-        ), scored AS (
-            SELECT *, ubo_name_similarity(name_a, name_b) AS score FROM pairs
-        ), best AS (
-            SELECT *, row_number() OVER (
-                PARTITION BY a_id, b_id ORDER BY score DESC, name_a, name_b
-            ) AS rn FROM scored
+        WITH best AS (
+            SELECT p.a_id, p.b_id, p.name_a, p.name_b, s.score, row_number() OVER (
+                PARTITION BY p.a_id, p.b_id ORDER BY s.score DESC, p.name_a, p.name_b
+            ) AS rn
+            FROM stg_link_pairs p
+            JOIN stg_link_scores s ON s.norm_a = p.norm_a AND s.norm_b = p.norm_b
         )
         SELECT ?, a_id, b_id, 'FUZZY_NAME', score, name_a, name_b
         FROM best
@@ -591,6 +652,8 @@ def _counts(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any]:
         "merged_records": count("silver_entity_xref", "NOT is_primary"),
         "names": count("silver_entity_names"),
         "links": count("silver_entity_links"),
+        # Blocks a name did not try (`LINK_CANDIDATE_CAP`, `LINK_BLOCK_MAX`).
+        "link_blocks_skipped": count("stg_probes", "NOT tried"),
         "relationship_records": count("stg_relationships"),
         "relationships": count("silver_relationships"),
         "designations": count("stg_sanctions"),

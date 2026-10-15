@@ -15,6 +15,16 @@ LINK_FLOOR = 0.75
 # Names are compared only when they share the first letters of some word.
 BLOCK_PREFIX_LENGTH = 4
 
+# Linking is driven from the names of entities without an LEI (two entities with
+# an LEI are never linked). Each such name tries its blocks from the rarest, and
+# stops before the candidates it has in hand would pass `LINK_CANDIDATE_CAP`; a
+# block holding more than `LINK_BLOCK_MAX` names is never tried. On a full
+# registry a block such as "hold" or "trad" holds 10^5 names: comparing every
+# pair in it is what would not finish. A true match shares the name's rarest
+# word, so the rarest blocks are where it is. What is not tried is counted.
+LINK_CANDIDATE_CAP = 500
+LINK_BLOCK_MAX = 20_000
+
 KEY_LEI = "LEI"
 KEY_REGISTRATION = "REGISTRATION"
 

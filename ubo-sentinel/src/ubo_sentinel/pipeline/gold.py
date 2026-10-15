@@ -5,7 +5,6 @@ node's degrees, links in both directions and the name blocks the resolver
 searches. It is derived from Silver and is rebuilt whenever Silver changes.
 """
 
-import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -17,6 +16,7 @@ from ubo_sentinel import __version__
 from ubo_sentinel.models.canonical import canonical_json
 from ubo_sentinel.pipeline import silver
 from ubo_sentinel.pipeline.bronze import SnapshotSet, transaction
+from ubo_sentinel.pipeline.digest import fold_tables
 from ubo_sentinel.pipeline.entity_linking import BLOCK_PREFIX_LENGTH
 
 _PROVENANCE = """
@@ -155,17 +155,9 @@ def gold_digest(con: duckdb.DuckDBPyConnection, snapshot_set_id: str, silver_dig
     It names the graph a screen read: the same Bronze rows and the same code
     give the same digest on any machine.
     """
-    digest = hashlib.sha256()
-    digest.update(silver_digest.encode("ascii") + b"\n")
-    for table, (_, key) in _TABLES.items():
-        digest.update(table.encode("ascii") + b"\n")
-        con.execute(
-            f"SELECT * FROM {table} WHERE snapshot_set_id = ? ORDER BY {key}", [snapshot_set_id]
-        )
-        while batch := con.fetchmany(10_000):
-            for row in batch:
-                digest.update(canonical_json(list(row)) + b"\n")
-    return digest.hexdigest()
+    return fold_tables(
+        con, ((table, key) for table, (_, key) in _TABLES.items()), snapshot_set_id, silver_digest
+    )
 
 
 def load_build(con: duckdb.DuckDBPyConnection, snapshot_set_id: str) -> dict[str, Any] | None:
