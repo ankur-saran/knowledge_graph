@@ -19,14 +19,15 @@ def python_texts(con, table, key, set_id):
 
 
 def test_every_silver_and_gold_row_is_written_as_canonical_json(con, graph_t0):
-    written = 0
+    empty = []
     for tables in (silver._TABLES, gold._TABLES):
         for table, (_, key) in tables.items():
             texts = row_texts(con, table, key, graph_t0)
             assert texts == python_texts(con, table, key, graph_t0), table
-            written += len(texts)
-    # Every table but the rejects holds rows on t0.
-    assert written > 1000
+            if not texts:
+                empty.append(table)
+    # The t0 fixtures load without a reject; every other table holds rows.
+    assert empty == ["silver_rejects"]
 
 
 @pytest.fixture

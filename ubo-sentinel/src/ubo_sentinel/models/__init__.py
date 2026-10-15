@@ -6,7 +6,7 @@ from ubo_sentinel.models.decision import (
     Recommendation,
     compute_decision_id,
 )
-from ubo_sentinel.models.entity import Entity, EntityStatus, EntityType, entity_id
+from ubo_sentinel.models.entity import Entity, EntityStatus, EntityType, LeiStatus, entity_id
 from ubo_sentinel.models.evidence import (
     DataGap,
     EffectiveExposure,
@@ -52,6 +52,7 @@ __all__ = [
     "EntityMatch",
     "EntityRow",
     "EntityStatus",
+    "LeiStatus",
     "EntityType",
     "EventType",
     "EvidencePath",

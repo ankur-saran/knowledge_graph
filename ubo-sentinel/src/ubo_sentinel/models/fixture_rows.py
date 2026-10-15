@@ -18,7 +18,7 @@ from pydantic import (
     model_validator,
 )
 
-from ubo_sentinel.models.entity import EntityStatus, EntityType, entity_id
+from ubo_sentinel.models.entity import EntityStatus, EntityType, LeiStatus, entity_id
 from ubo_sentinel.models.provenance import Confidence, NonEmptyStr
 from ubo_sentinel.models.relationship import Basis, Pct, RelType
 from ubo_sentinel.models.reporting_exception import RepexCategory
@@ -58,7 +58,14 @@ class EntityRow(_Row):
     aliases: list[NonEmptyStr] = []
     jurisdiction: NonEmptyStr | None = None
     status: EntityStatus
+    lei_status: LeiStatus | None = None
     entity_type: EntityType
+
+    @model_validator(mode="after")
+    def _lei_status_needs_an_lei(self) -> Self:
+        if self.lei_status is not None and self.lei is None:
+            raise ValueError("an LEI status needs an LEI")
+        return self
 
     @field_validator("aliases", mode="before")
     @classmethod

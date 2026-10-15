@@ -260,14 +260,19 @@ def _write_nodes(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
                    CASE WHEN rel_type = 'CONSOLIDATED_BY' THEN subject_id ELSE object_id END
                        AS lower_id
             FROM silver_relationships WHERE snapshot_set_id = ?
+        ), up AS (
+            SELECT lower_id AS id, count(*) AS n FROM ends GROUP BY lower_id
+        ), down AS (
+            SELECT upper_id AS id, count(*) AS n FROM ends GROUP BY upper_id
         )
         SELECT e.snapshot_set_id, e.id, e.entity_type, e.lei, e.registration_authority_id,
             e.registration_number, e.legal_name, e.aliases, e.jurisdiction, e.status,
             e.entity_type, e.repex_reason, {", ".join(f"e.{c.strip()}" for c in _PROV.split(","))},
-            e.supporting_records,
-            (SELECT count(*) FROM ends WHERE lower_id = e.id),
-            (SELECT count(*) FROM ends WHERE upper_id = e.id)
-        FROM silver_entities e WHERE e.snapshot_set_id = ?
+            e.supporting_records, coalesce(up.n, 0), coalesce(down.n, 0)
+        FROM silver_entities e
+        LEFT JOIN up ON up.id = e.id
+        LEFT JOIN down ON down.id = e.id
+        WHERE e.snapshot_set_id = ?
         """,
         [set_id, set_id],
     )
