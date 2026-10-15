@@ -9,13 +9,19 @@ import unicodedata
 
 from rapidfuzz import fuzz
 
-# Tokens that say what kind of legal person something is, not which one.
+# Tokens that say what kind of legal person something is, not which one. Short
+# forms that are also common words ("ad", "se", "cv") are left out: dropping a
+# word that names the company would make unrelated names look alike.
 LEGAL_FORM_TOKENS = frozenset(
     {
-        "ab", "ag", "ao", "aps", "as", "bv", "co", "company", "corp", "corporation",
-        "fzc", "fzco", "fze", "gmbh", "inc", "incorporated", "jsc", "limited", "llc",
-        "llp", "lp", "ltd", "nv", "oao", "ooo", "pao", "pjsc", "plc", "pte", "pty",
-        "sa", "sarl", "spa", "srl", "zao",
+        "ab", "ag", "aktiengesellschaft", "ao", "aps", "as", "asa", "bhd", "bv", "bvba",
+        "cjsc", "co", "company", "corp", "corporation", "doo", "ead", "ehf", "eood",
+        "eurl", "fzc", "fzco", "fze", "gmbh", "inc", "incorporated", "jsc", "kft", "kg",
+        "kgaa", "kk", "lda", "limited", "llc", "llp", "lp", "ltd", "ltda", "mbh", "nv",
+        "nyrt", "oao", "ohg", "ojsc", "ood", "ooo", "oy", "oyj", "pao", "pjsc", "plc",
+        "pt", "pte", "pty", "sa", "sab", "sae", "sapi", "sarl", "sas", "sasu", "sau",
+        "sca", "sdn", "slu", "snc", "spa", "sprl", "srl", "sro", "tbk", "tov", "ug",
+        "zao", "zrt",
     }
 )  # fmt: skip
 
@@ -23,12 +29,20 @@ _DROPPED = re.compile(r"[.'’]")
 _SEPARATORS = re.compile(r"[^\w]+")
 
 
+def fold(name: str) -> str:
+    """Compatibility forms, case and diacritics folded: "Orlamünde" -> "orlamunde"."""
+    folded = unicodedata.normalize("NFKC", name).casefold()
+    decomposed = unicodedata.normalize("NFKD", folded)
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return unicodedata.normalize("NFC", stripped)
+
+
 def normalise_name(name: str) -> str:
-    """Case-fold, strip punctuation and drop legal-form tokens.
+    """Fold case and diacritics, strip punctuation and drop legal-form tokens.
 
     A name made only of legal-form tokens is kept as it is.
     """
-    folded = unicodedata.normalize("NFKC", name).casefold()
+    folded = fold(name)
     tokens = _SEPARATORS.sub(" ", _DROPPED.sub("", folded)).split()
     kept = [token for token in tokens if token not in LEGAL_FORM_TOKENS]
     return " ".join(kept or tokens)

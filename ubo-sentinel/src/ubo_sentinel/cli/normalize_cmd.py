@@ -35,6 +35,10 @@ def _print_summary(summary: SilverSummary) -> None:
         typer.echo(f"  {table:<28} {rows:>6} rows  {note}".rstrip())
     for reason, rows in counts["rejects"].items():
         typer.echo(f"    {reason:<26} {rows:>6}")
+    # A build made before the count existed has none.
+    for field, rows in counts.get("unreadable", {}).items():
+        if rows:
+            typer.echo(f"  unreadable {field:<17} {rows:>6} values (kept empty)")
     typer.echo(f"Digest: {summary.silver_digest}")
 
 

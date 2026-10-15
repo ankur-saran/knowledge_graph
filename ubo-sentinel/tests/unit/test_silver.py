@@ -115,8 +115,10 @@ def test_staging_columns_are_the_fixture_row_fields(con, t0):
     for dataset in DATASETS.values():
         table = MAPPERS[dataset.name].stage_table
         columns = [row[0] for row in con.execute(f"DESCRIBE {table}").fetchall()]
-        # After the dataset and the provenance come the row's own fields.
-        assert columns[6:] == list(dataset.model.model_fields)[4:], table
+        # After the dataset and the provenance come the row's own fields. A `*_raw`
+        # column keeps what the source wrote beside the value read from it.
+        fields = [column for column in columns[6:] if not column.endswith("_raw")]
+        assert fields == list(dataset.model.model_fields)[4:], table
 
 
 # --- entities -----------------------------------------------------------------------

@@ -20,9 +20,12 @@ STAGE_PROVENANCE = (
 # Staging table -> its business columns. A `*_ref` is `<source>:<source_record_id>`
 # of an entity record.
 STAGE_TABLES: dict[str, str] = {
+    # `jurisdiction_raw` is what the source wrote, kept only to count the values
+    # `jurisdiction` could not read.
     "stg_entities": (
         "lei TEXT, registration_authority_id TEXT, registration_number TEXT, legal_name TEXT,"
-        " aliases TEXT[], jurisdiction TEXT, status TEXT, entity_type TEXT"
+        " aliases TEXT[], jurisdiction TEXT, status TEXT, entity_type TEXT,"
+        " jurisdiction_raw TEXT"
     ),
     "stg_relationships": (
         "subject_ref TEXT, object_ref TEXT, rel_type TEXT, pct DECIMAL(7,4), basis TEXT,"
@@ -50,6 +53,11 @@ def _cast(field: str, sql_type: str) -> str:
     return f"CAST(_raw->>'{field}' AS {sql_type})"
 
 
+def _jurisdiction(field: str) -> str:
+    """The country code, through `normalise_jurisdiction` (registered by the transformer)."""
+    return f"ubo_jurisdiction(_raw->>'{field}')"
+
+
 # Dataset -> mapper. The fixture files are already in the staging shape, so
 # their mappers only read the cells and give them a type.
 MAPPERS: dict[str, Mapper] = {
@@ -61,9 +69,10 @@ MAPPERS: dict[str, Mapper] = {
             _text("registration_number"),
             _text("legal_name"),
             f"coalesce(string_split(_raw->>'aliases', '{ALIAS_SEPARATOR}'), CAST([] AS TEXT[]))",
-            _text("jurisdiction"),
+            _jurisdiction("jurisdiction"),
             _text("status"),
             _text("entity_type"),
+            _text("jurisdiction"),
         ),
     ),
     "relationships": Mapper(

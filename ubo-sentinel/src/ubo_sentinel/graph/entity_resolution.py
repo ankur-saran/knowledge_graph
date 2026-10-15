@@ -14,6 +14,7 @@ from typing import Any
 from ubo_sentinel.graph.store import GraphStore, id_list
 from ubo_sentinel.models.graph import CandidateLink, EntityMatch
 from ubo_sentinel.pipeline.entity_linking import BLOCK_PREFIX_LENGTH, LINK_FLOOR
+from ubo_sentinel.pipeline.jurisdiction import normalise_jurisdiction
 from ubo_sentinel.pipeline.name_match import normalise_name, similarity_normalised
 
 # Lowest name score that is returned as a candidate. A rule pack's review band
@@ -44,6 +45,7 @@ def resolve(
     jurisdiction is the one asked for, then by id. Jurisdiction never filters.
     """
     lei = lei or (query.strip().upper() if _LEI.match(query.strip().upper()) else None)
+    jurisdiction = normalise_jurisdiction(jurisdiction)
     if lei:
         found = _by_identifier(store, "lei", lei, "LEI")
         if found:

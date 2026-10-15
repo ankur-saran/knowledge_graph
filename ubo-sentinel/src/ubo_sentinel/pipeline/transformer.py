@@ -24,6 +24,7 @@ from ubo_sentinel.pipeline.entity_linking import (
     LINK_FLOOR,
     resolve_groups,
 )
+from ubo_sentinel.pipeline.jurisdiction import normalise_jurisdiction
 from ubo_sentinel.pipeline.mappers import MAPPERS, create_stage_tables, stage
 from ubo_sentinel.pipeline.name_match import name_similarity, normalise_name
 from ubo_sentinel.pipeline.silver import (
@@ -58,6 +59,7 @@ _PROV_ORDER = "source, source_record_id, snapshot_id, as_of"
 # SQL name -> (Python function, argument types, return type).
 _FUNCTIONS = {
     "ubo_normalise_name": (normalise_name, ["VARCHAR"], "VARCHAR"),
+    "ubo_jurisdiction": (normalise_jurisdiction, ["VARCHAR"], "VARCHAR"),
     "ubo_name_similarity": (name_similarity, ["VARCHAR", "VARCHAR"], "DOUBLE"),
     "ubo_relationship_id": (
         relationship_id,
@@ -569,10 +571,14 @@ def _write_gaps(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
 
 def _counts(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any]:
     def count(table: str, where: str = "") -> int:
+        """Rows of a Silver table of this set, or of a staging table; `where` is a condition."""
         sql = f"SELECT count(*) FROM {table}"
         if table.startswith("silver_"):
-            return con.execute(f"{sql} WHERE snapshot_set_id = ? {where}", [set_id]).fetchone()[0]
-        return con.execute(sql).fetchone()[0]
+            condition = f"AND {where}" if where else ""
+            return con.execute(
+                f"{sql} WHERE snapshot_set_id = ? {condition}", [set_id]
+            ).fetchone()[0]
+        return con.execute(f"{sql} WHERE {where}" if where else sql).fetchone()[0]
 
     rejects = con.execute(
         "SELECT reason, count(*) FROM silver_rejects WHERE snapshot_set_id = ?"
@@ -582,7 +588,7 @@ def _counts(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any]:
     return {
         "entity_records": count("stg_entities"),
         "entities": count("silver_entities"),
-        "merged_records": count("silver_entity_xref", "AND NOT is_primary"),
+        "merged_records": count("silver_entity_xref", "NOT is_primary"),
         "names": count("silver_entity_names"),
         "links": count("silver_entity_links"),
         "relationship_records": count("stg_relationships"),
@@ -592,4 +598,11 @@ def _counts(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any]:
         "reporting_exceptions": count("silver_reporting_exceptions"),
         "gaps": count("silver_gaps"),
         "rejects": dict(rejects),
+        # Values a source gave that could not be read, by field. The record is kept
+        # with the field empty.
+        "unreadable": {
+            "jurisdiction": count(
+                "stg_entities", "jurisdiction IS NULL AND jurisdiction_raw IS NOT NULL"
+            ),
+        },
     }
