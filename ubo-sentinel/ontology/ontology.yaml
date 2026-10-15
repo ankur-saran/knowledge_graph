@@ -5,10 +5,10 @@
 node_labels:
   LegalEntity:
     properties: [id, lei, registration_authority_id, registration_number, legal_name,
-                 aliases, jurisdiction, status, entity_type, repex_reason]
+                 aliases, jurisdiction, status, lei_status, entity_type, repex_reason]
   Person:
     properties: [id, lei, registration_authority_id, registration_number, legal_name,
-                 aliases, jurisdiction, status, entity_type, repex_reason]
+                 aliases, jurisdiction, status, lei_status, entity_type, repex_reason]
 
 # Every edge runs subject -> object.
 edge_types:

@@ -16,7 +16,7 @@ from ubo_sentinel.models.decision import (
     Recommendation,
     UtcDatetime,
 )
-from ubo_sentinel.models.entity import EntityStatus, EntityType
+from ubo_sentinel.models.entity import EntityStatus, EntityType, LeiStatus
 from ubo_sentinel.models.evidence import (
     DataGap,
     EffectiveExposure,
@@ -135,6 +135,7 @@ class MemoEntity(_Model):
     entity_type: EntityType
     status: EntityStatus
     lei: str | None = None
+    lei_status: LeiStatus | None = None
     registration_number: str | None = None
     # Hops above the target; None for an entity the memo names that is outside the graph.
     depth: int | None = None

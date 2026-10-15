@@ -375,7 +375,7 @@ def test_a_gap_decides_only_on_a_path_from_a_blocked_party():
     subgraph = graph(
         "T",
         edges,
-        statuses={"X": "RETIRED", "C": "LAPSED"},
+        lei_statuses={"X": "RETIRED", "C": "LAPSED"},
         reporting_exceptions=[reporting_exception("C")],
         set_gaps=[over_100("C")],
     )

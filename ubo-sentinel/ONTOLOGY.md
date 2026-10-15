@@ -9,10 +9,12 @@ The machine-readable source is [ontology/ontology.yaml](ontology/ontology.yaml).
 | `LegalEntity` | A company, holding, fund or other legal person |
 | `Person` | A natural person (an owner, controller or designated individual) |
 
-Both labels have the same properties: `id`, `lei`, `registration_authority_id`, `registration_number`, `legal_name`, `aliases`, `jurisdiction`, `status`, `entity_type`, `repex_reason`.
+Both labels have the same properties: `id`, `lei`, `registration_authority_id`, `registration_number`, `legal_name`, `aliases`, `jurisdiction`, `status`, `lei_status`, `entity_type`, `repex_reason`.
 
 - `id` is `lei:<LEI>` when the entity has an LEI, otherwise `<source>:<source_record_id>`.
-- `status` is one of `ACTIVE`, `INACTIVE`, `LAPSED`, `RETIRED`, `UNKNOWN`, kept as the source published it. `LAPSED` and `RETIRED` are data gaps.
+- `status` is the entity's legal status: `ACTIVE`, `INACTIVE` or `UNKNOWN`, kept as the source published it.
+- `lei_status` is the status of the entity's LEI record (GLEIF's registration status), empty for an entity without an LEI: `ISSUED`, `LAPSED`, `RETIRED`, `MERGED`, `DUPLICATE`, `ANNULLED`, `CANCELLED`, `TRANSFERRED`, `PENDING_TRANSFER`, `PENDING_ARCHIVAL` or `PENDING_VALIDATION`. The two are separate because an active entity may have a lapsed LEI. An LEI that is `LAPSED`, `RETIRED`, `MERGED`, `DUPLICATE` or `ANNULLED` is no longer kept up to date and is a data gap (`LAPSED_LEI`).
+- `jurisdiction` is the ISO 3166-1 alpha-2 country, upper case (`US`, not `US-DE`); a value that is not a country code is read as no jurisdiction (`pipeline/jurisdiction.py`).
 - `repex_reason` summarises why a parent is not reported: the distinct `CATEGORY:reason` values, sorted and joined with `; `. The full reporting exceptions are separate records, each with a category (`DIRECT_PARENT` or `ULTIMATE_PARENT`), a reason and its own provenance.
 
 ### One entity from several records

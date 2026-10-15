@@ -117,7 +117,7 @@ def test_a_gap_is_a_cited_claim_and_a_next_action():
     subgraph = graph(
         "T",
         [edge("A", "T", 60), edge("P", "A", rel="CONSOLIDATED_BY")],
-        statuses={"A": "LAPSED"},
+        lei_statuses={"A": "LAPSED"},
         links=[link("T", "X", confidence=0.9)],
     )
     memo, result = memo_of(subgraph, [designated("P", by="L", confidence=0.8)], referenced=[LISTED])
@@ -147,7 +147,7 @@ def test_a_gap_is_a_cited_claim_and_a_next_action():
 
 
 def test_only_a_gap_that_decides_asks_for_action():
-    subgraph = graph("T", [edge("A", "T", 60)], statuses={"A": "LAPSED"})
+    subgraph = graph("T", [edge("A", "T", 60)], lei_statuses={"A": "LAPSED"})
     memo, _ = memo_of(subgraph, [])
     assert [c.params["decision_relevant"] for c in claims(memo, "DATA_GAP")] == [False]
     assert (memo.recommendation, memo.next_actions) == ("CLEAR", [])

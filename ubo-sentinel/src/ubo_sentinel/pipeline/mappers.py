@@ -24,7 +24,7 @@ STAGE_TABLES: dict[str, str] = {
     # `jurisdiction` could not read.
     "stg_entities": (
         "lei TEXT, registration_authority_id TEXT, registration_number TEXT, legal_name TEXT,"
-        " aliases TEXT[], jurisdiction TEXT, status TEXT, entity_type TEXT,"
+        " aliases TEXT[], jurisdiction TEXT, status TEXT, lei_status TEXT, entity_type TEXT,"
         " jurisdiction_raw TEXT"
     ),
     "stg_relationships": (
@@ -71,6 +71,7 @@ MAPPERS: dict[str, Mapper] = {
             f"coalesce(string_split(_raw->>'aliases', '{ALIAS_SEPARATOR}'), CAST([] AS TEXT[]))",
             _jurisdiction("jurisdiction"),
             _text("status"),
+            _text("lei_status"),
             _text("entity_type"),
             _text("jurisdiction"),
         ),

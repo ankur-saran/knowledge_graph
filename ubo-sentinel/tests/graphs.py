@@ -62,8 +62,12 @@ def upward_depths(target, edges):
     return depths
 
 
-def graph(target, edges, statuses=None, **fields):
-    """A subgraph around `target`. Nodes that do not reach the target are context below it."""
+def graph(target, edges, statuses=None, lei_statuses=None, **fields):
+    """A subgraph around `target`. Nodes that do not reach the target are context below it.
+
+    A node given an LEI status is given an LEI as well.
+    """
+    lei_statuses = lei_statuses or {}
     depths = upward_depths(target, edges)
     ids = {target} | {end for item in edges for end in (item.subject_id, item.object_id)}
     nodes = [
@@ -71,6 +75,8 @@ def graph(target, edges, statuses=None, **fields):
             id=node_id,
             legal_name=node_id,
             status=(statuses or {}).get(node_id, "ACTIVE"),
+            lei=f"HAND{node_id}" if node_id in lei_statuses else None,
+            lei_status=lei_statuses.get(node_id),
             entity_type="LegalEntity",
             provenance=PROVENANCE,
         )

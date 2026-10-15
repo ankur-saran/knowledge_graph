@@ -36,6 +36,7 @@ _TABLES: dict[str, tuple[str, str]] = {
     aliases TEXT[] NOT NULL,
     jurisdiction TEXT,
     status TEXT NOT NULL,
+    lei_status TEXT,
     entity_type TEXT NOT NULL,
     repex_reason TEXT,{_PROVENANCE},
     supporting_records JSON NOT NULL""",

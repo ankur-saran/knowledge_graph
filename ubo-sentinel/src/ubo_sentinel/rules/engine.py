@@ -38,8 +38,9 @@ from ubo_sentinel.models.rule_result import (
 from ubo_sentinel.rules.pack import RulePack, load_rule_pack
 
 OWNERSHIP_RELATIONS = frozenset({"OWNS", "CONSOLIDATED_BY"})
-# An LEI in either state is no longer maintained, so what it says may be out of date.
-UNMAINTAINED_STATUSES = frozenset({"LAPSED", "RETIRED"})
+# An LEI record in one of these states is no longer kept up to date, or was
+# replaced or withdrawn, so what it says of the entity may be out of date.
+UNMAINTAINED_LEI_STATUSES = frozenset({"LAPSED", "RETIRED", "MERGED", "DUPLICATE", "ANNULLED"})
 
 _RELATION_ORDER = {"OWNS": 0, "CONSOLIDATED_BY": 1, "CONTROLS": 2}
 # The path search gives up after this many steps for each path it may return.
@@ -400,7 +401,7 @@ class _Evaluation:
                 relevant = every or record.entity_id in on_path_nodes
                 add("REPORTING_EXCEPTION", record.entity_id, record.provenance, relevant)
         for node_id, node in self.nodes.items():
-            if node.status in UNMAINTAINED_STATUSES:
+            if node.lei_status in UNMAINTAINED_LEI_STATUSES:
                 add("LAPSED_LEI", node_id, node.provenance, every or node_id in on_path_nodes)
         for match in self.matches:
             in_band = classify_match(self.pack, match) == "POSSIBLY_BLOCKED"

@@ -42,6 +42,7 @@ _TABLES: dict[str, tuple[str, str]] = {
     aliases TEXT[] NOT NULL,
     jurisdiction TEXT,
     status TEXT NOT NULL,
+    lei_status TEXT,
     entity_type TEXT NOT NULL,
     repex_reason TEXT,{_PROVENANCE},
     supporting_records JSON NOT NULL,
@@ -138,7 +139,31 @@ class GoldSummary:
     gold_digest: str
 
 
+def _column_names(columns: str) -> list[str]:
+    return ["snapshot_set_id", *(line.split()[0] for line in columns.strip().splitlines())]
+
+
+def _drop_outdated(con: duckdb.DuckDBPyConnection) -> None:
+    """Drop Gold when a table has the columns of an earlier version.
+
+    Gold is derived from Silver, so nothing is lost: `ubo build-graph` builds it again.
+    """
+    existing: dict[str, list[str]] = {}
+    for table, column in con.execute(
+        "SELECT table_name, column_name FROM information_schema.columns"
+        " WHERE table_name LIKE 'graph_%' ORDER BY table_name, ordinal_position"
+    ).fetchall():
+        existing.setdefault(table, []).append(column)
+    if any(
+        table in existing and existing[table] != _column_names(columns)
+        for table, (columns, _) in _TABLES.items()
+    ):
+        for table in (*_TABLES, "gold_builds"):
+            con.execute(f"DROP TABLE IF EXISTS {table}")
+
+
 def create_schema(con: duckdb.DuckDBPyConnection) -> None:
+    _drop_outdated(con)
     for table, (columns, key) in _TABLES.items():
         con.execute(
             f"CREATE TABLE IF NOT EXISTS {table} (\n    snapshot_set_id TEXT NOT NULL,{columns},"
@@ -267,7 +292,7 @@ def _write_nodes(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
         )
         SELECT e.snapshot_set_id, e.id, e.entity_type, e.lei, e.registration_authority_id,
             e.registration_number, e.legal_name, e.aliases, e.jurisdiction, e.status,
-            e.entity_type, e.repex_reason, {", ".join(f"e.{c.strip()}" for c in _PROV.split(","))},
+            e.lei_status, e.entity_type, e.repex_reason, {", ".join(f"e.{c.strip()}" for c in _PROV.split(","))},
             e.supporting_records, coalesce(up.n, 0), coalesce(down.n, 0)
         FROM silver_entities e
         LEFT JOIN up ON up.id = e.id

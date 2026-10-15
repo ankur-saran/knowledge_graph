@@ -79,6 +79,7 @@ def _entity(node: Entity, depth: int | None) -> MemoEntity:
         entity_type=node.entity_type,
         status=node.status,
         lei=node.lei,
+        lei_status=node.lei_status,
         registration_number=node.registration_number,
         depth=depth,
         provenance=node.provenance,

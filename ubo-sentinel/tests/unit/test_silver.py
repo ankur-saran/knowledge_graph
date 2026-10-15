@@ -175,21 +175,23 @@ def test_status_is_kept_as_published(con, t0, entities, canonical):
     silver = by_id(read_entities(con, t0))
     for row in entities:
         if list(canonical.values()).count(canonical[row.ref]) == 1:
-            assert silver[canonical[row.ref]].status == row.status
-    assert {"LAPSED", "RETIRED"} <= {entity.status for entity in silver.values()}
+            entity = silver[canonical[row.ref]]
+            assert (entity.status, entity.lei_status) == (row.status, row.lei_status)
+    assert {"LAPSED", "RETIRED"} <= {entity.lei_status for entity in silver.values()}
 
 
 def test_registry_status_survives_a_newer_list_record(con, ontology, t0_copy):
     path = t0_copy / "entities.csv"
     text = path.read_text(encoding="utf-8")
     changed = text.replace(
-        "02-TARGET,Vostrek Maritime LLC,,AE,ACTIVE", "02-TARGET,Vostrek Maritime LLC,,AE,LAPSED"
+        "02-TARGET,Vostrek Maritime LLC,,AE,ACTIVE,ISSUED",
+        "02-TARGET,Vostrek Maritime LLC,,AE,INACTIVE,LAPSED",
     )
     assert changed != text
     path.write_text(changed, encoding="utf-8", newline="")
 
     entity = by_id(read_entities(con, build(con, ontology, t0_copy)))["lei:FXS02TARGET000000000"]
-    assert entity.status == "LAPSED"
+    assert (entity.status, entity.lei_status) == ("INACTIVE", "LAPSED")
 
 
 def test_names_hold_every_name_with_its_normalised_form(con, t0):
@@ -217,10 +219,17 @@ def test_repex_reason_summarises_the_reporting_exceptions(con, t0):
 
 
 def test_two_leis_that_share_a_registration_are_linked_not_merged(con, ontology, t0_copy):
-    append(
-        t0_copy / "entities.csv",
-        "fx_registry,s99-twin,2026-09-01,1.0,FXS99TWIN00000000000,RA-FX-AE,02-TARGET,"
-        "Zennor Unrelated Castings Ltd,,AE,ACTIVE,LegalEntity",
+    add_entity(
+        t0_copy,
+        source="fx_registry",
+        source_record_id="s99-twin",
+        lei="FXS99TWIN00000000000",
+        lei_status="ISSUED",
+        registration_authority_id="RA-FX-AE",
+        registration_number="02-TARGET",
+        legal_name="Zennor Unrelated Castings Ltd",
+        jurisdiction="AE",
+        entity_type="LegalEntity",
     )
     set_id = build(con, ontology, t0_copy)
 

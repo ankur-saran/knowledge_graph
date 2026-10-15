@@ -281,6 +281,12 @@ def test_every_recommendation_reason_and_gap_is_covered(gold):
 
 def test_every_enum_value_appears_in_the_fixtures(entities, relationships, repex):
     assert {row.status for row in entities} == set(get_args(EntityStatus))
+    # Every LEI has a status, and the ones the rules read appear: an active
+    # entity with a lapsed LEI, an inactive one with a retired LEI.
+    assert all((row.lei_status is None) == (row.lei is None) for row in entities)
+    assert {("ACTIVE", "LAPSED"), ("INACTIVE", "RETIRED"), ("ACTIVE", "ISSUED")} <= {
+        (row.status, row.lei_status) for row in entities
+    }
     assert {row.entity_type for row in entities} == set(get_args(EntityType))
     assert {row.rel_type for row in relationships} == set(get_args(RelType))
     assert {row.basis for row in relationships} == set(get_args(Basis))

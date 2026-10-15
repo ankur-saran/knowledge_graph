@@ -280,6 +280,8 @@ def _write_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
             first(jurisdiction ORDER BY pos) FILTER (WHERE jurisdiction IS NOT NULL)
                 AS jurisdiction,
             first(status ORDER BY pos) AS status,
+            -- The LEI's status comes with the LEI, from the record that gave it.
+            first(lei_status ORDER BY pos) FILTER (WHERE lei IS NOT NULL) AS lei_status,
             first(entity_type ORDER BY pos) AS entity_type,
             first(source ORDER BY pos) AS source,
             first(source_record_id ORDER BY pos) AS source_record_id,
@@ -310,7 +312,7 @@ def _write_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
         INSERT INTO silver_entities
         SELECT ?, e.entity_id, e.lei, e.registration_authority_id, e.registration_number,
             e.legal_name, coalesce(a.aliases, CAST([] AS TEXT[])), e.jurisdiction, e.status,
-            e.entity_type, r.repex_reason, {", ".join(f"e.{c.strip()}" for c in _PROV.split(","))},
+            e.lei_status, e.entity_type, r.repex_reason, {", ".join(f"e.{c.strip()}" for c in _PROV.split(","))},
             e.supporting_records
         FROM stg_entity e
         LEFT JOIN (
