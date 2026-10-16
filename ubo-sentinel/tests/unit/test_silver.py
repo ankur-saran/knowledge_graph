@@ -578,9 +578,13 @@ def test_bronze_rows_that_changed_since_ingest_are_refused(con, ontology):
 
 
 def test_a_source_without_a_rank_is_refused(con, ontology, t0_copy):
-    append(
-        t0_copy / "entities.csv",
-        "fx_other,s99-new,2026-09-01,1.0,,,,Quorndon Saltworks Ltd,,GB,ACTIVE,LegalEntity",
+    add_entity(
+        t0_copy,
+        source="fx_other",
+        source_record_id="s99-new",
+        legal_name="Quorndon Saltworks Ltd",
+        jurisdiction="GB",
+        entity_type="LegalEntity",
     )
     snapshot_set = ingest_fixtures(con, t0_copy).snapshot_set
     with pytest.raises(SilverError, match="fx_other"):

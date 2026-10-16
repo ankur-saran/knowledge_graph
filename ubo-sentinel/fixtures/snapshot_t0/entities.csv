@@ -10,11 +10,12 @@ fx_registry,s00-sub-6,2026-09-01,1.0,FXS00SUB600000000000,RA-FX-GB,00-SUB-6,Furz
 fx_registry,s00-sub-7,2026-09-01,1.0,FXS00SUB700000000000,RA-FX-GB,00-SUB-7,Gorsebank Joinery Ltd,,GB,ACTIVE,ISSUED,LegalEntity
 fx_registry,s00-sub-8,2026-09-01,1.0,FXS00SUB800000000000,RA-FX-GB,00-SUB-8,Hazelmere Ironmongers Ltd,,GB,ACTIVE,ISSUED,LegalEntity
 fx_list,s00-founder,2026-09-15,1.0,,RA-FX-ID,FXID-7781-ASHD,Cordelia Ashdowne,,GB,UNKNOWN,,Person
+fx_registry,s00-soleprop,2026-09-01,1.0,FXS00SOLEPROP0000000,RA-FX-GB,00-SOLEPROP,Wendeline Archbury,,GB,ACTIVE,ISSUED,Person
 fx_registry,s01-target,2026-09-01,1.0,FXS01TARGET000000000,RA-FX-AE,01-TARGET,Acme Trading FZE,Acme FZE,AE,ACTIVE,ISSUED,LegalEntity
 fx_registry,s01-parent,2026-09-01,1.0,FXS01PARENT000000000,RA-FX-AE,01-PARENT,Quillon Harbour Group Ltd,,AE,ACTIVE,ISSUED,LegalEntity
 fx_list,s01-minority,2026-09-15,1.0,,,,Tobias Wrenfield,,GB,UNKNOWN,,Person
 fx_registry,s02-target,2026-09-01,1.0,FXS02TARGET000000000,RA-FX-AE,02-TARGET,Vostrek Maritime LLC,,AE,ACTIVE,ISSUED,LegalEntity
-fx_list,s02-listed,2026-09-15,1.0,FXS02TARGET000000000,,,Vostrek Maritime L.L.C.,Vostrek Marine,AE,ACTIVE,ISSUED,LegalEntity
+fx_list,s02-listed,2026-09-15,1.0,FXS02TARGET000000000,,,Vostrek Maritime L.L.C.,Vostrek Marine,AE,ACTIVE,,LegalEntity
 fx_registry,s02-parent,2026-09-01,1.0,FXS02PARENT000000000,RA-FX-CY,02-PARENT,Ondura Capital Partners Ltd,,CY,ACTIVE,ISSUED,LegalEntity
 fx_registry,s03-target,2026-09-01,1.0,FXS03TARGET000000000,RA-FX-CY,03-TARGET,Halcyon Ridge Minerals Ltd,,CY,ACTIVE,ISSUED,LegalEntity
 fx_list,s03-owner-a,2026-09-15,1.0,,,,Dmitri Volkanov,Дмитрий Волканов,RU,UNKNOWN,,Person
@@ -22,7 +23,7 @@ fx_list,s03-owner-b,2026-09-15,1.0,,,,Yusuf Al-Qahdari,يوسف القحدري,A
 fx_registry,s03-other,2026-09-01,1.0,FXS03OTHER0000000000,RA-FX-DE,03-OTHER,Pembrook Lattice GmbH,,DE,ACTIVE,ISSUED,LegalEntity
 fx_registry,s04-target,2026-09-01,1.0,FXS04TARGET000000000,RA-FX-NL,04-TARGET,Zephyrine Logistics BV,,NL,ACTIVE,ISSUED,LegalEntity
 fx_registry,s04-parent,2026-09-01,1.0,FXS04PARENT000000000,RA-FX-CH,04-PARENT,Carrowmore Industrial AG,,CH,ACTIVE,ISSUED,LegalEntity
-fx_list,s04-listed,2026-09-15,1.0,FXS04PARENT000000000,,,Carrowmore Industrial AG,,CH,ACTIVE,ISSUED,LegalEntity
+fx_list,s04-listed,2026-09-15,1.0,FXS04PARENT000000000,,,Carrowmore Industrial AG,,CH,ACTIVE,,LegalEntity
 fx_registry,s05-target,2026-09-01,1.0,FXS05TARGET000000000,RA-FX-ES,05-TARGET,Brightwater Tannery SA,,ES,ACTIVE,ISSUED,LegalEntity
 fx_list,s05-owner-a,2026-09-15,1.0,,,,Kolvari Exports JSC,,RU,ACTIVE,,LegalEntity
 fx_list,s05-owner-b,2026-09-15,1.0,,,,Mirzakhan Petrochem OOO,,RU,ACTIVE,,LegalEntity
@@ -70,7 +71,7 @@ fx_list,s17-owner,2026-09-15,1.0,,,,Voronezh Aviadetal OAO,,RU,ACTIVE,,LegalEnti
 fx_registry,s17-other,2026-09-01,1.0,FXS17OTHER0000000000,RA-FX-GB,17-OTHER,Mossgiel Engineering Ltd,,GB,ACTIVE,ISSUED,LegalEntity
 fx_registry,s18-target,2026-09-01,1.0,FXS18TARGET000000000,RA-FX-NO,18-TARGET,Lanternfish Seafoods AS,,NO,ACTIVE,ISSUED,LegalEntity
 fx_registry,s18-owner,2026-09-01,1.0,FXS18OWNER0000000000,RA-FX-RU,18-OWNER,Murmansk Trawl Flot AO,,RU,ACTIVE,ISSUED,LegalEntity
-fx_list,s18-owner-listed,2026-09-15,1.0,FXS18OWNER0000000000,,,Murmansk Trawl Flot,,RU,ACTIVE,ISSUED,LegalEntity
+fx_list,s18-owner-listed,2026-09-15,1.0,FXS18OWNER0000000000,,,Murmansk Trawl Flot,,RU,ACTIVE,,LegalEntity
 fx_registry,s18-other,2026-09-01,1.0,FXS18OTHER0000000000,RA-FX-NO,18-OTHER,Hjelmeland Fjordbruk AS,,NO,ACTIVE,ISSUED,LegalEntity
 fx_registry,s19-target,2026-09-01,1.0,FXS19TARGET000000000,RA-FX-IE,19-TARGET,Dunmorrow Quarries Ltd,,IE,ACTIVE,ISSUED,LegalEntity
 fx_list,s19-blocked,2026-09-15,1.0,,,,Kuzbass Shcheben OOO,,RU,ACTIVE,,LegalEntity
@@ -105,3 +106,9 @@ fx_list,s27-owner,2026-09-15,1.0,,,,Verkhnekamsk Galit PAO,,RU,ACTIVE,,LegalEnti
 fx_registry,s28-target,2026-09-01,1.0,FXS28TARGET000000000,RA-FX-GB,28-TARGET,Quernmore Saddlery Ltd,,GB,ACTIVE,ISSUED,LegalEntity
 fx_registry,s28-parent,2026-09-01,1.0,FXS28PARENT000000000,RA-FX-GB,28-PARENT,Hathersage Bridleworks Ltd,,GB,ACTIVE,ISSUED,LegalEntity
 fx_list,s28-director,2026-09-15,1.0,,,,Anvar Sodiqzoda,,TJ,UNKNOWN,,Person
+fx_registry,s29-target,2026-09-01,1.0,FXS29TARGET000000000,RA-FX-GB,29-TARGET,Kestrelmoor Cable Works Ltd,,GB,ACTIVE,ISSUED,LegalEntity
+fx_registry,s29-owner,2026-09-01,1.0,FXS29OWNER0000000000,RA-FX-BY,29-OWNER,Dravinsky Chemical Trading LLC,,BY,ACTIVE,ISSUED,LegalEntity
+fx_list,s29-listed,2026-09-15,1.0,,,,DRAVINSKY CHEMICAL TRADING L.L.C.,,,UNKNOWN,,LegalEntity
+fx_registry,s30-target,2026-09-01,1.0,FXS30TARGET000000000,RA-FX-GB,30-TARGET,Fenwold Turbine Services Ltd,,GB,ACTIVE,ISSUED,LegalEntity
+fx_registry,s30-owner,2026-09-01,1.0,FXS30OWNER0000000000,RA-FX-CH,30-OWNER,Corvanta Bulk Carriers AG,,CH,ACTIVE,ISSUED,LegalEntity
+fx_list,s30-listed,2026-09-15,1.0,FXS30OWNER0000000000,,,Corvanta Bulk Carriers AG,,CH,UNKNOWN,,LegalEntity

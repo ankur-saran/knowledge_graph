@@ -7,10 +7,23 @@ ownership_threshold_pct: 50
 threshold_operator: ">="
 aggregate_blocked_owners: true
 
+# The lists this pack applies. Only their designations block or possibly
+# block. FX-OFAC-SDN is the fixtures' stand-in for the SDN list; us_ofac_sdn is
+# the OpenSanctions dataset of it.
+designation_lists: [FX-OFAC-SDN, us_ofac_sdn]
+# A designation on another list (EU, UK, UN, ...) never blocks under this pack.
+# review: when the other lists' designations would block or possibly block the
+# target under this pack's own test, the target is REVIEW
+# (OTHER_REGIME_DESIGNATION). ignore: they change nothing.
+other_designations: review
+
 # A designation that reaches an entity by name only blocks at or above
 # `match_threshold` and is a review-band match down to `review_band_low`.
 match_threshold: 0.92
 review_band_low: 0.75
+# true: a name match at or above `match_threshold` blocks only when both records
+# state a jurisdiction and it is the same one; otherwise it is a review-band match.
+name_match_requires_jurisdiction: true
 
 # A consolidation edge without a percentage is presumed a majority: possibly
 # blocked, so REVIEW, never a silent CLEAR.

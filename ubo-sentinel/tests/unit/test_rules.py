@@ -59,12 +59,22 @@ def test_the_shipped_pack_loads():
         {"gap_scope": "none"},
         {"ownership_threshold_pct": 0},
         {"max_depth": 0},
+        {"designation_lists": []},
+        {"other_designations": "block"},
     ],
     ids=lambda changes: next(iter(changes)),
 )
 def test_a_malformed_pack_is_rejected(changes):
     with pytest.raises(ValidationError):
         RulePack.model_validate({**PACK.model_dump(), **changes})
+
+
+def test_the_order_of_the_lists_changes_nothing():
+    turned = RulePack.model_validate(
+        {**PACK.model_dump(), "designation_lists": list(reversed(PACK.designation_lists))}
+    )
+    assert turned.designation_lists == PACK.designation_lists
+    assert turned.rule_pack_hash == PACK.rule_pack_hash
 
 
 def test_a_pack_needs_every_key():
@@ -197,6 +207,85 @@ def test_a_review_band_match_on_a_node_the_legal_test_blocks_adds_nothing():
     result = evaluate(subgraph, [designated("A"), designated("X", by="L", confidence=0.8)])
     assert (result.blocked_set, result.possibly_blocked_set) == (["A", "X"], [])
     assert result.recommendation == "CLEAR" and not result.data_gaps
+
+
+def test_a_name_match_blocks_only_where_both_records_name_one_jurisdiction():
+    subgraph = graph("T", [edge("A", "T", 60)])
+    abroad = designated("A", by="X", confidence=0.95, jurisdictions_agree=False)
+    result = evaluate(subgraph, [abroad])
+    assert (result.blocked_set, result.possibly_blocked_set) == ([], ["A", "T"])
+    assert result.recommendation == "REVIEW"
+    assert gaps_of(result) == {("REVIEW_BAND_MATCH", "A", True)}
+    # The same name with the same jurisdiction is proof.
+    home = designated("A", by="X", confidence=0.95)
+    assert evaluate(subgraph, [home]).blocked_set == ["A", "T"]
+    # Without the requirement a name alone is enough.
+    assert evaluate(subgraph, [abroad], name_match_requires_jurisdiction=False).blocked_set == [
+        "A",
+        "T",
+    ]
+
+
+# --- the lists a pack applies ------------------------------------------------------------
+
+OTHER_LIST = "FX-EU-LIST"
+
+
+def test_a_designation_on_another_list_is_reviewed_not_blocking():
+    subgraph = graph("T", [edge("A", "T", 60)])
+    eu = designated("A", list_source=OTHER_LIST)
+    result = evaluate(subgraph, [eu])
+    assert (result.blocked_set, result.possibly_blocked_set) == ([], [])
+    assert (result.recommendation, result.reasons) == ("REVIEW", ["OTHER_REGIME_DESIGNATION"])
+    (finding,) = result.findings
+    # It says what would block, with what: the other list's record and the stake.
+    assert finding.sanction_ids == [eu.sanction_records[0].id]
+    assert finding.edge_ids == [edge("A", "T", 60).id] and finding.pct == Decimal(60)
+    # No gap: the match is not one the pack is unsure of.
+    assert not result.data_gaps
+    assert evaluate(subgraph, [eu], other_designations="ignore").recommendation == "CLEAR"
+
+
+def test_another_lists_designation_reviews_only_what_the_packs_test_would_catch():
+    # 20 %: the pack's own test would not block the target, so nothing to review.
+    small = graph("T", [edge("A", "T", 20)])
+    assert evaluate(small, [designated("A", list_source=OTHER_LIST)]).recommendation == "CLEAR"
+    # The target itself on another list.
+    result = evaluate(graph("T", []), [designated("T", list_source=OTHER_LIST)])
+    assert result.reasons == ["OTHER_REGIME_DESIGNATION"]
+    # Owned through a consolidation: possibly blocked under the pack's test.
+    presumed = graph("T", [edge("A", "T", rel="CONSOLIDATED_BY")])
+    assert evaluate(presumed, [designated("A", list_source=OTHER_LIST)]).reasons == [
+        "OTHER_REGIME_DESIGNATION"
+    ]
+
+
+def test_another_list_adds_to_the_packs_own_designations():
+    """30 % on the pack's list and 30 % on another: together they would block."""
+    subgraph = graph("T", [edge("A", "T", 30), edge("B", "T", 30)])
+    ofac, eu = designated("A"), designated("B", list_source=OTHER_LIST)
+    result = evaluate(subgraph, [ofac, eu])
+    assert result.blocked_set == ["A"] and result.recommendation == "REVIEW"
+    assert "OTHER_REGIME_DESIGNATION" in result.reasons
+    assert result.findings[-1].sanction_ids == [eu.sanction_records[0].id]
+    # A target the pack's lists block is ESCALATE, and nothing else is said.
+    both = evaluate(
+        graph("T", [edge("A", "T", 60)]), [designated("A"), designated("A", list_source=OTHER_LIST)]
+    )
+    assert (both.recommendation, both.reasons) == ("ESCALATE", ["DERIVED_50PCT"])
+
+
+def test_a_record_on_the_packs_list_decides_a_match_that_has_both():
+    subgraph = graph("T", [edge("A", "T", 60)])
+    match = designated("A")
+    eu_record = match.sanction_records[0].model_copy(
+        update={"id": "eu-record", "list_source": OTHER_LIST}
+    )
+    both = match.model_copy(update={"sanction_records": [*match.sanction_records, eu_record]})
+    result = evaluate(subgraph, [both])
+    assert result.blocked_set == ["A", "T"]
+    derivation = next(d for d in result.derivations if d.node_id == "A")
+    assert derivation.sanction_ids == [match.sanction_records[0].id]
 
 
 # --- scope ------------------------------------------------------------------------------
@@ -433,7 +522,7 @@ def test_eval_reports_every_suite():
     build_with_the_cli()
     result = runner.invoke(app, ["eval", "--suite", "all"])
     assert result.exit_code == 0, result.output
-    assert "27/27 scenarios passed" in result.output
+    assert "29/29 scenarios passed" in result.output
     assert "SCEN-23" in result.output and "pipeline suite" in result.output
     for metric in ("Decision accuracy", "Evidence-path recall", "ER precision@1"):
         assert metric in result.output
@@ -441,6 +530,24 @@ def test_eval_reports_every_suite():
 
     rules_only = runner.invoke(app, ["eval", "--suite", "rules", "--role", "auditor"])
     assert rules_only.exit_code == 0 and "ER precision@1" not in rules_only.output
+
+
+def test_eval_runs_the_gold_scenarios_only_on_a_fixtures_set(con):
+    """Real data is scored on real names; the gold scenarios describe the fixtures."""
+    build_with_the_cli()
+    con.execute("UPDATE snapshot_set_info SET family = 'real'")
+    con.commit()
+    real = con.execute("SELECT snapshot_set_id FROM snapshot_set_info").fetchone()[0]
+    con.close()
+    for suite in ("rules", "pipeline", "all"):
+        result = runner.invoke(app, ["eval", "--suite", suite, "--snapshot", real])
+        assert result.exit_code == 2 and "family 'real'" in result.output, suite
+    # No labelled real names yet: say which file is missing.
+    result = runner.invoke(app, ["eval", "--suite", "er", "--snapshot", real])
+    assert result.exit_code == 2 and "er_labelled_real.csv" in result.output
+    labelled = ["--labels", "eval/er_labelled.csv"]
+    result = runner.invoke(app, ["eval", "--suite", "er", "--snapshot", real, *labelled])
+    assert result.exit_code == 0 and "ER precision@1" in result.output
 
 
 def test_eval_fails_when_a_scenario_does(tmp_path, monkeypatch):

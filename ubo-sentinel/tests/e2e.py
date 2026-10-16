@@ -83,8 +83,7 @@ def person_pii(entities):
         if row.entity_type != "Person":
             continue
         values.update([row.legal_name, *row.aliases, row.source_record_id, row.canonical_id()])
-        if row.registration_number:
-            values.add(row.registration_number)
+        values.update(value for value in (row.registration_number, row.lei) if value)
     return sorted(value for value in values if value)
 
 

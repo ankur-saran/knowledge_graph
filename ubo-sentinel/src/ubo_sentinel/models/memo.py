@@ -74,7 +74,8 @@ ActionCode = Literal[
     "NARROW_SCREEN",
 ]
 
-MatchEffect = Literal["BLOCKED", "POSSIBLY_BLOCKED", "NONE"]
+# OTHER_REGIME: a designation on a list the pack does not apply.
+MatchEffect = Literal["BLOCKED", "POSSIBLY_BLOCKED", "OTHER_REGIME", "NONE"]
 # Parameters of a next action that name an entity.
 ENTITY_PARAMS = ("linked_id", "designated_id")
 ParamValue = str | int | bool | None

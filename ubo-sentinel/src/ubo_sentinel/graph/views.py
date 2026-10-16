@@ -79,9 +79,15 @@ def mask_candidates(
             ]
         }
         if match.entity_id in ids:
-            update |= {"entity_id": ids[match.entity_id], "legal_name": MASK, "matched_name": MASK}
+            update |= {"entity_id": ids[match.entity_id], **_masked_candidate_fields(match, hidden)}
         masked.append(match.model_copy(update=update))
     return masked
+
+
+def _masked_candidate_fields(match: EntityMatch, hidden: dict[str, set[str]]) -> dict[str, str]:
+    """A masked candidate's names, and any other masked property it carries (its LEI)."""
+    fields = {"legal_name", "matched_name"} | (hidden[match.entity_type] & set(EntityMatch.model_fields))
+    return {name: MASK for name in sorted(fields) if getattr(match, name) is not None}
 
 
 def masked_values(decision: Decision, role: str, ontology: OntologyConfig) -> list[str]:
@@ -424,8 +430,7 @@ class GraphView:
         if match.entity_type in self._masked_fields:
             update |= {
                 "entity_id": self.pseudonym(match.entity_id, match.entity_type),
-                "legal_name": MASK,
-                "matched_name": MASK,
+                **_masked_candidate_fields(match, self._masked_fields),
             }
         return match.model_copy(update=update)
 

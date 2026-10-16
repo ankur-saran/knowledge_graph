@@ -36,6 +36,8 @@ BRONZE_COLUMNS = (
 ALIAS_LATEST = "latest"
 ALIAS_FIXTURES = "fixtures"
 FAMILY_FIXTURES = "fixtures"
+# Published data: GLEIF, OpenSanctions. A set never mixes the two families.
+FAMILY_REAL = "real"
 
 _BRONZE_DDL = """
 CREATE TABLE IF NOT EXISTS {table} (

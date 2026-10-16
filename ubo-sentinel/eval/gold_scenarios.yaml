@@ -575,3 +575,44 @@
   rationale: A designated person is a director of the company that owns all of the target. Control
     is not ownership, so there is no exposure, but with control_link_scope 'upstream' a control link
     from a blocked party anywhere above the target is a reason to review.
+
+- id: SCEN-29
+  query: Kestrelmoor Cable Works Ltd
+  target_id: lei:FXS29TARGET000000000
+  twin_of: SCEN-26
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - DECISION_RELEVANT_GAP
+  - POSSIBLY_BLOCKED
+  expected_possibly_blocked:
+  - lei:FXS29OWNER0000000000
+  - lei:FXS29TARGET000000000
+  expected_paths:
+  - nodes:
+    - lei:FXS29OWNER0000000000
+    - lei:FXS29TARGET000000000
+    via:
+    - OWNS
+  expected_gaps:
+  - code: REVIEW_BAND_MATCH
+    node: lei:FXS29OWNER0000000000
+    decision_relevant: true
+  declared_name_pairs:
+  - a: fx_list:s29-listed
+    b: lei:FXS29OWNER0000000000
+    band: blocked
+  rationale: Twin of SCEN-26, but the designated record states no jurisdiction. A name match at or
+    above the match threshold with nothing else in common could be a homonym anywhere, so with
+    name_match_requires_jurisdiction it is a review-band match, never proof. The 70 % owner is
+    possibly blocked, and through its majority so is the target.
+
+- id: SCEN-30
+  query: Fenwold Turbine Services Ltd
+  target_id: lei:FXS30TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - OTHER_REGIME_DESIGNATION
+  rationale: The 60 % owner is designated, joined to its list record by LEI, but on a list the OFAC
+    pack does not apply (FX-EU-LIST). The OFAC 50 % rule does not reach the target, so nothing is
+    blocked; under the pack's own test that designation would block the target, so with
+    other_designations 'review' it is a reason to review.

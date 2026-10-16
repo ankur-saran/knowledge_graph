@@ -95,7 +95,19 @@ def graph(target, edges, statuses=None, lei_statuses=None, **fields):
     )
 
 
-def designated(node_id, by=None, confidence=1.0, match_type=None, active=True):
+# The list the shipped pack applies; a designation on any other list never blocks under it.
+IN_SCOPE = "FX-OFAC-SDN"
+
+
+def designated(
+    node_id,
+    by=None,
+    confidence=1.0,
+    match_type=None,
+    active=True,
+    list_source=IN_SCOPE,
+    jurisdictions_agree=True,
+):
     """A designation that reaches `node_id`: its own, or one of `by` that crossed a link."""
     by = by or node_id
     match_type = match_type or ("DIRECT" if by == node_id else "FUZZY_NAME")
@@ -104,7 +116,7 @@ def designated(node_id, by=None, confidence=1.0, match_type=None, active=True):
         entity_id=node_id,
         designated_entity_id=by,
         program="P",
-        list_source="L",
+        list_source=list_source,
         is_active=active,
         match_type=match_type,
         match_confidence=confidence,
@@ -116,6 +128,7 @@ def designated(node_id, by=None, confidence=1.0, match_type=None, active=True):
         match_type=match_type,
         confidence=confidence,
         is_active=active,
+        jurisdictions_agree=jurisdictions_agree or by == node_id,
         sanction_records=[record],
     )
 

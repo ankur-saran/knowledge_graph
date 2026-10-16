@@ -34,7 +34,11 @@ from ubo_sentinel.models.memo import (
 )
 from ubo_sentinel.models.relationship import Relationship
 from ubo_sentinel.models.rule_result import RuleResult
-from ubo_sentinel.rules.engine import OWNERSHIP_RELATIONS, classify_match
+from ubo_sentinel.rules.engine import (
+    OWNERSHIP_RELATIONS,
+    classify_match,
+    classify_other_regime,
+)
 from ubo_sentinel.rules.pack import RulePack
 
 # What a reviewer can do about a gap that decides.
@@ -174,7 +178,8 @@ def build_memo(
             match_type=match.match_type,
             confidence=match.confidence,
             is_active=match.is_active,
-            effect=classify_match(pack, match) or "NONE",
+            effect=classify_match(pack, match)
+            or ("OTHER_REGIME" if classify_other_regime(pack, match) else "NONE"),
             programs=[record.program for record in match.sanction_records],
             list_sources=[record.list_source for record in match.sanction_records],
             citations=[evidence.sanction(record.id) for record in match.sanction_records],

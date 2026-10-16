@@ -26,7 +26,11 @@ PACKS = st.builds(
     presume_majority_for_consolidation=st.booleans(),
     gap_scope=st.sampled_from(["on_path", "any"]),
     control_link_scope=st.sampled_from(["upstream", "target"]),
+    other_designations=st.sampled_from(["review", "ignore"]),
+    name_match_requires_jurisdiction=st.booleans(),
 )
+# A list the shipped pack does not apply.
+OTHER_LIST = "FX-EU-LIST"
 
 
 @st.composite
@@ -76,7 +80,9 @@ def subgraph_of(edges):
 def cases(draw, ultimate=True):
     subgraph = subgraph_of(draw(edge_lists(ultimate)))
     listed = draw(st.lists(st.sampled_from(sorted(subgraph.depth_up)), unique=True, max_size=3))
-    kinds = st.sampled_from(["own", "name", "band", "refused", "inactive"])
+    kinds = st.sampled_from(
+        ["own", "name", "name_abroad", "band", "refused", "inactive", "other_list"]
+    )
     matches = []
     for node in listed:
         kind = draw(kinds)
@@ -84,6 +90,10 @@ def cases(draw, ultimate=True):
             matches.append(designated(node))
         elif kind == "name":
             matches.append(designated(node, by="L", confidence=0.95))
+        elif kind == "name_abroad":
+            matches.append(designated(node, by="L", confidence=0.95, jurisdictions_agree=False))
+        elif kind == "other_list":
+            matches.append(designated(node, list_source=OTHER_LIST))
         elif kind == "band":
             matches.append(designated(node, by="L", confidence=0.8))
         elif kind == "refused":
@@ -240,3 +250,26 @@ def test_exposure_equals_a_brute_force_count(case, pack):
     assert abs(Fraction(exposure.max_pct) - max(values)) < Fraction(1, 10000)
     fired = "EFFECTIVE_EXPOSURE" in result.reasons
     assert fired == (sum(values) >= Fraction(pack.review_exposure_pct))
+
+
+@settings(max_examples=150, deadline=None)
+@given(cases(), PACKS)
+def test_a_designation_on_another_list_never_blocks(case, pack):
+    """Only the pack's lists block. Another list's designation can only add a reason to review."""
+    subgraph, matches = case
+    own = [m for m in matches if all(r.list_source != OTHER_LIST for r in m.sanction_records)]
+    engine = RuleEngine(pack)
+    result, without = engine.evaluate(subgraph, matches), engine.evaluate(subgraph, own)
+    assert (result.blocked_set, result.possibly_blocked_set) == (
+        without.blocked_set,
+        without.possibly_blocked_set,
+    )
+    added = set(result.reasons) - set(without.reasons)
+    assert added <= {"OTHER_REGIME_DESIGNATION"}
+    if pack.other_designations == "ignore":
+        assert result == without
+    if added:
+        assert (without.recommendation, result.recommendation) in {
+            ("CLEAR", "REVIEW"),
+            ("REVIEW", "REVIEW"),
+        }

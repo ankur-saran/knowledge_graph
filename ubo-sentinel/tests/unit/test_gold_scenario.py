@@ -131,7 +131,7 @@ def test_read_rows_treats_empty_cells_as_null_and_checks_the_header(tmp_path):
     header = ",".join(EntityRow.model_fields)
     path = tmp_path / "entities.csv"
     path.write_text(
-        f"{header}\nfx_list,s01-p,2026-09-15,1.0,,,,Jo Bloggs,J Bloggs|Joe,GB,UNKNOWN,Person\n",
+        f"{header}\nfx_list,s01-p,2026-09-15,1.0,,,,Jo Bloggs,J Bloggs|Joe,GB,UNKNOWN,,Person\n",
         encoding="utf-8",
     )
     (row,) = read_rows(path, EntityRow)

@@ -35,6 +35,7 @@ from ubo_sentinel.models.rule_result import (
     ReasonFinding,
     RuleResult,
 )
+from ubo_sentinel.models.sanction import Sanction
 from ubo_sentinel.rules.pack import RulePack, load_rule_pack
 
 OWNERSHIP_RELATIONS = frozenset({"OWNS", "CONSOLIDATED_BY"})
@@ -175,9 +176,30 @@ class RuleEngine:
         return _Evaluation(self.pack, subgraph, sanction_matches).result()
 
 
+def in_scope(pack: RulePack, match: SanctionMatch) -> list[Sanction]:
+    """The match's active designations on a list the pack applies."""
+    lists = set(pack.designation_lists)
+    return [r for r in match.sanction_records if r.is_active and r.list_source in lists]
+
+
+def other_regime(pack: RulePack, match: SanctionMatch) -> list[Sanction]:
+    """The match's active designations on lists the pack does not apply."""
+    lists = set(pack.designation_lists)
+    return [r for r in match.sanction_records if r.is_active and r.list_source not in lists]
+
+
 def classify_match(pack: RulePack, match: SanctionMatch) -> BlockSet | None:
-    if not match.is_active:
-        return None
+    """What the match does under the pack: only its designations on the pack's lists count."""
+    return _classify(pack, match) if in_scope(pack, match) else None
+
+
+def classify_other_regime(pack: RulePack, match: SanctionMatch) -> BlockSet | None:
+    """What the match's designations on other lists would do under the pack's test."""
+    return _classify(pack, match) if other_regime(pack, match) else None
+
+
+def _classify(pack: RulePack, match: SanctionMatch) -> BlockSet | None:
+    """How strongly the match ties a designation to its node, whatever the list."""
     if match.designated_entity_id == match.entity_id:
         # The node's own designation, however its record was joined to it.
         return "BLOCKED"
@@ -186,6 +208,9 @@ def classify_match(pack: RulePack, match: SanctionMatch) -> BlockSet | None:
         # merge on: the identifier is contested, so the match is neither proof nor nothing.
         return "POSSIBLY_BLOCKED"
     if match.confidence >= pack.match_threshold:
+        if pack.name_match_requires_jurisdiction and not match.jurisdictions_agree:
+            # A name and nothing else in common: a homonym abroad is as likely.
+            return "POSSIBLY_BLOCKED"
         return "BLOCKED"
     if match.confidence >= pack.review_band_low:
         return "POSSIBLY_BLOCKED"
@@ -223,17 +248,60 @@ class _Evaluation:
 
     # --- seeds -----------------------------------------------------------------------------
 
-    def _seeds(self) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
-        """Node -> the sanction ids that seed it, for the blocked and the possibly-blocked set."""
+    def _seeds(
+        self, other_lists: bool = False
+    ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+        """Node -> the sanction ids that seed it, for the blocked and the possibly-blocked set.
+
+        The designations on the pack's lists, or with `other_lists` those on the
+        lists it does not apply.
+        """
+        classify, records = (
+            (classify_other_regime, other_regime) if other_lists else (classify_match, in_scope)
+        )
         found: dict[BlockSet, dict[str, list[str]]] = {"BLOCKED": {}, "POSSIBLY_BLOCKED": {}}
         for match in self.matches:
-            block_set = classify_match(self.pack, match)
+            block_set = classify(self.pack, match)
             if block_set is not None:
-                active = [record.id for record in match.sanction_records if record.is_active]
-                found[block_set].setdefault(match.entity_id, []).extend(active)
+                ids = [record.id for record in records(self.pack, match)]
+                found[block_set].setdefault(match.entity_id, []).extend(ids)
         blocked = found["BLOCKED"]
         review = {n: ids for n, ids in found["POSSIBLY_BLOCKED"].items() if n not in blocked}
         return blocked, review
+
+    def _other_regime(
+        self, in_b: set[str], in_p: set[str]
+    ) -> tuple[NodeDerivation | None, list[str]]:
+        """Would the designations on every list catch the target where the pack's lists do not?
+
+        The pack's test is run again with the other lists' designations added to
+        its own. Returns the target's derivation in that run and the other lists'
+        sanction ids, when it puts the target in a stricter set than the pack's
+        lists do; otherwise (None, []).
+        """
+        other_b, other_p = self._seeds(other_lists=True)
+        if not other_b and not other_p:
+            return None, []
+        own_b, own_p = self._seeds()
+        seeds_b = {n: own_b.get(n, []) + other_b.get(n, []) for n in own_b.keys() | other_b}
+        seeds_p = {
+            n: own_p.get(n, []) + other_p.get(n, [])
+            for n in (own_p.keys() | other_p) - seeds_b.keys()
+        }
+        blocked = self._blocked(seeds_b)
+        all_b = set(blocked.why)
+        possibly = self._possibly_blocked(
+            {n: ids for n, ids in seeds_p.items() if n not in all_b}, all_b
+        )
+        target = self.target
+        if target in all_b and target not in in_b:
+            why = blocked.why[target]
+        elif target in possibly.why and target not in in_b | in_p:
+            why = possibly.why[target]
+        else:
+            return None, []
+        cited = sorted({i for ids in (*other_b.values(), *other_p.values()) for i in ids})
+        return why, cited
 
     # --- the fix-points --------------------------------------------------------------------
 
@@ -406,7 +474,7 @@ class _Evaluation:
         for match in self.matches:
             in_band = classify_match(self.pack, match) == "POSSIBLY_BLOCKED"
             if in_band and match.entity_id not in blocked:
-                record = next(r for r in match.sanction_records if r.is_active)
+                record = in_scope(self.pack, match)[0]
                 relevant = every or match.entity_id in on_path_nodes
                 add("REVIEW_BAND_MATCH", match.entity_id, record.provenance, relevant)
         for gap in self.subgraph.set_gaps:
@@ -511,6 +579,18 @@ class _Evaluation:
                 )
             for subject_id in sorted({gap.subject_id for gap in gaps if gap.decision_relevant}):
                 found("DECISION_RELEVANT_GAP", subject_id=subject_id)
+            if pack.other_designations == "review":
+                why, cited = self._other_regime(in_b, in_p)
+                if why is not None:
+                    findings.append(
+                        ReasonFinding(
+                            code="OTHER_REGIME_DESIGNATION",
+                            subject_id=target,
+                            pct=why.aggregate_pct,
+                            edge_ids=why.edge_ids,
+                            sanction_ids=cited,
+                        )
+                    )
             if pack.control_link_review:
                 on_path = {id(hop) for path in paths for hop in path.hops}
                 for hops in self.owners.values():

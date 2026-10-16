@@ -280,8 +280,8 @@ def _write_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
             first(jurisdiction ORDER BY pos) FILTER (WHERE jurisdiction IS NOT NULL)
                 AS jurisdiction,
             first(status ORDER BY pos) AS status,
-            -- The LEI's status comes with the LEI, from the record that gave it.
-            first(lei_status ORDER BY pos) FILTER (WHERE lei IS NOT NULL) AS lei_status,
+            -- A registry says what state an LEI is in; a list only states the LEI.
+            first(lei_status ORDER BY pos) FILTER (WHERE lei_status IS NOT NULL) AS lei_status,
             first(entity_type ORDER BY pos) AS entity_type,
             first(source ORDER BY pos) AS source,
             first(source_record_id ORDER BY pos) AS source_record_id,

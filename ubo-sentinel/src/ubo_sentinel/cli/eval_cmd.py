@@ -29,7 +29,12 @@ from ubo_sentinel.rules.pack import DEFAULT_PACK, UnknownRulePack, load_rule_pac
 
 # Commands are run from the repository root.
 GOLD_PATH = Path("eval/gold_scenarios.yaml")
-ER_PATH = Path("eval/er_labelled.csv")
+# Family -> the labelled names entity resolution is scored on. The gold
+# scenarios are written for the fixtures; a real set is scored on real names.
+ER_PATHS = {
+    bronze.FAMILY_FIXTURES: Path("eval/er_labelled.csv"),
+    bronze.FAMILY_REAL: Path("eval/er_labelled_real.csv"),
+}
 # The decisions of the gold scenarios on the fixtures: `golden_of()` in `agents/evaluator.py`.
 GOLDEN_PATH = Path("eval/golden_decisions.json")
 
@@ -221,6 +226,10 @@ def evaluate(
             help=f"Write the pipeline suite's decisions to {GOLDEN_PATH.as_posix()}.",
         ),
     ] = False,
+    labels: Annotated[
+        Path | None,
+        typer.Option("--labels", help="Labelled names for the er suite (default: by family)."),
+    ] = None,
 ) -> None:
     """Run the gold scenarios through the rules and the pipeline, and score entity resolution."""
     require_role(role, "eval")
@@ -241,6 +250,23 @@ def evaluate(
     try:
         with GraphStore.open(snapshot) as store:
             set_id = store.set_id
+            family = store.snapshot_set.family
+            if suite is not Suite.er and family != bronze.FAMILY_FIXTURES:
+                typer.echo(
+                    f"Snapshot set {set_id} is of family '{family}'. The gold scenarios are"
+                    " written for the fixtures: run them on a fixtures set, or run"
+                    " '--suite er' on this one.",
+                    err=True,
+                )
+                raise typer.Exit(code=2)
+            er_path = labels or ER_PATHS.get(family)
+            if suite in (Suite.er, Suite.all) and (er_path is None or not er_path.is_file()):
+                typer.echo(
+                    f"No labelled names for family '{family}'"
+                    f"{f' ({er_path.as_posix()})' if er_path else ''}; pass --labels.",
+                    err=True,
+                )
+                raise typer.Exit(code=2)
             out.echo(
                 f"Snapshot set: {store.set_id}   Rule pack: {engine.pack.id}"
                 f" ({engine.rule_pack_hash[:16]})"
@@ -288,7 +314,7 @@ def evaluate(
                 current = golden_of(reports, store.set_id, engine.rule_pack_hash)
                 ok = _golden(out, current, update_golden) and ok
             if suite in (Suite.er, Suite.all):
-                ok = _print_er(out, evaluate_labelled(store, ER_PATH)) and ok
+                ok = _print_er(out, evaluate_labelled(store, er_path)) and ok
     except UnknownSnapshotSet as exc:
         typer.echo(f"{exc} Run 'ubo ingest' first.", err=True)
         raise typer.Exit(code=2) from exc

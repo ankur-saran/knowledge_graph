@@ -87,6 +87,10 @@ class SanctionMatch(_Model):
     is_active: bool
     # Equal to `entity_id` unless the designations crossed a link.
     designated_entity_id: NonEmptyStr
+    # True when the node and the designated entity both state a jurisdiction and
+    # it is the same one: a name match with nothing else in common is weaker.
+    # True for a node's own designation.
+    jurisdictions_agree: bool
     sanction_records: list[Sanction] = Field(min_length=1)
 
     @field_validator("sanction_records")

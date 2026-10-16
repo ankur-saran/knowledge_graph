@@ -42,7 +42,7 @@ roles:
   analyst:
     commands: [screen]
     masked_fields:
-      Person: [legal_name, aliases, registration_number]
+      Person: [legal_name, aliases, registration_number, lei]
     read_only: false
     decision_rights: []
   reviewer:

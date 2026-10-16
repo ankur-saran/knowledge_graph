@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Self
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ubo_sentinel.models.canonical import sha256_hex
 from ubo_sentinel.models.provenance import Confidence, NonEmptyStr
@@ -21,7 +21,7 @@ DEFAULT_PACK = "ofac"
 
 # Raise when a change to `rules/engine.py` alters what a pack concludes. It is
 # part of `rule_pack_hash`, and so of every `decision_id`.
-RULES_VERSION = 1
+RULES_VERSION = 2
 
 ThresholdPct = Annotated[Decimal, Field(gt=0, le=100)]
 
@@ -40,8 +40,12 @@ class RulePack(BaseModel):
     threshold_operator: Literal[">=", ">"]
     # False: no owner's stake is added to another's; the largest one is tested.
     aggregate_blocked_owners: bool
+    # Designations on these lists (`Sanction.list_source`) are the ones the pack applies.
+    designation_lists: list[NonEmptyStr] = Field(min_length=1)
+    other_designations: Literal["review", "ignore"]
     match_threshold: Confidence
     review_band_low: Confidence
+    name_match_requires_jurisdiction: bool
     presume_majority_for_consolidation: bool
     gap_scope: Literal["on_path", "any"]
     review_exposure_pct: ThresholdPct
@@ -52,6 +56,12 @@ class RulePack(BaseModel):
     max_depth: int = Field(ge=1)
     max_depth_down: int = Field(ge=0)
     max_paths: int = Field(ge=1)
+
+    @field_validator("designation_lists")
+    @classmethod
+    def _sort_lists(cls, value: list[str]) -> list[str]:
+        # A set: the order it is written in changes nothing, the hash included.
+        return sorted(set(value))
 
     @model_validator(mode="after")
     def _check_consistency(self) -> Self:

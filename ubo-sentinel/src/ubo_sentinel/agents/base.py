@@ -28,7 +28,7 @@ from ubo_sentinel.rules.pack import DEFAULT_PACK, RulePack
 # Raise when a change to the agents alters the decision a screen produces: how
 # Intake selects, what the memo holds, what the guardrail checks. It is part of
 # every `decision_id`.
-PIPELINE_VERSION = 1
+PIPELINE_VERSION = 2
 
 # How Intake arrived at the target.
 ResolutionMethod = Literal["TARGET_ID", "IDENTIFIER", "SOLE_NAME", "ANALYST_PICK", "NOT_FOUND"]

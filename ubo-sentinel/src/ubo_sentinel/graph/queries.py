@@ -117,6 +117,20 @@ def get_sanctioned_nodes(store: GraphStore, subgraph: SubGraph) -> list[Sanction
     for row in rows:
         sanction = Sanction.model_validate(fold_provenance(row))
         groups[sanction.entity_id, sanction.designated_entity_id].append(sanction)
+    ends = sorted({end for pair in groups for end in pair})
+    jurisdiction = dict(
+        store.con.execute(
+            f"SELECT id, jurisdiction FROM graph_nodes WHERE snapshot_set_id = ? AND id IN {id_list()}",
+            [store.set_id, ends],
+        ).fetchall()
+    )
+
+    def agree(entity_id: str, designated_id: str) -> bool:
+        if entity_id == designated_id:
+            return True
+        found = jurisdiction.get(entity_id)
+        return found is not None and found == jurisdiction.get(designated_id)
+
     matches = [
         SanctionMatch(
             entity_id=entity_id,
@@ -124,6 +138,7 @@ def get_sanctioned_nodes(store: GraphStore, subgraph: SubGraph) -> list[Sanction
             match_type=records[0].match_type,
             confidence=records[0].match_confidence,
             is_active=any(record.is_active for record in records),
+            jurisdictions_agree=agree(entity_id, designated_id),
             sanction_records=records,
         )
         for (entity_id, designated_id), records in groups.items()

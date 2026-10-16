@@ -335,6 +335,23 @@ def test_an_identifier_that_found_a_person_is_not_shown_back(con, graph_t0, onto
     )
 
 
+def test_a_persons_lei_is_masked_like_the_name(con, graph_t0, ontology, view):
+    """A sole proprietor holds an LEI, and GLEIF's record of it names the person."""
+    lei = "FXS00SOLEPROP0000000"
+    request = ScreenRequest(lei=lei, query="", snapshot=graph_t0)
+    person = Supervisor(ontology).run(request, con).decision
+    assert person.target_id == f"lei:{lei}"
+    for as_json in (False, True):
+        text = decision_text(person, "analyst", ontology, as_json=as_json)
+        assert lei not in text and "Wendeline Archbury" not in text
+    assert lei in decision_text(person, "reviewer", ontology, as_json=True)
+    # A candidate shows neither.
+    (candidate,) = view("analyst").resolve_entity("Wendeline Archbury")
+    assert (candidate.lei, candidate.legal_name) == (MASK, MASK)
+    (found,) = view("reviewer").resolve_entity("Wendeline Archbury")
+    assert found.lei == lei
+
+
 def test_candidates_are_masked_without_a_store(store, view, ontology):
     found = queries.resolve_entity(store, "Dmitri Volkanov")
     assert mask_candidates(found, "analyst", ontology) == view("analyst").resolve_entity(

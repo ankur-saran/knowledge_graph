@@ -30,6 +30,9 @@ ReasonCode = Literal[
     "NEAR_MISS_AGGREGATE",
     "DECISION_RELEVANT_GAP",
     "CONTROL_LINK",
+    # A designation on a list the pack does not apply would block or possibly
+    # block the target under the pack's own test.
+    "OTHER_REGIME_DESIGNATION",
     "ENTITY_NOT_FOUND",
     # The graph above the target has more evidence paths than the rule pack allows.
     "EVIDENCE_LIMIT_EXCEEDED",

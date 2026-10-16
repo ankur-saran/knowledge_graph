@@ -67,7 +67,7 @@ Rule pack: `{{ memo.rule_pack.id }}` (`{{ memo.rule_pack.hash[:16] }}`), blockin
 ## Designations
 
 {% for match in memo.matches %}
-- {{ name(match.entity_id) }}{% if match.designated_entity_id != match.entity_id %} matched to {{ name(match.designated_entity_id) }} at {{ match.confidence | score }}{% endif %} (`{{ match.match_type }}`, {{ "active" if match.is_active else "inactive" }}, effect `{{ match.effect }}`){% for program in match.programs %}{{ ": " if loop.first else ", " }}`{{ program }}`{% endfor %}.{{ cites(match.citations) }}
+- {{ name(match.entity_id) }}{% if match.designated_entity_id != match.entity_id %} matched to {{ name(match.designated_entity_id) }} at {{ match.confidence | score }}{% endif %} (`{{ match.match_type }}`, {{ "active" if match.is_active else "inactive" }}, effect `{{ match.effect }}`){% for program in match.programs %}{{ ": " if loop.first else ", " }}`{{ program }}`{% endfor %}{% for source in match.list_sources %}{{ " on " if loop.first else ", " }}`{{ source }}`{% endfor %}.{{ cites(match.citations) }}
 {% endfor %}
 {% endif %}
 {% if memo.claims | selectattr("code", "equalto", "DATA_GAP") | list %}

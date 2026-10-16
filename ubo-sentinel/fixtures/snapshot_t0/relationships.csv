@@ -11,6 +11,7 @@ fx_registry,s00-rel-9,2026-09-01,1.0,fx_registry:s00-sub-7,fx_registry:s00-hub,C
 fx_registry,s00-rel-10,2026-09-01,1.0,fx_registry:s00-sub-8,fx_registry:s00-mid,CONSOLIDATED_BY,,accounting_consolidation,false
 fx_registry,s00-rel-11,2026-09-01,1.0,fx_registry:s00-sub-8,fx_registry:s00-hub,CONSOLIDATED_BY,,accounting_consolidation,true
 fx_list,s00-rel-12,2026-09-15,1.0,fx_list:s00-founder,fx_registry:s00-hub,CONTROLS,,other,false
+fx_registry,s00-rel-13,2026-09-01,1.0,fx_registry:s00-soleprop,fx_registry:s00-sub-5,OWNS,5,shareholding,false
 fx_registry,s01-rel-1,2026-09-01,1.0,fx_registry:s01-parent,fx_registry:s01-target,OWNS,60,shareholding,false
 fx_list,s01-rel-2,2026-09-15,1.0,fx_list:s01-minority,fx_registry:s01-target,OWNS,40,shareholding,false
 fx_registry,s02-rel-1,2026-09-01,1.0,fx_registry:s02-parent,fx_registry:s02-target,OWNS,100,shareholding,false
@@ -75,3 +76,5 @@ fx_registry,s27-rel-1,2026-09-01,1.0,fx_registry:s27-parent,fx_registry:s27-targ
 fx_list,s27-rel-2,2026-09-15,1.0,fx_list:s27-owner,fx_list:s27-dup,OWNS,80,shareholding,false
 fx_registry,s28-rel-1,2026-09-01,1.0,fx_registry:s28-parent,fx_registry:s28-target,OWNS,100,shareholding,false
 fx_list,s28-rel-2,2026-09-15,1.0,fx_list:s28-director,fx_registry:s28-parent,CONTROLS,,directorship,false
+fx_registry,s29-rel-1,2026-09-01,1.0,fx_registry:s29-owner,fx_registry:s29-target,OWNS,70,shareholding,false
+fx_registry,s30-rel-1,2026-09-01,1.0,fx_registry:s30-owner,fx_registry:s30-target,OWNS,60,shareholding,false

@@ -281,9 +281,11 @@ def test_every_recommendation_reason_and_gap_is_covered(gold):
 
 def test_every_enum_value_appears_in_the_fixtures(entities, relationships, repex):
     assert {row.status for row in entities} == set(get_args(EntityStatus))
-    # Every LEI has a status, and the ones the rules read appear: an active
-    # entity with a lapsed LEI, an inactive one with a retired LEI.
-    assert all((row.lei_status is None) == (row.lei is None) for row in entities)
+    # A registry gives every LEI it holds a status; a list states an LEI and no
+    # status. The statuses the rules read appear: an active entity with a lapsed
+    # LEI, an inactive one with a retired LEI.
+    for row in entities:
+        assert (row.lei_status is not None) == (row.lei is not None and row.source == "fx_registry")
     assert {("ACTIVE", "LAPSED"), ("INACTIVE", "RETIRED"), ("ACTIVE", "ISSUED")} <= {
         (row.status, row.lei_status) for row in entities
     }
@@ -295,7 +297,9 @@ def test_every_enum_value_appears_in_the_fixtures(entities, relationships, repex
 
 
 def test_sanctions_use_two_programs_and_one_inactive_record(sanctions):
-    assert len({row.program for row in sanctions}) == 2
+    # The OFAC pack's list, and one other list it does not apply (SCEN-30).
+    assert {row.list_source for row in sanctions} == {"FX-OFAC-SDN", "FX-EU-LIST"}
+    assert len({row.program for row in sanctions if row.list_source == "FX-OFAC-SDN"}) == 2
     assert [row.is_active for row in sanctions].count(False) == 1
 
 
