@@ -351,9 +351,12 @@ def test_an_older_bronze_is_brought_up_to_date_in_place(con):
     create_schema(con)
 
     assert schema_version(con) == BRONZE_SCHEMA_VERSION
-    assert con.execute(
-        "SELECT snapshot_id, row_count, rows_digest FROM bronze_snapshots ORDER BY snapshot_id"
-    ).fetchall() == registry
+    assert (
+        con.execute(
+            "SELECT snapshot_id, row_count, rows_digest FROM bronze_snapshots ORDER BY snapshot_id"
+        ).fetchall()
+        == registry
+    )
     for snapshot_id, table in con.execute(
         "SELECT snapshot_id, table_name FROM bronze_snapshots"
     ).fetchall():

@@ -65,7 +65,7 @@ def candidate(entity_id, confidence=1.0, match_type="NAME_EXACT", source="fx_reg
 
 def test_every_gold_scenario_passes_from_query_to_decision(con, graph_t0, ontology, gold):
     reports = run_pipeline_suite(Supervisor(ontology, AuditLog()), gold, graph_t0, con)
-    assert len(reports) == len(gold) == 28
+    assert len(reports) == len(gold) == 30
     assert [(r.scenario_id, r.diffs) for r in reports if not r.passed] == []
     assert sum(report.uncited_claims for report in reports) == 0
     assert sum(r.paths_found for r in reports) == sum(r.paths_expected for r in reports) > 0

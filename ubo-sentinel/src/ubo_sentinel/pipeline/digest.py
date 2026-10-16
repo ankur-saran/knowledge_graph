@@ -59,9 +59,7 @@ def _value(column: str, sql_type: str) -> str:
         # A DOUBLE is written as its shortest round-trip form, as Python's repr.
         return f"coalesce(CAST({quoted} AS VARCHAR), 'null')"
     if upper.startswith("DECIMAL"):
-        return (
-            f"coalesce('\"' || CAST(CAST({quoted} AS DECIMAL(38,4)) AS VARCHAR) || '\"', 'null')"
-        )
+        return f"coalesce('\"' || CAST(CAST({quoted} AS DECIMAL(38,4)) AS VARCHAR) || '\"', 'null')"
     if upper == "DATE":
         return f"coalesce('\"' || CAST({quoted} AS VARCHAR) || '\"', 'null')"
     raise UnsupportedColumn(f"Column {column} has type {sql_type}, which no digest writes.")
@@ -80,8 +78,7 @@ def row_texts(
     return [
         text
         for (text,) in con.execute(
-            f"SELECT {_row_text(con, table)} FROM {table} WHERE snapshot_set_id = ?"
-            f" ORDER BY {key}",
+            f"SELECT {_row_text(con, table)} FROM {table} WHERE snapshot_set_id = ? ORDER BY {key}",
             [snapshot_set_id],
         ).fetchall()
     ]

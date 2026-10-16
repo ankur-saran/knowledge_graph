@@ -15,7 +15,7 @@ Every file starts with `source`, `source_record_id`, `as_of`, `confidence`. Then
 
 | File | Columns |
 |---|---|
-| `entities.csv` | `lei`, `registration_authority_id`, `registration_number`, `legal_name`, `aliases`, `jurisdiction`, `status`, `entity_type` |
+| `entities.csv` | `lei`, `registration_authority_id`, `registration_number`, `legal_name`, `aliases`, `jurisdiction`, `status`, `lei_status`, `entity_type` |
 | `relationships.csv` | `subject_ref`, `object_ref`, `rel_type`, `pct`, `basis`, `is_ultimate` |
 | `sanctions.csv` | `entity_ref`, `program`, `list_date`, `list_source`, `is_active` |
 | `repex.csv` | `entity_ref`, `category`, `reason` |
@@ -23,6 +23,9 @@ Every file starts with `source`, `source_record_id`, `as_of`, `confidence`. Then
 - A `*_ref` is `<source>:<source_record_id>` of a row in `entities.csv`.
 - An empty cell means "not given". An empty `pct` is unknown, never 0.
 - `aliases` are separated by `|`. Dates are `YYYY-MM-DD`. Booleans are `true` / `false`.
+- `status` is the entity's legal status (`ACTIVE`, `INACTIVE`, `UNKNOWN`); `lei_status` is the status of its LEI record (`ISSUED`, `LAPSED`, `RETIRED`, ...). A registry row with an LEI gives its status; a list row states an LEI and leaves `lei_status` empty.
+- `jurisdiction` is an ISO 3166-1 alpha-2 country code.
+- `list_source` names the list a designation is on. `FX-OFAC-SDN` stands in for the OFAC SDN list, the one the OFAC pack applies; `FX-EU-LIST` stands in for a list it does not (SCEN-30).
 - Edge direction follows the ontology: `OWNS` owner → asset, `CONSOLIDATED_BY` child → parent, `CONTROLS` controller → controlled.
 
 ## Conventions

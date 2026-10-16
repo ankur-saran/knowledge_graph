@@ -86,7 +86,9 @@ def mask_candidates(
 
 def _masked_candidate_fields(match: EntityMatch, hidden: dict[str, set[str]]) -> dict[str, str]:
     """A masked candidate's names, and any other masked property it carries (its LEI)."""
-    fields = {"legal_name", "matched_name"} | (hidden[match.entity_type] & set(EntityMatch.model_fields))
+    fields = {"legal_name", "matched_name"} | (
+        hidden[match.entity_type] & set(EntityMatch.model_fields)
+    )
     return {name: MASK for name in sorted(fields) if getattr(match, name) is not None}
 
 

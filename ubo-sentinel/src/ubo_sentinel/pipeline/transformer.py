@@ -312,7 +312,8 @@ def _write_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
         INSERT INTO silver_entities
         SELECT ?, e.entity_id, e.lei, e.registration_authority_id, e.registration_number,
             e.legal_name, coalesce(a.aliases, CAST([] AS TEXT[])), e.jurisdiction, e.status,
-            e.lei_status, e.entity_type, r.repex_reason, {", ".join(f"e.{c.strip()}" for c in _PROV.split(","))},
+            e.lei_status, e.entity_type, r.repex_reason,
+            {", ".join(f"e.{c.strip()}" for c in _PROV.split(","))},
             e.supporting_records
         FROM stg_entity e
         LEFT JOIN (
@@ -638,9 +639,9 @@ def _counts(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any]:
         sql = f"SELECT count(*) FROM {table}"
         if table.startswith("silver_"):
             condition = f"AND {where}" if where else ""
-            return con.execute(
-                f"{sql} WHERE snapshot_set_id = ? {condition}", [set_id]
-            ).fetchone()[0]
+            return con.execute(f"{sql} WHERE snapshot_set_id = ? {condition}", [set_id]).fetchone()[
+                0
+            ]
         return con.execute(f"{sql} WHERE {where}" if where else sql).fetchone()[0]
 
     rejects = con.execute(

@@ -144,7 +144,7 @@ def test_a_broken_log_stops_a_screen(built):
 def test_eval_runs_every_scenario_from_query_to_decision(built):
     result = run("eval", "--suite", "pipeline")
     assert result.exit_code == 0, result.output
-    assert "28/28 scenarios passed" in result.output
+    assert "30/30 scenarios passed" in result.output
     assert "Uncited claims" in result.output and "(target 0)   ok" in result.output
     # Each decision the suite recorded is replayed from its event.
     assert "Replay fidelity         100.0%  (target 100%)  ok" in result.output
@@ -153,7 +153,7 @@ def test_eval_runs_every_scenario_from_query_to_decision(built):
 
     everything = run("eval", "--suite", "all")
     assert everything.exit_code == 0
-    assert "27/27 scenarios passed" in everything.output
-    assert "28/28 scenarios passed" in everything.output
+    assert "29/29 scenarios passed" in everything.output
+    assert "30/30 scenarios passed" in everything.output
     assert "Not run here" not in everything.output
     assert "Not run here (pipeline suite): SCEN-23" in run("eval", "--suite", "rules").output

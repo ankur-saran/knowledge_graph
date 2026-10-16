@@ -133,4 +133,3 @@ def ingest_fixtures(
         snapshot_set=snapshot_set,
         aliases={alias: resolve_alias(con, alias) for alias in (ALIAS_FIXTURES, ALIAS_LATEST)},
     )
-

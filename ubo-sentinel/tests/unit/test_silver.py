@@ -419,8 +419,8 @@ def test_edges_that_cannot_be_loaded_are_rejected_with_a_reason(con, ontology, t
         ("repex", "s99-repex"): ("UNRESOLVED_REF", "fx_registry:s99-missing"),
     }
     # Nothing rejected was loaded, and nothing else was lost.
-    assert len(read_relationships(con, set_id)) == 75
-    assert len(read_sanctions(con, set_id)) == 30
+    assert len(read_relationships(con, set_id)) == 78
+    assert len(read_sanctions(con, set_id)) == 33
     assert len(read_reporting_exceptions(con, set_id)) == 4
 
 
@@ -439,6 +439,8 @@ def test_match_type_says_how_a_designation_reaches_its_entity(con, t0):
         ("s14-des", "fx_list:s14-listed"): "DIRECT",
         ("s14-des", "lei:FXS14OWNER0000000000"): "FUZZY_NAME",
         ("s26-des", "lei:FXS26OWNER0000000000"): "FUZZY_NAME",
+        ("s29-des", "lei:FXS29OWNER0000000000"): "FUZZY_NAME",
+        ("s30-des", "lei:FXS30OWNER0000000000"): "LEI",
     }
     for key, match_type in expected.items():
         assert reached[key].match_type == match_type, key
@@ -459,7 +461,7 @@ def test_match_type_says_how_a_designation_reaches_its_entity(con, t0):
     review = reached["s14-des", "lei:FXS14OWNER0000000000"]
     assert review.match_confidence < MATCH_THRESHOLD
     assert reached["s26-des", "lei:FXS26OWNER0000000000"].match_confidence >= MATCH_THRESHOLD
-    assert len({sanction.id for sanction in reached.values()}) == len(reached) == 30
+    assert len({sanction.id for sanction in reached.values()}) == len(reached) == 33
 
 
 # --- gold scenarios -----------------------------------------------------------------

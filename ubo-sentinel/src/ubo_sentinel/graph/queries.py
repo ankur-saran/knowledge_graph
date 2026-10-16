@@ -120,7 +120,8 @@ def get_sanctioned_nodes(store: GraphStore, subgraph: SubGraph) -> list[Sanction
     ends = sorted({end for pair in groups for end in pair})
     jurisdiction = dict(
         store.con.execute(
-            f"SELECT id, jurisdiction FROM graph_nodes WHERE snapshot_set_id = ? AND id IN {id_list()}",
+            "SELECT id, jurisdiction FROM graph_nodes"
+            f" WHERE snapshot_set_id = ? AND id IN {id_list()}",
             [store.set_id, ends],
         ).fetchall()
     )

@@ -292,7 +292,8 @@ def _write_nodes(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
         )
         SELECT e.snapshot_set_id, e.id, e.entity_type, e.lei, e.registration_authority_id,
             e.registration_number, e.legal_name, e.aliases, e.jurisdiction, e.status,
-            e.lei_status, e.entity_type, e.repex_reason, {", ".join(f"e.{c.strip()}" for c in _PROV.split(","))},
+            e.lei_status, e.entity_type, e.repex_reason,
+            {", ".join(f"e.{c.strip()}" for c in _PROV.split(","))},
             e.supporting_records, coalesce(up.n, 0), coalesce(down.n, 0)
         FROM silver_entities e
         LEFT JOIN up ON up.id = e.id

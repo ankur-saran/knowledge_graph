@@ -50,9 +50,9 @@ def test_every_scenario_is_one_recorded_decision(fresh_con, ontology, gold, log)
 
     events = log.records()
     assert [event["event_type"] for event in events] == ["RECOMMENDED"] * len(gold)
-    assert len({event["decision_id"] for event in events}) == len(gold) == 28
+    assert len({event["decision_id"] for event in events}) == len(gold) == 30
     report = log.verify(ontology)
-    assert (report.intact, report.count) == (True, 28)
+    assert (report.intact, report.count) == (True, 30)
 
 
 def test_each_event_carries_what_replay_needs(fresh_con, ontology, gold, log):
@@ -171,7 +171,7 @@ def test_the_changed_list_through_the_whole_pipeline(fresh_con, ontology, gold, 
         "SCEN-17": ("CLEAR", "ESCALATE"),
     }
     report = log.verify(ontology)
-    assert (report.intact, report.count) == (True, 56)
+    assert (report.intact, report.count) == (True, 60)
     # One entity, two sets: the log links them.
     target = "lei:FXS01TARGET000000000"
     assert [d.snapshot_set_id for d in log.history(target)] == [t0, t1]
