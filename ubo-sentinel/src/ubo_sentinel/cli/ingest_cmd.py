@@ -21,9 +21,10 @@ class Source(StrEnum):
 def _print_summary(summary: IngestSummary) -> None:
     typer.echo(f"Source: {summary.source} ({summary.path.as_posix()})")
     for dataset in summary.datasets:
+        rejects = f"  ({dataset.reject_count} rejected)" if dataset.reject_count else ""
         typer.echo(
             f"  {dataset.table:<21} {dataset.snapshot_id}  {dataset.row_count:>6} rows"
-            f"  {dataset.status}"
+            f"  {dataset.status}{rejects}"
         )
     snapshot_set = summary.snapshot_set
     state = "new" if snapshot_set.is_new else "already present"

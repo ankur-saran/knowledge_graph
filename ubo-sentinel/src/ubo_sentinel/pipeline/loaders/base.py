@@ -16,6 +16,8 @@ class DatasetSummary:
     row_count: int
     # "new", "already present" or "inherited".
     status: str
+    # Records of the snapshot that could not be loaded (`bronze_rejects`); fixtures have none.
+    reject_count: int = 0
 
 
 @dataclass(frozen=True)

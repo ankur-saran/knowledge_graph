@@ -4,3 +4,7 @@ fixtures/** text eol=lf
 eval/** text eol=lf
 rules/** text eol=lf
 ontology/** text eol=lf
+
+# Sample files in the published formats: their bytes are hashed as published
+# (GLEIF writes CRLF), so git must not change them.
+tests/data/real_format/** -text

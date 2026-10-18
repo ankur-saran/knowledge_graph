@@ -31,7 +31,7 @@ class UnsupportedColumn(TypeError):
     pass
 
 
-def _json_text(expression: str) -> str:
+def json_text(expression: str) -> str:
     """A JSON value of a VARCHAR or VARCHAR[] expression, as Python's json writes it."""
     written = f"to_json({expression})"
     fixed = written
@@ -49,10 +49,10 @@ def _value(column: str, sql_type: str) -> str:
     quoted = f'"{column}"'
     upper = sql_type.upper()
     if upper in ("VARCHAR", "VARCHAR[]"):
-        return _json_text(quoted)
+        return json_text(quoted)
     if upper == "JSON":
         # Read back as a string, and written as one.
-        return _json_text(f"CAST({quoted} AS VARCHAR)")
+        return json_text(f"CAST({quoted} AS VARCHAR)")
     if upper == "BOOLEAN":
         return f"CASE WHEN {quoted} IS NULL THEN 'null' WHEN {quoted} THEN 'true' ELSE 'false' END"
     if upper in ("INTEGER", "BIGINT", "SMALLINT", "TINYINT", "HUGEINT", "DOUBLE"):

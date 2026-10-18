@@ -1,0 +1,49 @@
+{
+  "manifest_version": 1,
+  "files": {
+    "gleif_lei2": {
+      "path": "gleif/lei2.csv",
+      "source": "gleif",
+      "url": "https://goldencopy.gleif.org/storage/golden-copy-files/2026/10/01/fx/lei2-golden-copy.csv.zip",
+      "published_at": "2026-10-01T00:00:00",
+      "size": 48580,
+      "sha256": "961a0de1a9add0d30c3117324d08c159571d5d89fe9ef36d6baa4e31ec7a6340",
+      "publisher_checksum": null,
+      "archive_sha256": null,
+      "licence": "CC0-1.0"
+    },
+    "gleif_rr": {
+      "path": "gleif/rr.csv",
+      "source": "gleif",
+      "url": "https://goldencopy.gleif.org/storage/golden-copy-files/2026/10/01/fx/rr-golden-copy.csv.zip",
+      "published_at": "2026-10-01T00:00:00",
+      "size": 8200,
+      "sha256": "760b9af082babb2c217de193fe6cad6334938233a2b04f108a982d6a1bc012ea",
+      "publisher_checksum": null,
+      "archive_sha256": null,
+      "licence": "CC0-1.0"
+    },
+    "gleif_repex": {
+      "path": "gleif/repex.csv",
+      "source": "gleif",
+      "url": "https://goldencopy.gleif.org/storage/golden-copy-files/2026/10/01/fx/repex-golden-copy.csv.zip",
+      "published_at": "2026-10-01T00:00:00",
+      "size": 1478,
+      "sha256": "500e3c3c755ff2a65617318d647418f441b68669758a138063717f580a9f582b",
+      "publisher_checksum": null,
+      "archive_sha256": null,
+      "licence": "CC0-1.0"
+    },
+    "opensanctions_entities": {
+      "path": "opensanctions/entities.ftm.json",
+      "source": "opensanctions",
+      "url": "https://data.opensanctions.org/artifacts/sanctions/20261001060000-fxr/entities.ftm.json",
+      "published_at": "2026-10-01T06:00:00",
+      "size": 13236,
+      "sha256": "c7ea7c4642d4a4aee9053ef72c5d3df09f56afc97a78609497fcefd9a7a1140c",
+      "publisher_checksum": "sha1:c7e5a6d1e79653e126f1da6d388413e679c444e7",
+      "archive_sha256": null,
+      "licence": "CC-BY-NC-4.0"
+    }
+  }
+}
