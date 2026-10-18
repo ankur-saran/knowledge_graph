@@ -9,7 +9,12 @@ REGISTRY = 0
 LIST = 1
 
 # Source -> rank; the lowest rank describes a merged entity.
-SOURCE_RANK: dict[str, int] = {"fx_registry": REGISTRY, "fx_list": LIST}
+SOURCE_RANK: dict[str, int] = {
+    "fx_registry": REGISTRY,
+    "fx_list": LIST,
+    "gleif": REGISTRY,
+    "opensanctions": LIST,
+}
 
 # Source -> the confidence a real loader gives each of its records. A fixture
 # row states its own. A published record is taken as the publisher states it;

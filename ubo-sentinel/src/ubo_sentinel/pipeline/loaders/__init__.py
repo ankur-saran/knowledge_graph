@@ -7,10 +7,11 @@ import duckdb
 
 from ubo_sentinel.pipeline.loaders.base import DatasetSummary, IngestSummary
 from ubo_sentinel.pipeline.loaders.fixture_loader import ingest_fixtures
+from ubo_sentinel.pipeline.loaders.gleif_loader import ingest_gleif
 
 Loader = Callable[[duckdb.DuckDBPyConnection, Path | None, str | None], IngestSummary]
 
 # `ubo ingest --source <name>` -> loader. A source is added in the step that implements it.
-LOADERS: dict[str, Loader] = {"fixtures": ingest_fixtures}
+LOADERS: dict[str, Loader] = {"fixtures": ingest_fixtures, "gleif": ingest_gleif}
 
 __all__ = ["LOADERS", "DatasetSummary", "IngestSummary", "Loader"]

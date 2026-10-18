@@ -45,13 +45,14 @@ Properties: `id`, `subject_id`, `object_id`, `rel_type`, `pct`, `basis`, `is_ult
 
 A sanctions designation is not an edge. Designations are rows in the `graph_sanctions` table, keyed by node id, with properties `id`, `entity_id`, `designated_entity_id`, `program`, `list_date`, `list_source`, `is_active`, `match_type`, `match_confidence`.
 
-There is one row per designation and entity it reaches. `program`, `list_date`, `list_source` and `is_active` describe the designation. `match_type` (`DIRECT`, `LEI`, `REGISTRATION`, `FUZZY_NAME`) and `match_confidence` describe how the designation was linked to that entity:
+There is one row per designation and entity it reaches. `program`, `list_date`, `list_source` and `is_active` describe the designation. `match_type` (`DIRECT`, `LEI`, `REGISTRATION`, `SUCCESSOR_LEI`, `FUZZY_NAME`) and `match_confidence` describe how the designation was linked to that entity:
 
 | `match_type` | The designated record | `match_confidence` |
 |---|---|---|
 | `DIRECT` | is the record that describes the entity | 1 |
 | `LEI` | joined the entity by a shared LEI | 1 |
 | `REGISTRATION` | joined the entity by registration authority and number, or shares them with an entity it could not be merged into | 1 |
+| `SUCCESSOR_LEI` | belongs to a record whose LEI GLEIF replaced (`DUPLICATE`, `MERGED`) by this entity's LEI, or to an entity of another type that names it as successor | 1 |
 | `FUZZY_NAME` | belongs to another entity, linked to this one by name | the link's confidence |
 
 A designation crosses one link and no further.

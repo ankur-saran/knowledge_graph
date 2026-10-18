@@ -320,7 +320,12 @@ LEI2_ROWS = [
         "FR",
         city="Lyon",
         category="SOLE_PROPRIETOR",
-        **{"Entity.LegalName.xmllang": "fr"},
+        # No registration authority: GLEIF's code for none, and no number.
+        **{
+            "Entity.LegalName.xmllang": "fr",
+            "Entity.RegistrationAuthority.RegistrationAuthorityID": "RA999999",
+            "Entity.RegistrationAuthority.RegistrationAuthorityEntityID": "",
+        },
     ),
     _entity(
         "DUP",
@@ -329,9 +334,11 @@ LEI2_ROWS = [
         city="Bremen",
         status="INACTIVE",
         registration="DUPLICATE",
+        # One company registered twice: the same register entry as its successor.
         **{
             "Entity.SuccessorEntity.1.SuccessorLEI": lei("KOLM"),
             "Entity.SuccessorEntity.1.SuccessorEntityName": "Kolmhaven Maschinenbau GmbH",
+            "Entity.RegistrationAuthority.RegistrationAuthorityEntityID": "FXR-KOLM",
         },
     ),
     _entity("KOLM", "Kolmhaven Maschinenbau GmbH", "DE", city="Bremen"),
@@ -350,7 +357,12 @@ LEI2_ROWS = [
         "FR",
         city="Marseille",
         status="NULL",
-        **{"Entity.LegalName.xmllang": "fr"},
+        # A register GLEIF does not list, named in free text.
+        **{
+            "Entity.LegalName.xmllang": "fr",
+            "Entity.RegistrationAuthority.RegistrationAuthorityID": "RA888888",
+            "Entity.RegistrationAuthority.OtherRegistrationAuthorityID": "Greffe de Marseille",
+        },
     ),
     _entity(
         "THAL",

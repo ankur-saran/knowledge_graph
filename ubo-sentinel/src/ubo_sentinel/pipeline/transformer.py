@@ -21,13 +21,14 @@ from ubo_sentinel.pipeline.entity_linking import (
     BLOCK_PREFIX_LENGTH,
     KEY_LEI,
     KEY_REGISTRATION,
+    KEY_SUCCESSOR_LEI,
     LINK_BLOCK_MAX,
     LINK_CANDIDATE_CAP,
     LINK_FLOOR,
     resolve_groups,
 )
 from ubo_sentinel.pipeline.jurisdiction import normalise_jurisdiction
-from ubo_sentinel.pipeline.mappers import MAPPERS, create_stage_tables, stage
+from ubo_sentinel.pipeline.mappers import FILTERED_TABLE, MAPPERS, create_stage_tables, stage
 from ubo_sentinel.pipeline.name_match import normalise_name, similarity_normalised
 from ubo_sentinel.pipeline.silver import (
     SILVER_TABLES,
@@ -237,6 +238,13 @@ def _resolve_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> list[tuple
                    registration_authority_id || chr(31) || registration_number
             FROM stg_records
             WHERE registration_authority_id IS NOT NULL AND registration_number IS NOT NULL
+            UNION ALL
+            -- A duplicate or merged LEI's record, with the record of the LEI that replaced it.
+            SELECT ref, '{KEY_SUCCESSOR_LEI}', successor_lei FROM stg_records
+            WHERE successor_lei IS NOT NULL
+            UNION ALL
+            SELECT ref, '{KEY_SUCCESSOR_LEI}', lei FROM stg_records
+            WHERE lei IN (SELECT successor_lei FROM stg_records)
         )
         GROUP BY kind, key HAVING count(*) > 1
         ORDER BY kind, key
@@ -258,9 +266,10 @@ def _resolve_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> list[tuple
     con.execute("CREATE OR REPLACE TEMP TABLE stg_source_rank (source TEXT, source_rank INTEGER)")
     con.executemany("INSERT INTO stg_source_rank VALUES (?, ?)", list(SOURCE_RANK.items()))
 
-    # The id is `entity_id()`: the LEI when a member has one, else the smallest
-    # member id. `pos` 1 is the record that describes the entity: a registry
-    # before a list, then the newest.
+    # The id is `entity_id()` of the LEI that stands: the smallest LEI of a member
+    # that names no successor, else the smallest LEI, else the smallest member id.
+    # `pos` 1 is the record that describes the entity: a registry before a list,
+    # a record whose LEI stands before one it replaced, then the newest.
     con.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE stg_members AS
@@ -271,14 +280,21 @@ def _resolve_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> list[tuple
             JOIN stg_source_rank k ON k.source = r.source
         ), placed AS (
             SELECT *,
-                coalesce('lei:' || min(lei) OVER (PARTITION BY root),
+                coalesce('lei:' || min(lei) FILTER (WHERE successor_lei IS NULL)
+                             OVER (PARTITION BY root),
+                         'lei:' || min(lei) OVER (PARTITION BY root),
                          min(ref) OVER (PARTITION BY root)) AS entity_id,
-                row_number() OVER (PARTITION BY root ORDER BY source_rank, as_of DESC, ref) AS pos,
+                row_number() OVER (
+                    PARTITION BY root
+                    ORDER BY source_rank, successor_lei IS NOT NULL, as_of DESC, ref
+                ) AS pos,
                 count(*) OVER (PARTITION BY root, lei) AS same_lei
             FROM grouped
         )
         SELECT *,
             CASE WHEN pos = 1 THEN '{JOINED_SELF}'
+                 WHEN lei IS NOT NULL AND 'lei:' || lei <> entity_id
+                     THEN '{KEY_SUCCESSOR_LEI}'
                  WHEN lei IS NOT NULL AND same_lei > 1 THEN '{KEY_LEI}'
                  ELSE '{KEY_REGISTRATION}' END AS joined_by
         FROM placed
@@ -692,6 +708,11 @@ def _counts(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any]:
         " GROUP BY reason ORDER BY reason",
         [set_id],
     ).fetchall()
+    filtered: dict[str, dict[str, int]] = {}
+    for dataset, reason, n in con.execute(
+        f"SELECT dataset, reason, sum(n) FROM {FILTERED_TABLE} GROUP BY ALL ORDER BY ALL"
+    ).fetchall():
+        filtered.setdefault(dataset, {})[reason] = int(n)
     return {
         "entity_records": count("stg_entities"),
         "entities": count("stg_silver_entities"),
@@ -707,11 +728,17 @@ def _counts(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any]:
         "reporting_exceptions": count("stg_silver_reporting_exceptions"),
         "gaps": count("stg_silver_gaps"),
         "rejects": dict(rejects),
+        # Records a mapper did not stage (an ended relationship, an unsupported
+        # type), by dataset and reason. Bronze keeps them.
+        "filtered": filtered,
         # Values a source gave that could not be read, by field. The record is kept
         # with the field empty.
         "unreadable": {
             "jurisdiction": count(
                 "stg_entities", "jurisdiction IS NULL AND jurisdiction_raw IS NOT NULL"
+            ),
+            "lei_status": count(
+                "stg_entities", "lei_status IS NULL AND lei_status_raw IS NOT NULL"
             ),
         },
     }

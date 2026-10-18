@@ -27,6 +27,8 @@ LINK_BLOCK_MAX = 20_000
 
 KEY_LEI = "LEI"
 KEY_REGISTRATION = "REGISTRATION"
+# A duplicate or merged LEI and the LEI that replaced it (GLEIF `SuccessorLEI`).
+KEY_SUCCESSOR_LEI = "SUCCESSOR_LEI"
 
 
 def resolve_groups(
@@ -42,7 +44,8 @@ def resolve_groups(
     refused as (ref_a, ref_b, kind). A shared LEI always merges. A shared
     registration is refused when the merged group would hold two LEIs or two
     entity types: moving a designation onto another company is worse than
-    keeping two records apart.
+    keeping two records apart. A successor LEI joins two LEIs by design, and is
+    refused only when the group would hold two entity types.
     """
     parent: dict[str, str] = {}
     leis: dict[str, set[str]] = {}
@@ -68,6 +71,9 @@ def resolve_groups(
                 continue
             merged_leis, merged_types = leis[a] | leis[b], types[a] | types[b]
             if kind == KEY_REGISTRATION and (len(merged_leis) > 1 or len(merged_types) > 1):
+                refused.append((first, ref, kind))
+                continue
+            if kind == KEY_SUCCESSOR_LEI and len(merged_types) > 1:
                 refused.append((first, ref, kind))
                 continue
             root, child = min(a, b), max(a, b)

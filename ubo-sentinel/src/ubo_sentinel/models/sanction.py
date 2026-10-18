@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from ubo_sentinel.models.canonical import short_id
 from ubo_sentinel.models.provenance import Confidence, NonEmptyStr, Provenance
 
-MatchType = Literal["DIRECT", "LEI", "REGISTRATION", "FUZZY_NAME"]
+MatchType = Literal["DIRECT", "LEI", "REGISTRATION", "SUCCESSOR_LEI", "FUZZY_NAME"]
 
 # The fields that describe the designation itself. A snapshot diff compares only
 # these; `match_type` and `match_confidence` describe the link to `entity_id`.

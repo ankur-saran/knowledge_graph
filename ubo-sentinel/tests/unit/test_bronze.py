@@ -328,7 +328,7 @@ def test_ingest_command_is_for_engineers(con):
 
 def test_sources_of_later_steps_are_not_available_yet(con):
     con.close()
-    result = runner.invoke(app, ["ingest", "--source", "gleif"])
+    result = runner.invoke(app, ["ingest", "--source", "opensanctions"])
     assert result.exit_code == 2
 
 

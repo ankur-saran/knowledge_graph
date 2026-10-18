@@ -123,13 +123,21 @@ def test_json_columns_are_canonical_json(con, t0):
             assert row[column].encode("utf-8") == canonical_json(json.loads(row[column])), table
 
 
+# Staging columns no fixture file has: only a registry states a successor LEI.
+REAL_ONLY_COLUMNS = {"successor_lei"}
+
+
 def test_staging_columns_are_the_fixture_row_fields(con, t0):
     for dataset in DATASETS.values():
         table = MAPPERS[dataset.name].stage_table
         columns = [row[0] for row in con.execute(f"DESCRIBE {table}").fetchall()]
         # After the dataset and the provenance come the row's own fields. A `*_raw`
         # column keeps what the source wrote beside the value read from it.
-        fields = [column for column in columns[6:] if not column.endswith("_raw")]
+        fields = [
+            column
+            for column in columns[6:]
+            if not column.endswith("_raw") and column not in REAL_ONLY_COLUMNS
+        ]
         assert fields == list(dataset.model.model_fields)[4:], table
 
 
