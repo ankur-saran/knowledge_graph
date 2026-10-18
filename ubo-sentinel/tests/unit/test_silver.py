@@ -20,6 +20,8 @@ from ubo_sentinel.pipeline.name_match import normalise_name
 from ubo_sentinel.pipeline.silver import (
     SILVER_TABLES,
     SilverError,
+    create_schema,
+    duplicate_keys,
     is_built,
     read_entities,
     read_relationships,
@@ -531,6 +533,45 @@ def test_building_a_built_set_changes_nothing(con, t0, ontology):
         digest,
         again.counts,
     )
+
+
+def test_a_rebuild_replaces_the_rows_of_its_set_and_no_other(con, t0, ontology):
+    t1 = build(con, ontology, T1)
+    before = {table: read_rows(con, table, t1) for table in SILVER_TABLES}
+    build_silver(con, resolve_set(con, t0), ontology, rebuild=True)
+    assert {table: read_rows(con, table, t1) for table in SILVER_TABLES} == before
+    assert duplicate_keys(con, t0) == [] and duplicate_keys(con, t1) == []
+
+
+def test_two_rows_with_one_key_refuse_the_build(con, ontology, monkeypatch):
+    """Silver has no PRIMARY KEY (it made a rebuild's delete slow); the build checks the keys."""
+    write_gaps = transformer._write_gaps
+
+    def twice(con, set_id):
+        write_gaps(con, set_id)
+        con.execute("INSERT INTO stg_silver_gaps SELECT * FROM stg_silver_gaps")
+
+    monkeypatch.setattr(transformer, "_write_gaps", twice)
+    with pytest.raises(SilverError, match="silver_gaps .*share a key: code, subject_id"):
+        build(con, ontology)
+    assert_no_silver_rows(con)
+
+
+def test_silver_made_with_primary_keys_is_dropped_and_built_again(con, t0, ontology):
+    con.execute("DROP TABLE silver_gaps")
+    con.execute(
+        "CREATE TABLE silver_gaps (snapshot_set_id TEXT NOT NULL, code TEXT NOT NULL,"
+        " subject_id TEXT NOT NULL, detail JSON NOT NULL, source TEXT NOT NULL,"
+        " source_record_id TEXT NOT NULL, snapshot_id TEXT NOT NULL, as_of DATE NOT NULL,"
+        " confidence DOUBLE NOT NULL, PRIMARY KEY (snapshot_set_id, code, subject_id))"
+    )
+    create_schema(con)
+    assert not is_built(con, t0)
+    assert con.execute(
+        "SELECT count(*) FROM duckdb_constraints() WHERE constraint_type = 'PRIMARY KEY'"
+        " AND table_name LIKE 'silver_%' AND table_name <> 'silver_builds'"
+    ).fetchone() == (0,)
+    assert build_silver(con, resolve_set(con, t0), ontology).status == "built"
 
 
 def test_a_set_built_by_other_code_is_not_reused(con, t0, ontology, monkeypatch):

@@ -24,7 +24,10 @@ _PROVENANCE = """
     confidence DOUBLE NOT NULL"""
 
 # Table -> (columns after `snapshot_set_id`, key within a set). The key orders
-# the rows for `silver_digest`.
+# the rows for `silver_digest`, and the build checks it is unique (`duplicate_keys`).
+# The tables have no PRIMARY KEY: DuckDB maintains one on every write, and on a
+# registry-sized set deleting a set's rows for a rebuild took minutes per table
+# with it and none without.
 _TABLES: dict[str, tuple[str, str]] = {
     "silver_entities": (
         f"""
@@ -148,10 +151,19 @@ def _column_names(columns: str) -> list[str]:
 
 
 def _drop_outdated(con: duckdb.DuckDBPyConnection) -> None:
-    """Drop Silver when a table has the columns of an earlier version.
+    """Drop Silver when a table has the columns or the key constraint of an earlier version.
 
     Silver is derived from Bronze, so nothing is lost: `ubo normalize` builds it again.
     """
+    keyed = con.execute(
+        "SELECT DISTINCT table_name FROM duckdb_constraints()"
+        " WHERE constraint_type = 'PRIMARY KEY' AND table_name IN (SELECT unnest(?))",
+        [list(_TABLES)],
+    ).fetchall()
+    if keyed:
+        for table in (*_TABLES, "silver_builds"):
+            con.execute(f"DROP TABLE IF EXISTS {table}")
+        return
     existing: dict[str, list[str]] = {}
     for table, column in con.execute(
         "SELECT table_name, column_name FROM information_schema.columns"
@@ -168,20 +180,45 @@ def _drop_outdated(con: duckdb.DuckDBPyConnection) -> None:
 
 def create_schema(con: duckdb.DuckDBPyConnection) -> None:
     _drop_outdated(con)
-    for table, (columns, key) in _TABLES.items():
+    for table, (columns, _) in _TABLES.items():
         con.execute(
-            f"CREATE TABLE IF NOT EXISTS {table} (\n    snapshot_set_id TEXT NOT NULL,{columns},"
-            f"\n    PRIMARY KEY (snapshot_set_id, {key})\n)"
+            f"CREATE TABLE IF NOT EXISTS {table} (\n    snapshot_set_id TEXT NOT NULL,{columns}\n)"
         )
     con.execute(_BUILDS_DDL)
 
 
-def silver_digest(con: duckdb.DuckDBPyConnection, snapshot_set_id: str) -> str:
+def duplicate_keys(
+    con: duckdb.DuckDBPyConnection, snapshot_set_id: str, read_from: dict[str, str] | None = None
+) -> list[str]:
+    """The tables in which two rows of the set share a key. Empty for a sound build."""
+    read_from = read_from or {}
+    found = []
+    for table, (_, key) in _TABLES.items():
+        rows, keys = con.execute(
+            f"SELECT count(*), count(DISTINCT ({key})) FROM {read_from.get(table, table)}"
+            " WHERE snapshot_set_id = ?",
+            [snapshot_set_id],
+        ).fetchone()
+        if rows != keys:
+            found.append(f"{table} ({rows - keys} rows share a key: {key})")
+    return found
+
+
+def silver_digest(
+    con: duckdb.DuckDBPyConnection, snapshot_set_id: str, read_from: dict[str, str] | None = None
+) -> str:
     """SHA-256 over every Silver row of a set, table by table in key order.
 
     The same Bronze rows and the same code give the same digest on any machine.
+    `read_from` reads a table's rows from another table with its columns (the
+    build's temp mirror), for the same digest before they are written.
     """
-    return fold_tables(con, ((table, key) for table, (_, key) in _TABLES.items()), snapshot_set_id)
+    return fold_tables(
+        con,
+        ((table, key) for table, (_, key) in _TABLES.items()),
+        snapshot_set_id,
+        read_from=read_from,
+    )
 
 
 def load_build(con: duckdb.DuckDBPyConnection, snapshot_set_id: str) -> dict[str, Any] | None:

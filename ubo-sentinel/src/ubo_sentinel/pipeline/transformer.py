@@ -33,6 +33,7 @@ from ubo_sentinel.pipeline.silver import (
     SILVER_TABLES,
     SilverError,
     create_schema,
+    duplicate_keys,
     load_build,
     silver_digest,
 )
@@ -50,13 +51,18 @@ REJECT_ENDPOINT_LABEL = "ENDPOINT_LABEL"
 JOINED_SELF = "SELF"
 
 _PROV = "source, source_record_id, snapshot_id, as_of, confidence"
-# Keys in alphabetical order, so `to_json` writes what `canonical_json` would.
-_PROV_STRUCT = (
-    "{'as_of': as_of, 'confidence': confidence, 'snapshot_id': snapshot_id,"
-    " 'source': source, 'source_record_id': source_record_id}"
+# A group's provenance as canonical JSON, in the order `sort_provenance` gives
+# (source, source_record_id, snapshot_id, as_of). The list is sorted after it is
+# gathered, as structs whose fields are in that order, then written with the keys
+# in alphabetical order, so `to_json` writes what `canonical_json` would. An
+# ORDER BY inside the aggregate sorted every group on its own, and took seconds
+# where this takes a fraction of one.
+_SUPPORTING_RECORDS = (
+    "to_json(list_transform(list_sort(list({'source': source,"
+    " 'source_record_id': source_record_id, 'snapshot_id': snapshot_id, 'as_of': as_of,"
+    " 'confidence': confidence})), p -> {'as_of': p.as_of, 'confidence': p.confidence,"
+    " 'snapshot_id': p.snapshot_id, 'source': p.source, 'source_record_id': p.source_record_id}))"
 )
-# The order `sort_provenance` gives.
-_PROV_ORDER = "source, source_record_id, snapshot_id, as_of"
 
 # SQL name -> (Python function, argument types, return type).
 _FUNCTIONS = {
@@ -115,22 +121,34 @@ def build_silver(
         return SilverSummary(set_id, "already built", existing["counts"], existing["silver_digest"])
 
     _register_functions(con)
-    if existing is not None:
-        with transaction(con):
+    # Everything is derived first, into temp tables that mirror Silver
+    # (`stg_silver_*`), and only then written to Silver in one transaction. A
+    # transaction keeps the rows it creates in its own storage, which DuckDB joins
+    # far more slowly: on a registry-sized set the joins of linking took minutes
+    # inside it and seconds outside. Temp tables belong to this connection alone,
+    # so what is durable is still written all at once or not at all.
+    _create_mirrors(con)
+    _stage(con, snapshot_set)
+    refused = _resolve_entities(con, set_id)
+    _write_entities(con, set_id)
+    _write_links(con, set_id, refused)
+    _write_relationships(con, set_id, ontology)
+    _write_sanctions(con, set_id)
+    _write_reporting_exceptions(con, set_id)
+    _write_gaps(con, set_id)
+    duplicates = duplicate_keys(con, set_id, read_from=MIRRORS)
+    if duplicates:
+        raise SilverError(f"Snapshot set {set_id}: {'; '.join(duplicates)}.")
+    counts = _counts(con, set_id)
+    digest = silver_digest(con, set_id, read_from=MIRRORS)
+
+    # A rebuild replaces the set's rows in the same transaction that writes them.
+    with transaction(con):
+        if existing is not None:
             for table in (*SILVER_TABLES, "silver_builds"):
                 con.execute(f"DELETE FROM {table} WHERE snapshot_set_id = ?", [set_id])
-
-    with transaction(con):
-        _stage(con, snapshot_set)
-        refused = _resolve_entities(con, set_id)
-        _write_entities(con, set_id)
-        _write_links(con, set_id, refused)
-        _write_relationships(con, set_id, ontology)
-        _write_sanctions(con, set_id)
-        _write_reporting_exceptions(con, set_id)
-        _write_gaps(con, set_id)
-        counts = _counts(con, set_id)
-        digest = silver_digest(con, set_id)
+        for table in SILVER_TABLES:
+            con.execute(f"INSERT INTO {table} SELECT * FROM {MIRRORS[table]}")
         con.execute(
             "INSERT INTO silver_builds VALUES (?, ?, ?, ?, ?, ?)",
             [
@@ -143,6 +161,16 @@ def build_silver(
             ],
         )
     return SilverSummary(set_id, "rebuilt" if existing else "built", counts, digest)
+
+
+# Silver table -> the temp table its rows are derived into.
+MIRRORS = {table: f"stg_{table}" for table in SILVER_TABLES}
+
+
+def _create_mirrors(con: duckdb.DuckDBPyConnection) -> None:
+    """Empty temp tables with the columns of each Silver table."""
+    for table, mirror in MIRRORS.items():
+        con.execute(f"CREATE OR REPLACE TEMP TABLE {mirror} AS SELECT * FROM {table} LIMIT 0")
 
 
 def _register_functions(con: duckdb.DuckDBPyConnection) -> None:
@@ -257,7 +285,7 @@ def _resolve_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> list[tuple
         """
     )
     con.execute(
-        "INSERT INTO silver_entity_xref"
+        "INSERT INTO stg_silver_entity_xref"
         " SELECT ?, source, source_record_id, snapshot_id, entity_id, joined_by, pos = 1"
         " FROM stg_members",
         [set_id],
@@ -271,30 +299,30 @@ def _write_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
         f"""
         CREATE OR REPLACE TEMP TABLE stg_entity AS
         SELECT entity_id,
-            first(lei ORDER BY pos) FILTER (WHERE lei IS NOT NULL) AS lei,
-            first(registration_authority_id ORDER BY pos)
+            arg_min(lei, pos) FILTER (WHERE lei IS NOT NULL) AS lei,
+            arg_min(registration_authority_id, pos)
                 FILTER (WHERE registration_number IS NOT NULL) AS registration_authority_id,
-            first(registration_number ORDER BY pos)
+            arg_min(registration_number, pos)
                 FILTER (WHERE registration_number IS NOT NULL) AS registration_number,
-            first(legal_name ORDER BY pos) AS legal_name,
-            first(jurisdiction ORDER BY pos) FILTER (WHERE jurisdiction IS NOT NULL)
+            arg_min(legal_name, pos) AS legal_name,
+            arg_min(jurisdiction, pos) FILTER (WHERE jurisdiction IS NOT NULL)
                 AS jurisdiction,
-            first(status ORDER BY pos) AS status,
+            arg_min(status, pos) AS status,
             -- A registry says what state an LEI is in; a list only states the LEI.
-            first(lei_status ORDER BY pos) FILTER (WHERE lei_status IS NOT NULL) AS lei_status,
-            first(entity_type ORDER BY pos) AS entity_type,
-            first(source ORDER BY pos) AS source,
-            first(source_record_id ORDER BY pos) AS source_record_id,
-            first(snapshot_id ORDER BY pos) AS snapshot_id,
-            first(as_of ORDER BY pos) AS as_of,
-            first(confidence ORDER BY pos) AS confidence,
-            to_json(list({_PROV_STRUCT} ORDER BY {_PROV_ORDER})) AS supporting_records
+            arg_min(lei_status, pos) FILTER (WHERE lei_status IS NOT NULL) AS lei_status,
+            arg_min(entity_type, pos) AS entity_type,
+            arg_min(source, pos) AS source,
+            arg_min(source_record_id, pos) AS source_record_id,
+            arg_min(snapshot_id, pos) AS snapshot_id,
+            arg_min(as_of, pos) AS as_of,
+            arg_min(confidence, pos) AS confidence,
+            {_SUPPORTING_RECORDS} AS supporting_records
         FROM stg_members GROUP BY entity_id
         """
     )
     con.execute(
         """
-        INSERT INTO silver_entity_names
+        INSERT INTO stg_silver_entity_names
         SELECT ?, n.entity_id, n.name, ubo_normalise_name(n.name),
                CASE WHEN n.name = e.legal_name THEN 'legal_name' ELSE 'alias' END
         FROM (
@@ -309,7 +337,7 @@ def _write_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
     )
     con.execute(
         f"""
-        INSERT INTO silver_entities
+        INSERT INTO stg_silver_entities
         SELECT ?, e.entity_id, e.lei, e.registration_authority_id, e.registration_number,
             e.legal_name, coalesce(a.aliases, CAST([] AS TEXT[])), e.jurisdiction, e.status,
             e.lei_status, e.entity_type, r.repex_reason,
@@ -318,7 +346,7 @@ def _write_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
         FROM stg_entity e
         LEFT JOIN (
             SELECT entity_id, list(name ORDER BY name) AS aliases
-            FROM silver_entity_names WHERE snapshot_set_id = ? AND kind = 'alias'
+            FROM stg_silver_entity_names WHERE snapshot_set_id = ? AND kind = 'alias'
             GROUP BY entity_id
         ) a ON a.entity_id = e.entity_id
         LEFT JOIN (
@@ -346,7 +374,7 @@ def _write_links(
         con.executemany("INSERT INTO stg_refused VALUES (?, ?, ?)", refused)
     con.execute(
         """
-        INSERT INTO silver_entity_links
+        INSERT INTO stg_silver_entity_links
         SELECT ?, a_id, b_id, min(kind), 1.0, any_value(name_a), any_value(name_b)
         FROM (
             SELECT least(a.entity_id, b.entity_id) AS a_id,
@@ -381,7 +409,7 @@ def _write_links(
                left(t.token, ?) AS block
         FROM (
             SELECT entity_id, name, name_norm, unnest(string_split(name_norm, ' ')) AS token
-            FROM silver_entity_names WHERE snapshot_set_id = ?
+            FROM stg_silver_entity_names WHERE snapshot_set_id = ?
         ) t
         JOIN stg_entity e ON e.entity_id = t.entity_id
         WHERE t.token <> ''
@@ -449,7 +477,7 @@ def _write_links(
     )
     con.execute(
         """
-        INSERT INTO silver_entity_links
+        INSERT INTO stg_silver_entity_links
         WITH best AS (
             SELECT p.a_id, p.b_id, p.name_a, p.name_b, s.score, row_number() OVER (
                 PARTITION BY p.a_id, p.b_id ORDER BY s.score DESC, p.name_a, p.name_b
@@ -461,7 +489,7 @@ def _write_links(
         FROM best
         WHERE rn = 1 AND score >= ?
           AND NOT EXISTS (
-              SELECT 1 FROM silver_entity_links l
+              SELECT 1 FROM stg_silver_entity_links l
               WHERE l.snapshot_set_id = ? AND l.entity_id_a = a_id AND l.entity_id_b = b_id
           )
         """,
@@ -515,7 +543,7 @@ def _write_relationships(
         """
     )
     con.execute(
-        f"INSERT INTO silver_rejects SELECT ?, dataset, reject, reject_detail, {_PROV}"
+        f"INSERT INTO stg_silver_rejects SELECT ?, dataset, reject, reject_detail, {_PROV}"
         " FROM stg_edges WHERE reject IS NOT NULL",
         [set_id],
     )
@@ -523,17 +551,27 @@ def _write_relationships(
     # later record without one does not erase a known stake.
     con.execute(
         f"""
-        INSERT INTO silver_relationships
-        WITH accepted AS (
-            SELECT *, ubo_relationship_id(subject_id, object_id, rel_type, is_ultimate) AS id
-            FROM stg_edges WHERE reject IS NULL
+        INSERT INTO stg_silver_relationships
+        WITH keys AS (
+            -- Each id is computed once, whatever the number of records of the edge.
+            SELECT subject_id, object_id, rel_type, is_ultimate,
+                ubo_relationship_id(subject_id, object_id, rel_type, is_ultimate) AS id
+            FROM (
+                SELECT DISTINCT subject_id, object_id, rel_type, is_ultimate
+                FROM stg_edges WHERE reject IS NULL
+            )
+        ), accepted AS (
+            SELECT e.*, k.id
+            FROM stg_edges e
+            JOIN keys k USING (subject_id, object_id, rel_type, is_ultimate)
+            WHERE e.reject IS NULL
         ), ranked AS (
             SELECT *, row_number() OVER (
                 PARTITION BY id
                 ORDER BY (pct IS NULL), as_of DESC, confidence DESC, source, source_record_id
             ) AS rn FROM accepted
         ), supporting AS (
-            SELECT id, to_json(list({_PROV_STRUCT} ORDER BY {_PROV_ORDER})) AS supporting_records
+            SELECT id, {_SUPPORTING_RECORDS} AS supporting_records
             FROM accepted GROUP BY id
         )
         SELECT ?, w.id, w.subject_id, w.object_id, w.rel_type, w.pct, w.basis, w.is_ultimate,
@@ -555,7 +593,7 @@ def _write_sanctions(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
         " FROM stg_sanctions d LEFT JOIN stg_members m ON m.ref = d.entity_ref"
     )
     con.execute(
-        f"INSERT INTO silver_rejects"
+        f"INSERT INTO stg_silver_rejects"
         f" SELECT ?, dataset, '{REJECT_UNRESOLVED_REF}', entity_ref, {_PROV}"
         " FROM stg_designations WHERE entity_id IS NULL",
         [set_id],
@@ -565,7 +603,7 @@ def _write_sanctions(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
     # designated entity; `reached_id` is the entity the row is for.
     con.execute(
         f"""
-        INSERT INTO silver_sanctions
+        INSERT INTO stg_silver_sanctions
         WITH reached AS (
             SELECT d.*, d.entity_id AS reached_id,
                 CASE WHEN d.joined_by = '{JOINED_SELF}' THEN 'DIRECT' ELSE d.joined_by END
@@ -577,14 +615,19 @@ def _write_sanctions(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
                 CASE WHEN l.entity_id_a = d.entity_id THEN l.entity_id_b ELSE l.entity_id_a END,
                 l.match_type, l.confidence
             FROM stg_designations d
-            JOIN silver_entity_links l
-                ON l.snapshot_set_id = ? AND d.entity_id IN (l.entity_id_a, l.entity_id_b)
+            JOIN (
+                SELECT entity_id_a AS end_id, entity_id_a, entity_id_b, match_type, confidence
+                FROM stg_silver_entity_links WHERE snapshot_set_id = ?
+                UNION ALL
+                SELECT entity_id_b, entity_id_a, entity_id_b, match_type, confidence
+                FROM stg_silver_entity_links WHERE snapshot_set_id = ?
+            ) l ON l.end_id = d.entity_id
         )
         SELECT ?, ubo_sanction_id(source, source_record_id, reached_id), reached_id, entity_id,
             program, list_date, list_source, is_active, match_type, match_confidence, {_PROV}
         FROM reached
         """,
-        [set_id, set_id],
+        [set_id, set_id, set_id],
     )
 
 
@@ -593,7 +636,7 @@ def _write_sanctions(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
 
 def _write_reporting_exceptions(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
     con.execute(
-        f"INSERT INTO silver_rejects"
+        f"INSERT INTO stg_silver_rejects"
         f" SELECT ?, x.dataset, '{REJECT_UNRESOLVED_REF}', x.entity_ref,"
         f" {', '.join(f'x.{c.strip()}' for c in _PROV.split(','))}"
         " FROM stg_repex x LEFT JOIN stg_members m ON m.ref = x.entity_ref"
@@ -601,7 +644,7 @@ def _write_reporting_exceptions(con: duckdb.DuckDBPyConnection, set_id: str) -> 
         [set_id],
     )
     con.execute(
-        f"INSERT INTO silver_reporting_exceptions"
+        f"INSERT INTO stg_silver_reporting_exceptions"
         f" SELECT ?, m.entity_id, x.category, x.reason,"
         f" {', '.join(f'x.{c.strip()}' for c in _PROV.split(','))}"
         " FROM stg_repex x JOIN stg_members m ON m.ref = x.entity_ref",
@@ -616,15 +659,15 @@ def _write_gaps(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
     # Computed over the whole set: a screen sees only part of the graph.
     con.execute(
         f"""
-        INSERT INTO silver_gaps
+        INSERT INTO stg_silver_gaps
         SELECT ?, 'PCT_SUM_OVER_100', e.id, to_json({{'sum_pct': CAST(t.total AS VARCHAR)}}),
             {", ".join(f"e.{c.strip()}" for c in _PROV.split(","))}
         FROM (
             SELECT object_id, CAST(sum(pct) AS DECIMAL(18,4)) AS total
-            FROM silver_relationships
+            FROM stg_silver_relationships
             WHERE snapshot_set_id = ? AND rel_type = 'OWNS' AND pct IS NOT NULL
             GROUP BY object_id HAVING sum(pct) > 100
-        ) t JOIN silver_entities e ON e.snapshot_set_id = ? AND e.id = t.object_id
+        ) t JOIN stg_silver_entities e ON e.snapshot_set_id = ? AND e.id = t.object_id
         """,
         [set_id, set_id, set_id],
     )
@@ -645,24 +688,24 @@ def _counts(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any]:
         return con.execute(f"{sql} WHERE {where}" if where else sql).fetchone()[0]
 
     rejects = con.execute(
-        "SELECT reason, count(*) FROM silver_rejects WHERE snapshot_set_id = ?"
+        "SELECT reason, count(*) FROM stg_silver_rejects WHERE snapshot_set_id = ?"
         " GROUP BY reason ORDER BY reason",
         [set_id],
     ).fetchall()
     return {
         "entity_records": count("stg_entities"),
-        "entities": count("silver_entities"),
-        "merged_records": count("silver_entity_xref", "NOT is_primary"),
-        "names": count("silver_entity_names"),
-        "links": count("silver_entity_links"),
+        "entities": count("stg_silver_entities"),
+        "merged_records": count("stg_silver_entity_xref", "NOT is_primary"),
+        "names": count("stg_silver_entity_names"),
+        "links": count("stg_silver_entity_links"),
         # Blocks a name did not try (`LINK_CANDIDATE_CAP`, `LINK_BLOCK_MAX`).
         "link_blocks_skipped": count("stg_probes", "NOT tried"),
         "relationship_records": count("stg_relationships"),
-        "relationships": count("silver_relationships"),
+        "relationships": count("stg_silver_relationships"),
         "designations": count("stg_sanctions"),
-        "sanctions": count("silver_sanctions"),
-        "reporting_exceptions": count("silver_reporting_exceptions"),
-        "gaps": count("silver_gaps"),
+        "sanctions": count("stg_silver_sanctions"),
+        "reporting_exceptions": count("stg_silver_reporting_exceptions"),
+        "gaps": count("stg_silver_gaps"),
         "rejects": dict(rejects),
         # Values a source gave that could not be read, by field. The record is kept
         # with the field empty.

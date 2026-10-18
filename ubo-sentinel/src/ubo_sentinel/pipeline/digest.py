@@ -89,23 +89,27 @@ def fold_tables(
     tables: Iterable[tuple[str, str]],
     snapshot_set_id: str,
     prefix: str | None = None,
+    read_from: dict[str, str] | None = None,
 ) -> str:
     """SHA-256 over `prefix`, then each table's name and its rows in key order.
 
     `tables` is (table, key) pairs. The rows are hashed and folded in buckets of
-    `BUCKET_ROWS` in the database.
+    `BUCKET_ROWS` in the database. `read_from` maps a table to another with the
+    same columns to read its rows from; the digest still names the table.
     """
+    read_from = read_from or {}
     digest = hashlib.sha256()
     if prefix is not None:
         digest.update(prefix.encode("ascii") + b"\n")
     for table, key in tables:
         digest.update(table.encode("ascii") + b"\n")
+        source = read_from.get(table, table)
         buckets = con.execute(
             f"""
             WITH rows AS (
-                SELECT sha256({_row_text(con, table)}) AS h,
+                SELECT sha256({_row_text(con, source)}) AS h,
                        row_number() OVER (ORDER BY {key}) - 1 AS n
-                FROM {table} WHERE snapshot_set_id = ?
+                FROM {source} WHERE snapshot_set_id = ?
             )
             SELECT sha256(string_agg(h, chr(10) ORDER BY n)) FROM rows
             GROUP BY n // {BUCKET_ROWS} ORDER BY n // {BUCKET_ROWS}
