@@ -1,24 +1,26 @@
 """GLEIF: the loader's declarations and the mappers, from the sample files to Gold."""
 
-import json
 import shutil
 
 import pytest
 from e2e import cli
-from real_format import SAMPLES, lei
-from test_real_loaders import restamp
+from real_format import SAMPLES, lei, restamp
 
 from ubo_sentinel.pipeline.bronze import resolve_set
 from ubo_sentinel.pipeline.entity_linking import KEY_SUCCESSOR_LEI, resolve_groups
 from ubo_sentinel.pipeline.gold import build_gold
 from ubo_sentinel.pipeline.loaders import LOADERS
-from ubo_sentinel.pipeline.loaders.gleif_loader import GLEIF_DATASETS, REAL_DATASETS, ingest_gleif
+from ubo_sentinel.pipeline.loaders.gleif_loader import GLEIF_DATASETS
+from ubo_sentinel.pipeline.loaders.real_base import ingest_real
+from ubo_sentinel.pipeline.loaders.real_loader import REAL_DATASETS, ingest_gleif
 from ubo_sentinel.pipeline.mappers import MAPPERS
 from ubo_sentinel.pipeline.transformer import build_silver
 
 
 def build(con, ontology, path=SAMPLES):
-    snapshot_set = ingest_gleif(con, path).snapshot_set
+    """GLEIF's datasets alone, as a set of their own: what the GLEIF mappers make."""
+    names = [d.name for d in GLEIF_DATASETS]
+    snapshot_set = ingest_real(con, path, GLEIF_DATASETS, names).snapshot_set
     summary = build_silver(con, snapshot_set, ontology)
     build_gold(con, snapshot_set)
     return snapshot_set.snapshot_set_id, summary.counts
@@ -42,7 +44,7 @@ def entities(con, set_id):
 
 def test_every_gleif_dataset_has_a_mapper_and_a_loader():
     assert {d.name for d in GLEIF_DATASETS} <= set(MAPPERS)
-    assert set(REAL_DATASETS) == {d.name for d in GLEIF_DATASETS}
+    assert {d.name for d in GLEIF_DATASETS} <= set(REAL_DATASETS)
     assert LOADERS["gleif"] is ingest_gleif
 
 
@@ -182,25 +184,8 @@ def test_a_status_gleif_does_not_define_is_counted_not_kept(con, ontology, tmp_p
     path.write_bytes(data.replace(b'"LAPSED"', b'"WITHDRAWN"', 1))
     restamp(samples)
     set_id, counts = build(con, ontology, samples)
-    assert counts["unreadable"] == {"jurisdiction": 0, "lei_status": 1}
+    assert counts["unreadable"] == {"jurisdiction": 0, "lei_status": 1, "pct": 0}
     assert entities(con, set_id)[f"lei:{lei('HALV')}"][5] is None
-
-
-def test_gleif_samples_from_ingest_to_screen():
-    """The commands an engineer runs, on GLEIF data alone."""
-    ingested = cli("ingest", "--source", "gleif", "--path", SAMPLES)
-    assert ingested.exit_code == 0, ingested.output
-    assert "Source: gleif" in ingested.output
-    for command in (["normalize", "--snapshot", "latest"], ["build-graph", "--snapshot", "latest"]):
-        result = cli(*command)
-        assert result.exit_code == 0, result.output
-
-    screened = cli("screen", "--lei", lei("SUB"), "--snapshot", "latest", "--json")
-    assert screened.exit_code == 0, screened.output
-    decision = json.loads(screened.output[screened.output.index("{") :])
-    assert decision["target_id"] == f"lei:{lei('SUB')}"
-    # No list is loaded: nothing can be designated, and the group's exceptions are gaps.
-    assert decision["recommendation"] == "CLEAR"
 
 
 def test_a_gleif_ingest_needs_a_directory():

@@ -740,5 +740,7 @@ def _counts(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any]:
             "lei_status": count(
                 "stg_entities", "lei_status IS NULL AND lei_status_raw IS NOT NULL"
             ),
+            # An ownership share written in words ("majority"): the edge has no percentage.
+            "pct": count("stg_relationships", "pct IS NULL AND pct_raw IS NOT NULL"),
         },
     }

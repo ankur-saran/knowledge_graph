@@ -810,5 +810,15 @@ def write_samples(directory: Path = SAMPLES) -> None:
         target.write_bytes(data)
 
 
+def restamp(directory):
+    """Record the files' new bytes in the manifest after a test changed them."""
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    for entry in manifest["files"].values():
+        data = (directory / entry["path"]).read_bytes()
+        entry["size"] = len(data)
+        entry["sha256"] = hashlib.sha256(data).hexdigest()
+    (directory / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
 if __name__ == "__main__":
     write_samples()

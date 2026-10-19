@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ubo_sentinel.cli.app import app
+from ubo_sentinel.cli.ingest_cmd import Source
 from ubo_sentinel.models import read_rows, sha256_hex
 from ubo_sentinel.pipeline.bronze import (
     BRONZE_COLUMNS,
@@ -21,6 +22,7 @@ from ubo_sentinel.pipeline.bronze import (
     schema_version,
 )
 from ubo_sentinel.pipeline.db import DB_ENV_VAR, connect, db_path
+from ubo_sentinel.pipeline.loaders import LOADERS
 from ubo_sentinel.pipeline.loaders.fixture_loader import DATASETS, ingest_fixtures
 
 # Commands are run from the repository root.
@@ -326,10 +328,8 @@ def test_ingest_command_is_for_engineers(con):
     assert result.exit_code == 1
 
 
-def test_sources_of_later_steps_are_not_available_yet(con):
-    con.close()
-    result = runner.invoke(app, ["ingest", "--source", "opensanctions"])
-    assert result.exit_code == 2
+def test_every_source_has_a_loader():
+    assert {source.value for source in Source} == set(LOADERS)
 
 
 # --- schema evolution -------------------------------------------------------------

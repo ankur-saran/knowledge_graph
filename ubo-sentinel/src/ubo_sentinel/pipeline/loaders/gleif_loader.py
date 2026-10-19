@@ -7,13 +7,7 @@ that projection of the record. The column names are GLEIF's headers (LEI-CDF
 noticed at ingest.
 """
 
-from pathlib import Path
-
-import duckdb
-
-from ubo_sentinel.pipeline.bronze import IngestError
-from ubo_sentinel.pipeline.loaders.base import IngestSummary
-from ubo_sentinel.pipeline.loaders.real_base import Column, Format, RealDataset, ingest_real
+from ubo_sentinel.pipeline.loaders.real_base import Column, Format, RealDataset
 from ubo_sentinel.pipeline.mappers import GLEIF_NAME_FIELDS, GLEIF_REPEX_REASON_FIELDS
 
 SOURCE = "gleif"
@@ -78,16 +72,3 @@ GLEIF_REPEX = RealDataset(
 )
 
 GLEIF_DATASETS = (GLEIF_L1, GLEIF_RR, GLEIF_REPEX)
-
-# Every dataset of the real family. A real set holds one snapshot of each; an
-# ingest that supplies some takes the others from an earlier real set.
-REAL_DATASETS = tuple(d.name for d in GLEIF_DATASETS)
-
-
-def ingest_gleif(
-    con: duckdb.DuckDBPyConnection, path: Path | None = None, base: str | None = None
-) -> IngestSummary:
-    """Ingest the GLEIF files of a refresh directory (`ubo ingest --source gleif --path`)."""
-    if path is None:
-        raise IngestError("A GLEIF ingest reads a refresh directory: pass --path.")
-    return ingest_real(con, path, GLEIF_DATASETS, REAL_DATASETS, base=base, source=SOURCE)

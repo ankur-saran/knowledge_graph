@@ -32,7 +32,7 @@ STAGE_TABLES: dict[str, str] = {
     ),
     "stg_relationships": (
         "subject_ref TEXT, object_ref TEXT, rel_type TEXT, pct DECIMAL(7,4), basis TEXT,"
-        " is_ultimate BOOLEAN"
+        " is_ultimate BOOLEAN, pct_raw TEXT"
     ),
     "stg_sanctions": (
         "entity_ref TEXT, program TEXT, list_date DATE, list_source TEXT, is_active BOOLEAN"
@@ -100,6 +100,7 @@ MAPPERS: dict[str, Mapper] = {
             _cast("pct", "DECIMAL(7,4)"),
             _text("basis"),
             _cast("is_ultimate", "BOOLEAN"),
+            _text("pct"),
         ),
     ),
     "sanctions": Mapper(
@@ -223,6 +224,7 @@ def _gleif_relationships() -> Mapper:
             "NULL",
             _case(rel_type, {n: repr(s[1]) for n, s in pick.items()}),
             _case(rel_type, {n: str(s[2]).lower() for n, s in pick.items()}),
+            "NULL",
         ),
         filters=(
             (FILTER_DELETED, f"{_g('DeletedAt')} IS NOT NULL"),
@@ -260,6 +262,165 @@ MAPPERS |= {
     "gleif_l1": _gleif_entities(),
     "gleif_rr": _gleif_relationships(),
     "gleif_repex": _gleif_repex(),
+}
+
+
+# --- OpenSanctions ----------------------------------------------------------------------
+# FollowTheMoney records (`pipeline/loaders/opensanctions_loader.py` declares the
+# fields read). Every property is a list; a ref is `opensanctions:<id>`.
+
+
+def _os(field: str) -> str:
+    """A top-level field of the record."""
+    return f"(_raw->>'$.{field}')"
+
+
+def _first(prop: str) -> str:
+    """The first value of a property, in the order published."""
+    return f"(_raw->>'$.properties.{prop}[0]')"
+
+
+def _values(prop: str) -> str:
+    return f"coalesce(CAST(_raw->'$.properties.{prop}' AS TEXT[]), CAST([] AS TEXT[]))"
+
+
+def _os_ref(prop: str) -> str:
+    return f"'opensanctions:' || {_first(prop)}"
+
+
+# FtM schema -> the node label of the graph. Other things a list names (a vessel,
+# an aircraft, a security) are not owners or owned in this graph.
+OS_ENTITY_SCHEMAS = {
+    "Company": "LegalEntity",
+    "Organization": "LegalEntity",
+    "LegalEntity": "LegalEntity",
+    "PublicBody": "LegalEntity",
+    "Person": "Person",
+}
+OS_OTHER_SCHEMAS = ("Vessel", "Airplane", "Security")
+# Link schemas: those that map, and the others, which are counted.
+OS_LINK_SCHEMAS = {
+    # schema -> (rel_type, basis, subject property, object property)
+    "Ownership": ("OWNS", "shareholding", "owner", "asset"),
+    "Directorship": ("CONTROLS", "directorship", "director", "organization"),
+}
+OS_OTHER_LINK_SCHEMAS = (
+    "Associate",
+    "Employment",
+    "Family",
+    "Membership",
+    "Occupancy",
+    "Representation",
+    "Succession",
+    "UnknownLink",
+)
+
+FILTER_UNSUPPORTED_SCHEMA = "UNSUPPORTED_SCHEMA"
+FILTER_NO_ENTITY = "NO_ENTITY"
+FILTER_NO_ENDS = "NO_ENDS"
+
+
+def os_percentage(text: str) -> str:
+    """SQL reading an FtM `percentage` as DECIMAL(7,4), or NULL.
+
+    `50`, `50%`, `50.0` and `50,5` are read as written; a range (`25-50`) takes
+    its upper bound, and `<10` or `>50` the bound it states: the cautious side,
+    since a stake is compared with a threshold from below. Anything else
+    (`majority`) is NULL: an edge of unknown share, a `NULL_PCT_EDGE` gap.
+    """
+    number = r"\d+(\.\d+)?"
+    clean = f"trim(replace(replace({text}, '%', ''), ',', '.'))"
+    bound = (
+        f"CASE WHEN regexp_full_match({clean}, '[<>≤≥~]?\\s*{number}')"
+        f" THEN regexp_extract({clean}, '{number}')"
+        f" WHEN regexp_full_match({clean}, '{number}\\s*[-–]\\s*{number}')"
+        f" THEN regexp_extract({clean}, '[-–]\\s*({number})$', 1) END"
+    )
+    value = f"TRY_CAST({bound} AS DECIMAL(9,4))"
+    return f"CASE WHEN {value} > 0 AND {value} <= 100 THEN CAST({value} AS DECIMAL(7,4)) END"
+
+
+def _os_entities() -> Mapper:
+    schema = _os("schema")
+    jurisdiction = (
+        # A record's own jurisdiction; else its country, when it gives only one.
+        f"coalesce({_first('jurisdiction')}, CASE WHEN len({_values('country')}) = 1"
+        f" THEN {_first('country')} END)"
+    )
+    return Mapper(
+        "stg_entities",
+        (
+            f"upper(trim({_first('leiCode')}))",
+            "NULL",
+            "NULL",
+            f"coalesce({_os('caption')}, {_first('name')})",
+            # A weak alias (a short or partial name) is too loose to link on; it stays in Bronze.
+            f"list_concat({_values('name')}, {_values('alias')}, {_values('previousName')})",
+            f"ubo_jurisdiction({jurisdiction})",
+            # A list says an entity is designated, not whether it still exists.
+            "'UNKNOWN'",
+            # A list states an LEI, not its status.
+            "NULL",
+            _case(schema, {k: repr(v) for k, v in OS_ENTITY_SCHEMAS.items()}),
+            "NULL",
+            jurisdiction,
+            "NULL",
+        ),
+        filters=((FILTER_UNSUPPORTED_SCHEMA, f"NOT {_in(schema, tuple(OS_ENTITY_SCHEMAS))}"),),
+    )
+
+
+def _os_sanctions() -> Mapper:
+    end = _first("endDate")
+    return Mapper(
+        "stg_sanctions",
+        (
+            _os_ref("entity"),
+            f"coalesce({_first('programId')}, {_first('program')}, {_os('datasets[0]')})",
+            # FtM dates may be a year or a month alone; those give no list date.
+            f"TRY_CAST(coalesce({_first('listingDate')}, {_first('startDate')}) AS DATE)",
+            # The list the designation is on: the record's own dataset.
+            _os("datasets[0]"),
+            # In force on the publish date (`_as_of`), never the clock. ISO dates
+            # compare as text, so a partial end date (`2023`) is read too.
+            f"{end} IS NULL OR {end} > CAST(_as_of AS VARCHAR)",
+        ),
+        filters=((FILTER_NO_ENTITY, f"{_first('entity')} IS NULL"),),
+    )
+
+
+def _os_relationships() -> Mapper:
+    schema = _os("schema")
+    specs = OS_LINK_SCHEMAS
+    return Mapper(
+        "stg_relationships",
+        (
+            _case(schema, {s: _os_ref(spec[2]) for s, spec in specs.items()}),
+            _case(schema, {s: _os_ref(spec[3]) for s, spec in specs.items()}),
+            _case(schema, {s: repr(spec[0]) for s, spec in specs.items()}),
+            f"CASE WHEN {schema} = 'Ownership' THEN {os_percentage(_first('percentage'))} END",
+            _case(schema, {s: repr(spec[1]) for s, spec in specs.items()}),
+            "false",
+            _first("percentage"),
+        ),
+        filters=(
+            (FILTER_UNSUPPORTED, f"NOT {_in(schema, tuple(specs))}"),
+            (
+                FILTER_NO_ENDS,
+                " OR ".join(
+                    f"({schema} = '{s}' AND {_first(spec[2])} IS NULL)"
+                    f" OR ({schema} = '{s}' AND {_first(spec[3])} IS NULL)"
+                    for s, spec in specs.items()
+                ),
+            ),
+        ),
+    )
+
+
+MAPPERS |= {
+    "os_entities": _os_entities(),
+    "os_sanctions": _os_sanctions(),
+    "os_relationships": _os_relationships(),
 }
 
 

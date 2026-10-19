@@ -7,10 +7,10 @@ import shutil
 from datetime import date
 
 import pytest
-from real_format import SAMPLES, build_samples, lei
+from real_format import SAMPLES, build_samples, lei, restamp
 
 from ubo_sentinel.models.canonical import sha256_hex
-from ubo_sentinel.models.manifest import MANIFEST_NAME, Manifest, load_manifest
+from ubo_sentinel.models.manifest import Manifest, load_manifest
 from ubo_sentinel.pipeline.bronze import BRONZE_TABLES, IngestError, rows_digest
 from ubo_sentinel.pipeline.loaders.fixture_loader import ingest_fixtures
 from ubo_sentinel.pipeline.loaders.real_base import (
@@ -151,16 +151,6 @@ def json_projection(path, dataset):
                 raw.setdefault(c.within, {})[c.key] = holder[c.key]
         out.append((number, raw))
     return out
-
-
-def restamp(directory):
-    """Record the files' new bytes in the manifest after a test changed them."""
-    manifest = json.loads((directory / MANIFEST_NAME).read_text(encoding="utf-8"))
-    for entry in manifest["files"].values():
-        data = (directory / entry["path"]).read_bytes()
-        entry["size"] = len(data)
-        entry["sha256"] = hashlib.sha256(data).hexdigest()
-    (directory / MANIFEST_NAME).write_text(json.dumps(manifest), encoding="utf-8")
 
 
 @pytest.fixture

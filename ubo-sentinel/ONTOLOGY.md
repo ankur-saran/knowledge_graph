@@ -36,7 +36,7 @@ Every edge runs subject → object.
 
 Properties: `id`, `subject_id`, `object_id`, `rel_type`, `pct`, `basis`, `is_ultimate`.
 
-- `pct` is a decimal percentage, greater than 0 and at most 100, kept to 4 decimal places. It is empty when the source gives no percentage; an empty `pct` is a data gap, never zero.
+- `pct` is a decimal percentage, greater than 0 and at most 100, kept to 4 decimal places. It is empty when the source gives no percentage; an empty `pct` is a data gap, never zero. A share a list writes as text is read on the cautious side, since it is compared with a threshold from below: `50`, `50%`, `50.0` and `12,5` as written, a range (`25-50`) at its upper bound, `<10` or `>50` at the bound it states; anything else (`majority`) is empty, and Silver counts it (`counts.unreadable.pct`).
 - `basis` is one of `shareholding`, `accounting_consolidation`, `directorship`, `other`.
 - There is one edge per subject, object, relation and `is_ultimate`. When several records report it, the newest record that gives a percentage decides it, and `supporting_records` lists them all.
 - Gold stores each edge's `upper_id` (owner, parent or controller) and `lower_id`. Only `pipeline/gold.py` and code under `graph/` reason about raw edge direction. Everything else asks for "owners or controllers of X".

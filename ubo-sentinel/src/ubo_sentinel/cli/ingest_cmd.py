@@ -14,6 +14,8 @@ from ubo_sentinel.pipeline.loaders import LOADERS, IngestSummary
 
 class Source(StrEnum):
     FIXTURES = "fixtures"
+    # Every real dataset of a refresh directory; gleif or opensanctions alone.
+    REAL = "real"
     GLEIF = "gleif"
     OPENSANCTIONS = "opensanctions"
 
@@ -38,7 +40,10 @@ def ingest(
     source: Annotated[Source, typer.Option("--source", help="Which source to load.")],
     path: Annotated[
         Path | None,
-        typer.Option("--path", help="Directory to load (fixtures: fixtures/snapshot_t0)."),
+        typer.Option(
+            "--path",
+            help="Directory to load (fixtures: fixtures/snapshot_t0; real: a refresh directory).",
+        ),
     ] = None,
     base: Annotated[
         str | None,
@@ -48,10 +53,7 @@ def ingest(
 ) -> None:
     """Load a source's files into Bronze as immutable snapshots."""
     require_role(role, "ingest")
-    loader = LOADERS.get(source.value)
-    if loader is None:
-        typer.echo(f"Source '{source.value}' arrives in Step 10.", err=True)
-        raise typer.Exit(code=2)
+    loader = LOADERS[source.value]
 
     con = connect()
     try:
