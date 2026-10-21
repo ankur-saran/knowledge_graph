@@ -56,7 +56,7 @@ roles:
     read_only: true
     decision_rights: []
   engineer:
-    commands: [ingest, normalize, build-graph, eval, audit-verify]
+    commands: [download, ingest, refresh, sample, normalize, build-graph, eval, audit-verify]
     masked_fields: {}
     read_only: false
     decision_rights: []

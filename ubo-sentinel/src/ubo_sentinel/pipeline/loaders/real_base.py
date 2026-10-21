@@ -33,11 +33,15 @@ import duckdb
 from ubo_sentinel.models.manifest import Manifest, ManifestFile, load_manifest
 from ubo_sentinel.pipeline.bronze import (
     ALIAS_LATEST,
+    ALIAS_REAL,
     BRONZE_COLUMNS,
     FAMILY_REAL,
+    FAMILY_SAMPLE,
     IngestError,
     SnapshotManager,
+    create_schema,
     file_sha256,
+    snapshot_id_for,
     transaction,
 )
 from ubo_sentinel.pipeline.digest import json_text
@@ -123,7 +127,9 @@ class RealDataset:
 class _Staged:
     dataset: RealDataset
     entry: ManifestFile
-    table: str  # temp table: _row_num, _source_record_id, raw, reason, reject_raw
+    # Temp table: _row_num, _source_record_id, raw, reason, reject_raw. None when
+    # the snapshot is in Bronze already, so its file was checked but not read.
+    table: str | None
     rows: int
     rejects: int
 
@@ -412,6 +418,13 @@ def _stage(
         if len(formats) != 1:
             raise IngestError(f"Datasets read '{key}' in more than one format.")
         path = _check_file(refresh_dir, key, entry)
+        # A refresh often brings one source's new files and the other's unchanged
+        # ones; a snapshot already in Bronze is not read again.
+        present = _present(con, members, entry.sha256)
+        staged += [_Staged(d, entry, None, 0, 0) for d in members if d.name in present]
+        members = [d for d in members if d.name not in present]
+        if not members:
+            continue
         columns = sorted({c.key for d in members for c in d.columns})
         file_table, unread = _read_file(con, n, path, formats.pop(), columns)
         for dataset in members:
@@ -420,7 +433,9 @@ def _stage(
                 f"SELECT count(*) FILTER (WHERE reason IS NULL),"
                 f" count(*) FILTER (WHERE reason IS NOT NULL) FROM {table}"
             ).fetchone()
-            if rows == 0:
+            # An empty dataset in a publisher's file means the file is broken; a
+            # small sample may simply hold none.
+            if rows == 0 and manifest.family != FAMILY_SAMPLE:
                 raise IngestError(f"{path}: holds no {dataset.name} records.")
             if rejects > limit * (rows + rejects):
                 reasons = con.execute(
@@ -435,6 +450,19 @@ def _stage(
     return staged
 
 
+def _present(
+    con: duckdb.DuckDBPyConnection, datasets: Sequence[RealDataset], content_sha256: str
+) -> set[str]:
+    """The datasets whose snapshot of this file is in Bronze already."""
+    create_schema(con)
+    ids = {snapshot_id_for(d.name, content_sha256): d.name for d in datasets}
+    found = con.execute(
+        "SELECT snapshot_id FROM bronze_snapshots WHERE list_contains(?, snapshot_id)",
+        [list(ids)],
+    ).fetchall()
+    return {ids[snapshot_id] for (snapshot_id,) in found}
+
+
 def ingest_real(
     con: duckdb.DuckDBPyConnection,
     refresh_dir: Path,
@@ -445,7 +473,8 @@ def ingest_real(
 ) -> IngestSummary:
     """Ingest `datasets` from a refresh directory; datasets of `required` it lacks come from `base`.
 
-    Ingesting files that are already present changes nothing.
+    The set is of the manifest's family: `real`, or `sample` for a directory
+    `ubo sample` cut. Ingesting files that are already present changes nothing.
     """
     if not refresh_dir.is_dir():
         raise IngestError(f"{refresh_dir} is not a directory.")
@@ -464,12 +493,14 @@ def ingest_real(
                 dataset, entry = item.dataset, item.entry
                 snapshot = manager.open_snapshot(
                     dataset.name,
-                    FAMILY_REAL,
+                    manifest.family,
                     dataset.table,
                     refresh_dir / entry.path,
                     content_sha256=entry.sha256,
                 )
                 if snapshot.is_new:
+                    if item.table is None:
+                        raise IngestError(f"Snapshot {snapshot.snapshot_id} vanished; try again.")
                     _write(con, snapshot.snapshot_id, item)
                     manager.register_snapshot(
                         snapshot,
@@ -483,7 +514,9 @@ def ingest_real(
                     )
                 supplied[dataset.name] = snapshot.snapshot_id
                 status[dataset.name] = "new" if snapshot.is_new else "already present"
-            snapshot_set = manager.commit_set(FAMILY_REAL, supplied, required=required, base=base)
+            snapshot_set = manager.commit_set(
+                manifest.family, supplied, required=required, base=base
+            )
 
     info = {
         snapshot_id: (table, rows, rejects)
@@ -510,7 +543,7 @@ def ingest_real(
         path=refresh_dir,
         datasets=summaries,
         snapshot_set=snapshot_set,
-        aliases={ALIAS_LATEST: resolve_alias(con, ALIAS_LATEST)},
+        aliases={alias: resolve_alias(con, alias) for alias in (ALIAS_LATEST, ALIAS_REAL)},
     )
 
 

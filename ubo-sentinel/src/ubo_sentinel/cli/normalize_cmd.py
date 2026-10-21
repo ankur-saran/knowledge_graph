@@ -45,7 +45,7 @@ def _print_summary(summary: SilverSummary) -> None:
 @app.command()
 def normalize(
     snapshot: Annotated[
-        str, typer.Option("--snapshot", help="Snapshot set: fixtures, latest or a set id.")
+        str, typer.Option("--snapshot", help="Snapshot set: fixtures, real, latest or a set id.")
     ] = bronze.ALIAS_LATEST,
     rebuild: Annotated[
         bool, typer.Option("--rebuild", help="Replace a set that is already built.")

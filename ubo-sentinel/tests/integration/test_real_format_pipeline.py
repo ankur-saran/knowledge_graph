@@ -159,3 +159,62 @@ def test_a_later_list_takes_the_registry_from_the_last_set(tmp_path):
         assert cli(*command).exit_code == 0
     # Teverin's designation no longer ends before the publish date.
     assert screen(f"{OS}Teverin")["reasons"] == ["OTHER_REGIME_DESIGNATION"]
+
+
+# --- ubo refresh ------------------------------------------------------------------------
+
+
+def aliases(output):
+    """Alias -> set id, as `ubo refresh` prints them."""
+    found = {}
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) == 3 and parts[1] == "->" and parts[0] in ("latest", "real"):
+            found[parts[0]] = parts[2]
+    return found
+
+
+def test_refresh_downloads_builds_checks_and_makes_the_set_real(publishers):
+    result = cli("refresh")
+    assert result.exit_code == 0, result.output
+    assert "Data quality: snapshot set" in result.output
+    assert "targets_without_designation" in result.output
+    real = aliases(result.output)["real"]
+    con = connect(read_only=True)
+    assert resolve_set(con, "real").snapshot_set_id == real
+    con.close()
+    decision = cli("screen", "--target-id", f"lei:{lei('ORV')}", "--snapshot", "real", "--json")
+    assert json.loads(decision.output[decision.output.index("{") :])["snapshot_set_id"] == real
+
+
+def test_a_refresh_whose_list_shrank_leaves_real_where_it_was(tmp_path):
+    first = cli("refresh", "--path", SAMPLES)
+    assert first.exit_code == 0, first.output
+    real = aliases(first.output)["real"]
+
+    refresh = shutil.copytree(SAMPLES, tmp_path / "refresh")
+    ftm = refresh / "opensanctions/entities.ftm.json"
+    # A truncated list: the designation records are gone but one.
+    lines = ftm.read_bytes().splitlines(keepends=True)
+    sanctions = [line for line in lines if b'"schema":"Sanction"' in line]
+    ftm.write_bytes(b"".join(line for line in lines if line not in sanctions[1:]))
+    restamp(refresh)
+
+    refused = cli("refresh", "--path", refresh)
+    assert refused.exit_code == 1
+    assert "REFUSED: active_designations fell" in refused.output
+    assert "'real' is unchanged" in refused.output
+    assert aliases(refused.output)["real"] == real
+    assert aliases(refused.output)["latest"] != real
+
+    no_reason = cli("refresh", "--path", refresh, "--accept-shrink")
+    assert no_reason.exit_code == 2 and "needs --reason" in no_reason.output
+    accepted = cli("refresh", "--path", refresh, "--accept-shrink", "--reason", "list delisted")
+    assert accepted.exit_code == 0, accepted.output
+    assert "accepted: list delisted" in accepted.output
+    assert aliases(accepted.output)["real"] == aliases(accepted.output)["latest"] != real
+
+
+def test_a_refresh_of_a_bad_directory_writes_nothing(tmp_path):
+    result = cli("refresh", "--path", tmp_path)
+    assert result.exit_code == 1 and "Ingest failed, nothing was written" in result.output

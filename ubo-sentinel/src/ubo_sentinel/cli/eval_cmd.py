@@ -210,7 +210,7 @@ def _golden(out: _Output, current: dict, update: bool) -> bool:
 def evaluate(
     suite: Annotated[Suite, typer.Option("--suite", help="What to evaluate.")] = Suite.all,
     snapshot: Annotated[
-        str, typer.Option("--snapshot", help="Snapshot set: fixtures, latest or a set id.")
+        str, typer.Option("--snapshot", help="Snapshot set: fixtures, real, latest or a set id.")
     ] = bronze.ALIAS_FIXTURES,
     rule_pack: Annotated[
         str, typer.Option("--rule-pack", help="Rule pack name: a file in rules/.")

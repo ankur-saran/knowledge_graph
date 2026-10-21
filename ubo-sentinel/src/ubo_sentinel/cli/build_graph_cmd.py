@@ -21,7 +21,7 @@ def _print_summary(summary: GoldSummary) -> None:
 @app.command()
 def build_graph(
     snapshot: Annotated[
-        str, typer.Option("--snapshot", help="Snapshot set: fixtures, latest or a set id.")
+        str, typer.Option("--snapshot", help="Snapshot set: fixtures, real, latest or a set id.")
     ] = bronze.ALIAS_LATEST,
     role: Annotated[str, typer.Option("--role")] = "engineer",
 ) -> None:

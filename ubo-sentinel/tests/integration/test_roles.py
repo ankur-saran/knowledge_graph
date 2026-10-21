@@ -2,6 +2,7 @@
 
 import pytest
 from e2e import cli, person_pii, screen_gold
+from real_format import SAMPLES
 
 from ubo_sentinel.agents import supervisor as supervisor_module
 from ubo_sentinel.agents.base import ScreenRequest
@@ -34,7 +35,10 @@ def test_every_command_is_in_the_permission_matrix(ontology):
 
 # The cheapest call of each command that does what the command is for.
 ARGS = {
+    "download": ["download"],
     "ingest": ["ingest", "--source", "fixtures"],
+    "refresh": ["refresh", "--path", str(SAMPLES)],
+    "sample": ["sample", "--path", str(SAMPLES), "--n", "2"],
     "normalize": ["normalize"],
     "build-graph": ["build-graph"],
     "eval": ["eval", "--suite", "er"],
@@ -47,7 +51,7 @@ ARGS = {
 
 @pytest.mark.parametrize("role", ROLES)
 @pytest.mark.parametrize("command", sorted(ARGS))
-def test_each_role_runs_exactly_its_commands(fresh_db, ontology, command, role):
+def test_each_role_runs_exactly_its_commands(fresh_db, publishers, ontology, command, role):
     assert set(ARGS) == registered_commands()
     fresh_db("t0")
     decision = Supervisor(ontology, AuditLog()).run(ScreenRequest(query="Vostrek Maritime LLC"))

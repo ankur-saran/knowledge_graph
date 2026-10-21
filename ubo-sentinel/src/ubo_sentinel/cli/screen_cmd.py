@@ -43,7 +43,7 @@ def _candidate_lines(resolution: Resolution, role: str, ontology: OntologyConfig
 def screen(
     query: Annotated[str, typer.Argument(help="An entity name or an LEI.")] = "",
     snapshot: Annotated[
-        str, typer.Option("--snapshot", help="Snapshot set: fixtures, latest or a set id.")
+        str, typer.Option("--snapshot", help="Snapshot set: fixtures, real, latest or a set id.")
     ] = bronze.ALIAS_FIXTURES,
     role: Annotated[str, typer.Option("--role", help="analyst or reviewer.")] = "analyst",
     rule_pack: Annotated[

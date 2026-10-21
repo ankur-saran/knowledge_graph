@@ -16,6 +16,8 @@ from typing import Any
 import duckdb
 
 from ubo_sentinel.models.canonical import canonical_json, sha256_hex, short_id
+from ubo_sentinel.models.manifest import FAMILY_REAL as FAMILY_REAL
+from ubo_sentinel.models.manifest import FAMILY_SAMPLE as FAMILY_SAMPLE
 
 BRONZE_TABLES = ("bronze_entities", "bronze_relationships", "bronze_sanctions", "bronze_repex")
 
@@ -35,9 +37,14 @@ BRONZE_COLUMNS = (
 
 ALIAS_LATEST = "latest"
 ALIAS_FIXTURES = "fixtures"
+ALIAS_REAL = "real"
 FAMILY_FIXTURES = "fixtures"
-# Published data: GLEIF, OpenSanctions. A set never mixes the two families.
-FAMILY_REAL = "real"
+# Published data (GLEIF, OpenSanctions) is FAMILY_REAL, or FAMILY_SAMPLE when cut
+# down by `ubo sample`; both come from `models.manifest`. A set never mixes families.
+
+# Records the data-quality check of each set `ubo refresh` built
+# (`pipeline/quality.py`); `real` is the newest real set it accepted.
+QUALITY_TABLE = "quality_reports"
 
 _BRONZE_DDL = """
 CREATE TABLE IF NOT EXISTS {table} (
@@ -184,12 +191,18 @@ def create_schema(con: duckdb.DuckDBPyConnection) -> None:
         )
 
 
+def _has_table(con: duckdb.DuckDBPyConnection, table: str) -> bool:
+    return (
+        con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [table]
+        ).fetchone()
+        is not None
+    )
+
+
 def schema_version(con: duckdb.DuckDBPyConnection) -> int | None:
     """The Bronze schema version of a database, or None when it predates the record."""
-    present = con.execute(
-        "SELECT 1 FROM information_schema.tables WHERE table_name = 'bronze_schema'"
-    ).fetchone()
-    if present is None:
+    if not _has_table(con, "bronze_schema"):
         return None
     return con.execute("SELECT max(version) FROM bronze_schema").fetchone()[0]
 
@@ -242,7 +255,9 @@ def resolve_set(con: duckdb.DuckDBPyConnection, id_or_alias: str) -> SnapshotSet
 
     `latest` is the newest set. `fixtures` is the newest fixture set that one
     complete directory supplied, so ingesting a changed list alone moves
-    `latest` and leaves `fixtures` where it was.
+    `latest` and leaves `fixtures` where it was. `real` is the newest real set
+    whose data-quality check (`ubo refresh`) accepted it: a set that only
+    `ubo ingest` made, or whose files shrank, does not move it.
     """
     if id_or_alias == ALIAS_LATEST:
         row = con.execute(
@@ -254,6 +269,18 @@ def resolve_set(con: duckdb.DuckDBPyConnection, id_or_alias: str) -> SnapshotSet
             " WHERE family = ? AND is_complete ORDER BY seq DESC LIMIT 1",
             [FAMILY_FIXTURES],
         ).fetchone()
+    elif id_or_alias == ALIAS_REAL:
+        row = (
+            con.execute(
+                "SELECT i.snapshot_set_id FROM snapshot_set_info i"
+                f" WHERE i.family = ? AND EXISTS (SELECT 1 FROM {QUALITY_TABLE} q"
+                " WHERE q.snapshot_set_id = i.snapshot_set_id AND q.accepted)"
+                " ORDER BY i.seq DESC LIMIT 1",
+                [FAMILY_REAL],
+            ).fetchone()
+            if _has_table(con, QUALITY_TABLE)
+            else None
+        )
     else:
         row = (id_or_alias,)
     found = _load_set(con, row[0]) if row else None

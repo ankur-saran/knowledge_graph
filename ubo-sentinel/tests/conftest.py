@@ -7,9 +7,11 @@ from pathlib import Path
 
 import duckdb
 import pytest
+from publishers import Publishers
 
 from ubo_sentinel.audit.log import VAR_ENV_VAR
 from ubo_sentinel.cli.app import ONTOLOGY_PATH
+from ubo_sentinel.download import http
 from ubo_sentinel.models import EntityRow, load_gold_scenarios, load_ontology, read_rows
 from ubo_sentinel.pipeline.db import DB_ENV_VAR, connect
 from ubo_sentinel.pipeline.gold import build_gold
@@ -45,6 +47,14 @@ def no_network(monkeypatch):
         monkeypatch.setattr(socket.socket, name, refuse)
     for name in ("getaddrinfo", "create_connection"):
         monkeypatch.setattr(socket, name, refuse)
+
+
+@pytest.fixture
+def publishers(monkeypatch):
+    """GLEIF and OpenSanctions on a mock transport, for `ubo download` and `ubo refresh`."""
+    served = Publishers()
+    monkeypatch.setattr(http, "http_client", served.client)
+    return served
 
 
 @pytest.fixture

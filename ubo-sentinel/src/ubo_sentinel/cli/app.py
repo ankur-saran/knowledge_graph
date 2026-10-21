@@ -74,9 +74,12 @@ def main(
 from ubo_sentinel.cli import (  # noqa: E402, F401
     audit_cmd,
     build_graph_cmd,
+    download_cmd,
     eval_cmd,
     ingest_cmd,
     normalize_cmd,
+    refresh_cmd,
     review_cmd,
+    sample_cmd,
     screen_cmd,
 )
