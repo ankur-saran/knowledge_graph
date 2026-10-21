@@ -74,7 +74,7 @@ Every node, edge and designation carries: `source`, `source_record_id`, `snapsho
 
 A person can hold an LEI: GLEIF registers sole proprietors, whose legal name is a person's name. Their LEI is masked with the name, since GLEIF's public record names the person.
 
-Each role also has a list of CLI commands it may run. Each build step adds the command it registers; so far `analyst` may run `screen`; `reviewer` may run `screen`, `review`, `audit-verify` and `audit-replay`; `engineer` may run `ingest`, `normalize`, `build-graph`, `eval` and `audit-verify`; and `auditor` may run `eval`, `audit-verify` and `audit-replay`. Only `reviewer` may hold decision rights, and the loader rejects a file that gives them to any other role. The audit log reads those rights: a review event is refused from a role that does not hold the right to the status it sets.
+Each role also has a list of CLI commands it may run. Each build step adds the command it registers; so far `analyst` may run `screen`; `reviewer` may run `screen`, `review`, `audit-verify` and `audit-replay`; `engineer` may run `download`, `ingest`, `refresh`, `sample`, `normalize`, `build-graph`, `eval` and `audit-verify`; and `auditor` may run `eval`, `audit-verify` and `audit-replay`. Only `reviewer` may hold decision rights, and the loader rejects a file that gives them to any other role. The audit log reads those rights: a review event is refused from a role that does not hold the right to the status it sets.
 
 ## What the loader rejects
 
