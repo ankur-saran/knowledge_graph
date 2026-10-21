@@ -67,6 +67,8 @@ Read by the skills in `.claude/skills/`. A value of "not yet created" is filled 
 | Download | `src/ubo_sentinel/download/` (the only package that opens the network: `publishers.py` reads the publishers' indexes, `refresh.py` writes `var/downloads/<refresh_id>/`; tests use the mock publishers in `tests/publishers.py`, fixture `publishers`) |
 | Refresh and data quality | `uv run ubo refresh [--path DIR] [--accept-shrink --reason TEXT]` (`cli/refresh_cmd.py`); the report and the shrink guard in `src/ubo_sentinel/pipeline/quality.py` |
 | Sample | `uv run ubo sample --path DIR --n N --seed S` (`src/ubo_sentinel/pipeline/sample.py`) |
+| Bench | `uv run ubo bench --lei-file FILE [--snapshot real] [--rounds N] [--budget 15]` (`src/ubo_sentinel/agents/bench.py`; screens by `target_id`, into a scratch log unless `--record`) |
+| Real-data checks | `eval/er_labelled_real.csv` (`ubo eval --suite er --snapshot real`) and `eval/real_smoke.yaml` (`ubo eval --suite real-smoke --snapshot real`; `src/ubo_sentinel/agents/real_smoke.py`). `rules` and `pipeline` run on a fixtures set only, `real-smoke` on a real one; `all` runs what fits the set's family |
 | Real-format sample files | `tests/data/real_format/` (a refresh directory in GLEIF's and OpenSanctions' formats, invented data; written by `tests/real_format.py`: edit that and run `uv run python tests/real_format.py`, never the files) |
 | Bronze module | `src/ubo_sentinel/pipeline/bronze.py` (`SnapshotManager`, `resolve_set()`, `transaction()`) |
 | Database | `var/ubo.duckdb`, opened with `connect()` in `src/ubo_sentinel/pipeline/db.py`; env `UBO_DB` overrides the path (tests use a temp file) |

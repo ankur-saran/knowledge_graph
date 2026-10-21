@@ -539,12 +539,13 @@ def test_eval_runs_the_gold_scenarios_only_on_a_fixtures_set(con):
     con.commit()
     real = con.execute("SELECT snapshot_set_id FROM snapshot_set_info").fetchone()[0]
     con.close()
-    for suite in ("rules", "pipeline", "all"):
+    for suite in ("rules", "pipeline"):
         result = runner.invoke(app, ["eval", "--suite", suite, "--snapshot", real])
         assert result.exit_code == 2 and "family 'real'" in result.output, suite
-    # No labelled real names yet: say which file is missing.
-    result = runner.invoke(app, ["eval", "--suite", "er", "--snapshot", real])
-    assert result.exit_code == 2 and "er_labelled_real.csv" in result.output
+    # Labelled names that are not there: say which file is missing.
+    missing = ["--labels", "eval/none.csv"]
+    result = runner.invoke(app, ["eval", "--suite", "er", "--snapshot", real, *missing])
+    assert result.exit_code == 2 and "eval/none.csv" in result.output
     labelled = ["--labels", "eval/er_labelled.csv"]
     result = runner.invoke(app, ["eval", "--suite", "er", "--snapshot", real, *labelled])
     assert result.exit_code == 0 and "ER precision@1" in result.output

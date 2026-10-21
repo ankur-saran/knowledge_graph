@@ -88,6 +88,9 @@ class Column:
     key: str
     within: str | None = None
     kind: Kind = Kind.TEXT
+    # A CSV column some of the publisher's files lack (GLEIF's `DeletedAt` is in
+    # its delta files, not its golden copy): absent, it is read as empty.
+    optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -121,6 +124,10 @@ class RealDataset:
             c.within is not None or c.kind != Kind.TEXT for c in self.columns
         ):
             raise ValueError(f"{self.name}: a CSV column is top-level text")
+        if any(
+            c.optional and (self.format != Format.CSV or c.key in self.key) for c in self.columns
+        ):
+            raise ValueError(f"{self.name}: only a CSV column outside the key may be optional")
 
 
 @dataclass(frozen=True)
@@ -202,6 +209,7 @@ def _read_file(
     path: Path,
     fmt: Format,
     columns: Sequence[str],
+    optional: frozenset[str] = frozenset(),
 ) -> tuple[str, str]:
     """Read a file into a temp table: `_row_num` and the declared columns (CSV) or `line` (NDJSON).
 
@@ -218,12 +226,15 @@ def _read_file(
     )
     if fmt == Format.CSV:
         header = _csv_header(path)
-        missing = [name for name in columns if name not in header]
+        missing = [name for name in columns if name not in header and name not in optional]
         if missing:
             raise IngestError(f"{path}: the header lacks {missing}.")
         types = ", ".join(f"{_quote(name)}: 'VARCHAR'" for name in header)
         selected = ", ".join(
-            f"nullif({_ident(name)}, '') AS c{i}" for i, name in enumerate(columns)
+            f"nullif({_ident(name)}, '') AS c{i}"
+            if name in header
+            else f"CAST(NULL AS VARCHAR) AS c{i}"
+            for i, name in enumerate(columns)
         )
         source = f"read_csv({_quote(str(path))}, header=true, columns={{{types}}}, {common})"
         first_line = 2
@@ -426,7 +437,11 @@ def _stage(
         if not members:
             continue
         columns = sorted({c.key for d in members for c in d.columns})
-        file_table, unread = _read_file(con, n, path, formats.pop(), columns)
+        # Optional only when every dataset that reads it says so.
+        optional = frozenset(columns) - {
+            c.key for d in members for c in d.columns if not c.optional
+        }
+        file_table, unread = _read_file(con, n, path, formats.pop(), columns, optional)
         for dataset in members:
             table = _stage_dataset(con, len(staged), dataset, file_table, unread, columns)
             rows, rejects = con.execute(

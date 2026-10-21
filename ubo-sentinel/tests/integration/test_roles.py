@@ -40,6 +40,7 @@ ARGS = {
     "refresh": ["refresh", "--path", str(SAMPLES)],
     "sample": ["sample", "--path", str(SAMPLES), "--n", "2"],
     "normalize": ["normalize"],
+    "bench": ["bench", "--lei-file", "tests/data/fixture_leis.txt", "--snapshot", "fixtures"],
     "build-graph": ["build-graph"],
     "eval": ["eval", "--suite", "er"],
     "screen": ["screen", "Acme Trading FZE", "--actor", "someone"],

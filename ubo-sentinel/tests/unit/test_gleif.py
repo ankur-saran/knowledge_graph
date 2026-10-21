@@ -1,17 +1,18 @@
 """GLEIF: the loader's declarations and the mappers, from the sample files to Gold."""
 
+import csv
 import shutil
 
 import pytest
 from e2e import cli
 from real_format import SAMPLES, lei, restamp
 
-from ubo_sentinel.pipeline.bronze import resolve_set
+from ubo_sentinel.pipeline.bronze import IngestError, resolve_set
 from ubo_sentinel.pipeline.entity_linking import KEY_SUCCESSOR_LEI, resolve_groups
 from ubo_sentinel.pipeline.gold import build_gold
 from ubo_sentinel.pipeline.loaders import LOADERS
 from ubo_sentinel.pipeline.loaders.gleif_loader import GLEIF_DATASETS
-from ubo_sentinel.pipeline.loaders.real_base import ingest_real
+from ubo_sentinel.pipeline.loaders.real_base import Column, Format, RealDataset, ingest_real
 from ubo_sentinel.pipeline.loaders.real_loader import REAL_DATASETS, ingest_gleif
 from ubo_sentinel.pipeline.mappers import MAPPERS
 from ubo_sentinel.pipeline.transformer import build_silver
@@ -186,6 +187,44 @@ def test_a_status_gleif_does_not_define_is_counted_not_kept(con, ontology, tmp_p
     set_id, counts = build(con, ontology, samples)
     assert counts["unreadable"] == {"jurisdiction": 0, "lei_status": 1, "pct": 0}
     assert entities(con, set_id)[f"lei:{lei('HALV')}"][5] is None
+
+
+def test_the_golden_copy_has_no_deletion_column(con, ontology, tmp_path):
+    """GLEIF's delta files carry `DeletedAt`; its full golden copy (live, 2026-10-21) does not."""
+    samples = shutil.copytree(SAMPLES, tmp_path / "refresh")
+    for name in ("rr.csv", "repex.csv"):
+        path = samples / "gleif" / name
+        with path.open(encoding="utf-8", newline="") as f:
+            rows = list(csv.reader(f))
+        assert rows[0][-1] == "DeletedAt"
+        with path.open("w", encoding="utf-8", newline="") as f:
+            csv.writer(f, quoting=csv.QUOTE_ALL, lineterminator="\r\n").writerows(
+                row[:-1] for row in rows
+            )
+    restamp(samples)
+    set_id, counts = build(con, ontology, samples)
+    # Nothing is read as deleted: THAL's exception, deleted in the sample, stands.
+    assert "gleif_repex" not in counts["filtered"]
+    assert counts["reporting_exceptions"] == 10
+    # Still required: a column the dataset cannot do without.
+    path = samples / "gleif/repex.csv"
+    path.write_bytes(path.read_bytes().replace(b'"Exception.Category"', b'"Category"', 1))
+    restamp(samples)
+    with pytest.raises(IngestError, match=r"the header lacks \['Exception.Category'\]"):
+        build(con, ontology, samples)
+
+
+def test_only_a_csv_column_outside_the_key_may_be_optional():
+    with pytest.raises(ValueError, match="may be optional"):
+        RealDataset(
+            name="x",
+            table="bronze_entities",
+            source="gleif",
+            file="f",
+            format=Format.CSV,
+            columns=(Column("LEI", optional=True),),
+            key=("LEI",),
+        )
 
 
 def test_a_gleif_ingest_needs_a_directory():

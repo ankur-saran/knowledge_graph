@@ -17,6 +17,10 @@ def _columns(*names: str) -> tuple[Column, ...]:
     return tuple(Column(name) for name in names)
 
 
+# When a record was deleted: GLEIF's delta files carry it, its golden copy does not.
+DELETED_AT = Column("DeletedAt", optional=True)
+
+
 GLEIF_L1 = RealDataset(
     name="gleif_l1",
     table="bronze_entities",
@@ -44,14 +48,16 @@ GLEIF_RR = RealDataset(
     source=SOURCE,
     file="gleif_rr",
     format=Format.CSV,
-    columns=_columns(
-        "Relationship.StartNode.NodeID",
-        "Relationship.StartNode.NodeIDType",
-        "Relationship.EndNode.NodeID",
-        "Relationship.EndNode.NodeIDType",
-        "Relationship.RelationshipType",
-        "Relationship.RelationshipStatus",
-        "DeletedAt",
+    columns=(
+        *_columns(
+            "Relationship.StartNode.NodeID",
+            "Relationship.StartNode.NodeIDType",
+            "Relationship.EndNode.NodeID",
+            "Relationship.EndNode.NodeIDType",
+            "Relationship.RelationshipType",
+            "Relationship.RelationshipStatus",
+        ),
+        DELETED_AT,
     ),
     # GLEIF publishes one record per start node, end node and type.
     key=(
@@ -67,7 +73,7 @@ GLEIF_REPEX = RealDataset(
     source=SOURCE,
     file="gleif_repex",
     format=Format.CSV,
-    columns=_columns("LEI", "Exception.Category", *GLEIF_REPEX_REASON_FIELDS, "DeletedAt"),
+    columns=(*_columns("LEI", "Exception.Category", *GLEIF_REPEX_REASON_FIELDS), DELETED_AT),
     key=("LEI", "Exception.Category"),
 )
 

@@ -13,6 +13,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from ubo_sentinel.agents.evaluator import compare_golden, golden_of, run_pipeline_suite
+from ubo_sentinel.agents.real_smoke import SmokeReport, load_smoke, run_smoke
 from ubo_sentinel.agents.supervisor import Supervisor
 from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.audit.replay import replay_all
@@ -35,6 +36,8 @@ ER_PATHS = {
     bronze.FAMILY_FIXTURES: Path("eval/er_labelled.csv"),
     bronze.FAMILY_REAL: Path("eval/er_labelled_real.csv"),
 }
+# Invariants of real screens that hold on any refresh: `agents/real_smoke.py`.
+SMOKE_PATH = Path("eval/real_smoke.yaml")
 # The decisions of the gold scenarios on the fixtures: `golden_of()` in `agents/evaluator.py`.
 GOLDEN_PATH = Path("eval/golden_decisions.json")
 
@@ -44,6 +47,7 @@ PATH_RECALL_TARGET = 0.98
 ER_PRECISION_TARGET = 0.95
 REPLAY_FIDELITY_TARGET = 1.0
 UNCITED_CLAIMS_TARGET = 0
+REAL_SMOKE_TARGET = 1.0
 # PRD section 7: a screen on the fixtures.
 LATENCY_P95_TARGET_SECONDS = 5.0
 
@@ -52,7 +56,14 @@ class Suite(StrEnum):
     rules = "rules"
     pipeline = "pipeline"
     er = "er"
+    real_smoke = "real-smoke"
+    # The fixtures: rules, pipeline, er. A real set: er, real-smoke.
     all = "all"
+
+
+# Suites written for the fixtures, and suites run on published data.
+FIXTURE_SUITES = {Suite.rules, Suite.pipeline}
+REAL_SUITES = {Suite.real_smoke}
 
 
 @dataclass(frozen=True)
@@ -183,6 +194,26 @@ def _print_er(out: _Output, report: ErReport) -> bool:
     return met and not report.false_candidates
 
 
+def _print_smoke(out: _Output, reports: list[SmokeReport]) -> bool:
+    out.echo("Real smoke (invariants that hold on any refresh)")
+    for report in reports:
+        shown = report.recommendation or report.resolved_to or "-"
+        status = "PASS" if report.passed else "FAIL"
+        out.echo(f"  {report.entry_id}  {status}  {shown:<8} {', '.join(report.reasons)}".rstrip())
+        for failure in report.failures:
+            out.echo(f"      {failure}")
+            out.problems.append(f"real-smoke: {report.entry_id} {failure}")
+        if report.drift:
+            out.echo(f"      DRIFT (not a failure): {report.drift}")
+    passed = sum(report.passed for report in reports)
+    return out.metric(
+        "real-smoke",
+        "Real smoke invariants",
+        passed / len(reports) if reports else 1.0,
+        REAL_SMOKE_TARGET,
+    )
+
+
 def _golden(out: _Output, current: dict, update: bool) -> bool:
     """Compare the suite's decisions with the golden file, or write the file."""
     if update:
@@ -230,6 +261,10 @@ def evaluate(
         Path | None,
         typer.Option("--labels", help="Labelled names for the er suite (default: by family)."),
     ] = None,
+    smoke: Annotated[
+        Path,
+        typer.Option("--smoke", help="Entries of the real-smoke suite."),
+    ] = SMOKE_PATH,
 ) -> None:
     """Run the gold scenarios through the rules and the pipeline, and score entity resolution."""
     require_role(role, "eval")
@@ -251,16 +286,24 @@ def evaluate(
         with GraphStore.open(snapshot) as store:
             set_id = store.set_id
             family = store.snapshot_set.family
-            if suite is not Suite.er and family != bronze.FAMILY_FIXTURES:
+            fixtures = family == bronze.FAMILY_FIXTURES
+            if suite in (FIXTURE_SUITES if not fixtures else REAL_SUITES):
                 typer.echo(
                     f"Snapshot set {set_id} is of family '{family}'. The gold scenarios are"
-                    " written for the fixtures: run them on a fixtures set, or run"
-                    " '--suite er' on this one.",
+                    " written for the fixtures and the real-smoke entries for published"
+                    " data: run 'rules' and 'pipeline' on a fixtures set, 'real-smoke' on a"
+                    " real one ('er' and 'all' run on either).",
                     err=True,
                 )
                 raise typer.Exit(code=2)
+            runs = {suite} if suite is not Suite.all else {Suite.er}
+            if suite is Suite.all:
+                runs |= FIXTURE_SUITES if fixtures else REAL_SUITES
+            if Suite.real_smoke in runs and not smoke.is_file():
+                typer.echo(f"No real-smoke entries ({smoke.as_posix()}); pass --smoke.", err=True)
+                raise typer.Exit(code=2)
             er_path = labels or ER_PATHS.get(family)
-            if suite in (Suite.er, Suite.all) and (er_path is None or not er_path.is_file()):
+            if Suite.er in runs and (er_path is None or not er_path.is_file()):
                 typer.echo(
                     f"No labelled names for family '{family}'"
                     f"{f' ({er_path.as_posix()})' if er_path else ''}; pass --labels.",
@@ -271,17 +314,17 @@ def evaluate(
                 f"Snapshot set: {store.set_id}   Rule pack: {engine.pack.id}"
                 f" ({engine.rule_pack_hash[:16]})"
             )
-            if suite in (Suite.rules, Suite.all):
+            if Suite.rules in runs:
                 scenarios = load_gold_scenarios(GOLD_PATH)
                 skipped = [
                     scenario.id
                     for scenario in scenarios
-                    if scenario.suite != "rules" and suite is Suite.rules
+                    if scenario.suite != "rules" and Suite.pipeline not in runs
                 ]
                 reports = run_rules_suite(store, engine, scenarios)
                 title = "Gold scenarios (rules suite)"
                 ok = _print_scenarios(out, "rules", title, reports, skipped) and ok
-            if suite in (Suite.pipeline, Suite.all):
+            if Suite.pipeline in runs:
                 # The suite records nothing: its log is a directory that is thrown away.
                 with tempfile.TemporaryDirectory() as scratch:
                     ontology, log = load_ontology(ONTOLOGY_PATH), AuditLog(Path(scratch))
@@ -313,8 +356,19 @@ def evaluate(
                 )
                 current = golden_of(reports, store.set_id, engine.rule_pack_hash)
                 ok = _golden(out, current, update_golden) and ok
-            if suite in (Suite.er, Suite.all):
+            if Suite.er in runs:
                 ok = _print_er(out, evaluate_labelled(store, er_path)) and ok
+            if Suite.real_smoke in runs:
+                try:
+                    entries = load_smoke(smoke)
+                except ValueError as exc:
+                    typer.echo(str(exc), err=True)
+                    raise typer.Exit(code=2) from exc
+                # Recorded nowhere: the log is a directory that is thrown away.
+                with tempfile.TemporaryDirectory() as scratch:
+                    supervisor = Supervisor(load_ontology(ONTOLOGY_PATH), AuditLog(Path(scratch)))
+                    reports = run_smoke(supervisor, entries, store, pack=engine.pack)
+                ok = _print_smoke(out, reports) and ok
     except UnknownSnapshotSet as exc:
         typer.echo(f"{exc} Run 'ubo ingest' first.", err=True)
         raise typer.Exit(code=2) from exc

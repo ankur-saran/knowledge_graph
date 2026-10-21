@@ -1,0 +1,3 @@
+# Two fixture LEIs, for the role tests: `ubo bench --snapshot fixtures`.
+FXS01TARGET000000000
+FXS03TARGET000000000
