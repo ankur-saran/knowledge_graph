@@ -69,6 +69,7 @@ Read by the skills in `.claude/skills/`. A value of "not yet created" is filled 
 | Sample | `uv run ubo sample --path DIR --n N --seed S` (`src/ubo_sentinel/pipeline/sample.py`) |
 | Bench | `uv run ubo bench --lei-file FILE [--snapshot real] [--rounds N] [--budget 15]` (`src/ubo_sentinel/agents/bench.py`; screens by `target_id`, into a scratch log unless `--record`) |
 | Real-data checks | `eval/er_labelled_real.csv` (`ubo eval --suite er --snapshot real`) and `eval/real_smoke.yaml` (`ubo eval --suite real-smoke --snapshot real`; `src/ubo_sentinel/agents/real_smoke.py`). `rules` and `pipeline` run on a fixtures set only, `real-smoke` on a real one; `all` runs what fits the set's family |
+| Scale test | `tests/integration/test_scale.py` (marked `slow`, about a minute; a generated 200 000-company world from `tests/scale_world.py`; stage and latency bounds with the outcomes) |
 | Real-format sample files | `tests/data/real_format/` (a refresh directory in GLEIF's and OpenSanctions' formats, invented data; written by `tests/real_format.py`: edit that and run `uv run python tests/real_format.py`, never the files) |
 | Bronze module | `src/ubo_sentinel/pipeline/bronze.py` (`SnapshotManager`, `resolve_set()`, `transaction()`) |
 | Database | `var/ubo.duckdb`, opened with `connect()` in `src/ubo_sentinel/pipeline/db.py`; env `UBO_DB` overrides the path (tests use a temp file) |

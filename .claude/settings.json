@@ -10,7 +10,8 @@
       "PowerShell(Get-Content \"C:\\\\Users\\\\ankur\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-ankur-Projects-Claude-knowledge-graph\\\\eb15ac11-d769-476e-9ea9-de4823bb8440\\\\scratchpad\\\\live_refresh2.log\"; $p = Get-Process -Id 22404 -ErrorAction SilentlyContinue; if \\($p\\) { $a = $p.TotalProcessorTime.TotalSeconds; Start-Sleep -Seconds 5; $p.Refresh\\(\\); \"cpu {0:N0}s \\(+{1:N1}s in 5s\\), mem {2:N0} MB\" -f $p.TotalProcessorTime.TotalSeconds, \\($p.TotalProcessorTime.TotalSeconds - $a\\), \\($p.WorkingSet64/1MB\\) } else { \"exited\" }; Get-Date)",
       "Bash(cat > *)",
       "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite real-smoke --snapshot real)",
-      "Bash(time PYTHONIOENCODING=utf-8 uv run ubo eval --suite er --snapshot real)"
+      "Bash(time PYTHONIOENCODING=utf-8 uv run ubo eval --suite er --snapshot real)",
+      "Bash(grep -vE \"^\\\\s*$\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\ankur\\AppData\\Local\\Temp\\claude\\c--Users-ankur-Projects-Claude-knowledge-graph\\eb15ac11-d769-476e-9ea9-de4823bb8440\\scratchpad"
