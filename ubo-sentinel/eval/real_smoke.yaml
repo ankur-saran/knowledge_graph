@@ -1,0 +1,111 @@
+# Real-data smoke entries: invariants that hold on any refresh (`ubo eval --suite real-smoke`).
+#
+# Real results move with every publish, so an entry states what must stay true
+# (`expect`) and keeps the recommendation it had on the set it was verified on.
+# On that set a different recommendation fails the suite; on a newer set it is
+# reported as drift. LEIs and names are GLEIF's (CC0); which lists designate
+# them comes from OpenSanctions (CC BY-NC 4.0) and is summarised, not copied.
+# `ubo bench --lei-file eval/real_smoke.yaml` screens the entries with an LEI.
+
+entries:
+  # --- designated by OFAC; OpenSanctions names them by their LEI ----------------------
+  - id: RS-01
+    lei: 253400WSS48YWMBUA688
+    rationale: Gazprombank (RU); OFAC SDN, the list record states its LEI.
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: ESCALATE
+    expect: {recommendation_not: [CLEAR], reasons_include: [DIRECT_DESIGNATION]}
+  - id: RS-02
+    lei: 549300YWR8TN1OFD4P06
+    rationale: Petroleos de Venezuela S.A. (VE); OFAC SDN (Venezuela programme), by LEI.
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: ESCALATE
+    expect: {recommendation_not: [CLEAR], reasons_include: [DIRECT_DESIGNATION]}
+  - id: RS-03
+    lei: 529900VVDOKMRRAHZ894
+    rationale: Bank GPB International S.A. (LU); OFAC SDN, by LEI.
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: ESCALATE
+    expect: {recommendation_not: [CLEAR], reasons_include: [DIRECT_DESIGNATION]}
+  - id: RS-04
+    lei: 549300S54HVJT5564C37
+    rationale: East-West United Bank S.A. (LU); OFAC SDN, by LEI.
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: ESCALATE
+    expect: {recommendation_not: [CLEAR], reasons_include: [DIRECT_DESIGNATION]}
+  - id: RS-05
+    lei: 213800FXBZXOXNXKWP95
+    rationale: LUKOIL Securities Limited (CY); GLEIF says it is consolidated by an OFAC-designated parent.
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: REVIEW
+    expect: {recommendation_not: [CLEAR]}
+  - id: RS-06
+    lei: K80PJMCDA9MAE5C8IO91
+    rationale: LITASCO SA (CH); consolidated by the same OFAC-designated parent.
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: REVIEW
+    expect: {recommendation_not: [CLEAR]}
+  - id: RS-07
+    lei: 253400WTRHJ2U1RCRA02
+    rationale: Gazprom-Media Holding (RU); GLEIF says Gazprombank consolidates it.
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: REVIEW
+    expect: {recommendation_not: [CLEAR]}
+
+  # --- designated by the UK and the EU, not by OFAC ------------------------------------
+  - id: RS-08
+    lei: 5493005B7DAN39RXLK23
+    rationale: EVRAZ plc (GB); designated by the UK and the EU, not OFAC. The OFAC pack must flag it, not block it.
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: REVIEW
+    expect:
+      recommendation_not: [CLEAR]
+      reasons_exclude: [DIRECT_DESIGNATION]
+
+  # --- well-known issuers no list designates --------------------------------------------
+  - id: RS-09
+    lei: HWUPKR0MPOU8FGXBT394
+    rationale: Apple Inc. (US).
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: CLEAR
+    expect: {recommendation_in: [CLEAR, REVIEW], reasons_exclude: [DIRECT_DESIGNATION, DERIVED_50PCT]}
+  - id: RS-10
+    lei: INR2EJN1ERAN0W5ZP974
+    rationale: Microsoft Corporation (US).
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: CLEAR
+    expect: {recommendation_in: [CLEAR, REVIEW], reasons_exclude: [DIRECT_DESIGNATION, DERIVED_50PCT]}
+  - id: RS-11
+    lei: W38RGI023J3WT1HWRP32
+    rationale: Siemens Aktiengesellschaft (DE).
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: CLEAR
+    expect: {recommendation_in: [CLEAR, REVIEW], reasons_exclude: [DIRECT_DESIGNATION, DERIVED_50PCT]}
+  - id: RS-12
+    lei: MLU0ZO3ML4LN2LL2TL39
+    rationale: HSBC Holdings plc (GB).
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: CLEAR
+    expect: {recommendation_in: [CLEAR, REVIEW], reasons_exclude: [DIRECT_DESIGNATION, DERIVED_50PCT]}
+  - id: RS-13
+    lei: ES7IP3U3RHIGC71XBU11
+    rationale: Royal Bank of Canada (CA).
+    verified_on_set: 895677df269ca2dc
+    verified_recommendation: CLEAR
+    expect: {recommendation_in: [CLEAR, REVIEW], reasons_exclude: [DIRECT_DESIGNATION, DERIVED_50PCT]}
+
+  # --- names that must find their LEI -----------------------------------------------------
+  - id: RS-14
+    query: Apple Inc.
+    jurisdiction: US
+    resolves_to: lei:HWUPKR0MPOU8FGXBT394
+    rationale: the legal name, with its jurisdiction.
+  - id: RS-15
+    query: Petroleos de Venezuela S.A.
+    resolves_to: lei:549300YWR8TN1OFD4P06
+    rationale: the legal name without its accent.
+  - id: RS-16
+    query: Surgutneftegas
+    jurisdiction: RU
+    resolves_to: lei:2138002GZLU65FRAC894
+    rationale: a Latin name of a company whose legal name is Cyrillic.

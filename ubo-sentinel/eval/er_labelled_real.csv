@@ -1,0 +1,51 @@
+query_name,lei,jurisdiction,expected_entity_id,variant_type
+MICROSOFT CORPORATION,,,lei:INR2EJN1ERAN0W5ZP974,exact
+Siemens Aktiengesellschaft,,,lei:W38RGI023J3WT1HWRP32,exact
+HSBC HOLDINGS PLC,,,lei:MLU0ZO3ML4LN2LL2TL39,exact
+NOVARTIS AG,,,lei:5493007HIVTX6SY6XD66,exact
+UNILEVER PLC,,,lei:549300MKFYEKVRWML317,exact
+INTERNATIONAL BUSINESS MACHINES CORPORATION,,,lei:VGRQXHF3J8VDLUA7XE92,exact
+microsoft corporation,,,lei:INR2EJN1ERAN0W5ZP974,case
+novartis ag,,,lei:5493007HIVTX6SY6XD66,case
+basf se,,,lei:529900PM64WH8AF1E917,case
+ROYAL BANK OF CANADA,,,lei:ES7IP3U3RHIGC71XBU11,case
+BP PLC,,,lei:213800LH1BZH3DI6G760,punctuation
+Amazon.com Inc,,,lei:ZXTILKJKG63JELOEG630,punctuation
+Nestle SA,,,lei:KY37LUS27QQX7BB93L28,punctuation
+Coca Cola Company,,US,lei:UWJKFUJFZ02DKWI3RY53,punctuation
+Siemens AG,,,lei:W38RGI023J3WT1HWRP32,legal_form
+Volkswagen AG,,,lei:529900NNUPAGGOMPXZ31,legal_form
+Microsoft Corp,,,lei:INR2EJN1ERAN0W5ZP974,legal_form
+Apple Incorporated,,US,lei:HWUPKR0MPOU8FGXBT394,legal_form
+Shell Public Limited Company,,,lei:21380068P1DRHMJ8KU70,legal_form
+Mircosoft Corporation,,,lei:INR2EJN1ERAN0W5ZP974,typo
+Novartsi AG,,,lei:5493007HIVTX6SY6XD66,typo
+Unilevre PLC,,,lei:549300MKFYEKVRWML317,typo
+Volkswagn Aktiengesellschaft,,,lei:529900NNUPAGGOMPXZ31,typo
+Royal Bank of Canda,,,lei:ES7IP3U3RHIGC71XBU11,typo
+Machines International Business Corporation,,,lei:VGRQXHF3J8VDLUA7XE92,word_order
+Canada Royal Bank of,,,lei:ES7IP3U3RHIGC71XBU11,word_order
+Surgutneftegas,,RU,lei:2138002GZLU65FRAC894,transliteration
+NLMK PJSC,,,lei:213800913TPW32I84456,transliteration
+Sharp Electronics Russia LLC,,,lei:2138003BEQLV9S2ALO67,transliteration
+Zernokomex,,,lei:21380098PB6Q16L3LO21,transliteration
+MATADOR Automotive Rus LLC,,,lei:097900BEMJ0000006171,transliteration
+JSC Novatek,,RU,lei:2138008R6GCRVBDFA581,alias
+BCS Holding LLC,,,lei:21380052EDE2C3IEYR60,alias
+Adorabella AG,,,lei:2138006K8AF4JD339S40,alias
+Apple,HWUPKR0MPOU8FGXBT394,,lei:HWUPKR0MPOU8FGXBT394,lei
+PDVSA,549300YWR8TN1OFD4P06,,lei:549300YWR8TN1OFD4P06,lei
+Deutsche Bank,7LTWFZYICNSX8D621K86,,lei:7LTWFZYICNSX8D621K86,lei
+ABRDN CHINA A SHARE EQUITY FUND,,GB,lei:2138003HVSXSI8TG9O65,homonym
+ABRDN CHINA A SHARE EQUITY FUND,,US,lei:549300K59CL5KE8LVF91,homonym
+ACP IT Solutions GmbH,,DE,lei:391200ZJ83144PAB9I52,homonym
+ACP IT Solutions GmbH,,AT,lei:984500C144D95B2A4B93,homonym
+Gazprombank,,RU,lei:253400WSS48YWMBUA688,merged_record
+Bank GPB International,,LU,lei:529900VVDOKMRRAHZ894,merged_record
+Olympic Entertainment Group,,,lei:097900BHBZ0000064366,merged_record
+East-West United Bank,,,lei:549300S54HVJT5564C37,merged_record
+Qorvantine Blusk Holdings Ltd,,,,negative
+Zephyrine Arklow Maritime LLC,,,,negative
+Vellumstrand Pyxio GmbH,,,,negative
+Trelquist Ombrawind SA,,,,negative
+Kasperine Douloch Trading FZE,,,,negative
