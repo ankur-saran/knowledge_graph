@@ -11,7 +11,10 @@
       "Bash(cat > *)",
       "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite real-smoke --snapshot real)",
       "Bash(time PYTHONIOENCODING=utf-8 uv run ubo eval --suite er --snapshot real)",
-      "Bash(grep -vE \"^\\\\s*$\")"
+      "Bash(grep -vE \"^\\\\s*$\")",
+      "Bash(rm -rf /c/Users/ankur/AppData/Local/Temp/claude/c--Users-ankur-Projects-Claude-knowledge-graph/eb15ac11-d769-476e-9ea9-de4823bb8440/scratchpad/fxeval)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite all)",
+      "PowerShell(Get-Process python | Sort-Object WorkingSet64 -Descending | Select-Object -First 1 | ForEach-Object { $a = $_.TotalProcessorTime.TotalSeconds; Start-Sleep 5; $_.Refresh\\(\\); \"pid {0} cpu {1:N0}s \\(+{2:N1}s/5s\\) mem {3:N0} MB started {4}\" -f $_.Id, $_.TotalProcessorTime.TotalSeconds, \\($_.TotalProcessorTime.TotalSeconds-$a\\), \\($_.WorkingSet64/1MB\\), $_.StartTime }; Get-Date)"
     ],
     "additionalDirectories": [
       "C:\\Users\\ankur\\AppData\\Local\\Temp\\claude\\c--Users-ankur-Projects-Claude-knowledge-graph\\eb15ac11-d769-476e-9ea9-de4823bb8440\\scratchpad"

@@ -2,7 +2,10 @@
 
 Identifiers come first: an LEI, then a registration number. A name is matched
 exactly in its normalised form, then by similarity within its blocks, with the
-scorer Silver links entities with.
+scorer Silver links entities with. Normalising drops legal forms, so names of
+one company in many countries tie ("Siemens AG", "Siemens Limited", "Siemens
+SAS"); a tie goes to the jurisdiction asked for, then to the name whose legal
+form is the query's (`form_similarity`), then to the smaller id.
 """
 
 import csv
@@ -15,7 +18,11 @@ from ubo_sentinel.graph.store import GraphStore, id_list
 from ubo_sentinel.models.graph import CandidateLink, EntityMatch
 from ubo_sentinel.pipeline.entity_linking import BLOCK_PREFIX_LENGTH, LINK_FLOOR
 from ubo_sentinel.pipeline.jurisdiction import normalise_jurisdiction
-from ubo_sentinel.pipeline.name_match import normalise_name, similarity_normalised
+from ubo_sentinel.pipeline.name_match import (
+    form_similarity,
+    normalise_name,
+    similarity_normalised,
+)
 
 # Lowest name score that is returned as a candidate. A rule pack's review band
 # may not start below it.
@@ -42,7 +49,8 @@ def resolve(
 
     An identifier that matches decides alone. Otherwise candidates are names
     scoring at least `RESOLVE_FLOOR`, ordered by score, then by whether the
-    jurisdiction is the one asked for, then by id. Jurisdiction never filters.
+    jurisdiction is the one asked for, then by how closely the name with its
+    legal form matches the query's, then by id. Jurisdiction never filters.
     """
     lei = lei or (query.strip().upper() if _LEI.match(query.strip().upper()) else None)
     jurisdiction = normalise_jurisdiction(jurisdiction)
@@ -55,7 +63,7 @@ def resolve(
         if found:
             return _with_links(store, found[:max_candidates])
 
-    scored = _score_names(store, normalise_name(query))
+    scored = _score_names(store, query)
     if not scored:
         return []
     nodes = _nodes(store, sorted(scored))
@@ -67,12 +75,13 @@ def resolve(
             matched_name=name,
             **_display(nodes[node_id]),
         )
-        for node_id, (score, exact, name) in scored.items()
+        for node_id, (score, exact, _, name) in scored.items()
     ]
 
-    def rank(match: EntityMatch) -> tuple[float, bool, str]:
+    def rank(match: EntityMatch) -> tuple[float, bool, float, str]:
         elsewhere = jurisdiction is not None and match.jurisdiction != jurisdiction
-        return (-match.confidence, elsewhere, match.entity_id)
+        form = scored[match.entity_id][2]
+        return (-match.confidence, elsewhere, -form, match.entity_id)
 
     matches.sort(key=rank)
     return _with_links(store, matches[:max_candidates])
@@ -138,8 +147,10 @@ def _by_identifier(
     ]
 
 
-def _score_names(store: GraphStore, query_norm: str) -> dict[str, tuple[float, bool, str]]:
-    """Node id -> (best score, whether a name is the query exactly, that name)."""
+def _score_names(store: GraphStore, query: str) -> dict[str, tuple[float, bool, float, str]]:
+    """Node id -> (best score, whether a name is the query exactly, how closely that
+    name with its legal form matches the query's, that name)."""
+    query_norm = normalise_name(query)
     blocks = sorted({token[:BLOCK_PREFIX_LENGTH] for token in query_norm.split()})
     if not blocks:
         return {}
@@ -165,14 +176,14 @@ def _score_names(store: GraphStore, query_norm: str) -> dict[str, tuple[float, b
         ).fetchall()
         in_hand += size
 
-    best: dict[str, tuple[float, bool, str]] = {}
+    best: dict[str, tuple[float, bool, float, str]] = {}
     for node_id, name, name_norm in sorted(set(names)):
         score = similarity_normalised(query_norm, name_norm)
         if score < RESOLVE_FLOOR:
             continue
-        found = (score, name_norm == query_norm, name)
-        # The higher score wins; between equal scores, the first name in order.
-        if node_id not in best or found[:2] > best[node_id][:2]:
+        found = (score, name_norm == query_norm, form_similarity(query, name), name)
+        # The higher score wins, then the closer legal form; then the first name in order.
+        if node_id not in best or found[:3] > best[node_id][:3]:
             best[node_id] = found
     return best
 

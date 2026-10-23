@@ -425,6 +425,34 @@ def test_jurisdiction_ranks_homonyms_and_never_filters(store):
     assert queries.resolve_entity(store, name, jurisdiction="ZZ") == both
 
 
+def test_namesakes_are_ordered_by_jurisdiction_then_legal_form(con, ontology, t0_copy):
+    """Normalising drops legal forms, so these three tie at 1.0; the form breaks the tie."""
+    rows = [
+        f"fx_registry,s99-{tag},2026-09-01,1.0,FXS99{tag.upper():0<15},,,Kestrel Anvil {form},,"
+        f"{country},ACTIVE,ISSUED,LegalEntity"
+        for tag, form, country in (
+            ("ag", "Aktiengesellschaft", "DE"),
+            ("ltd", "Limited", "GB"),
+            ("sas", "SAS", "FR"),
+        )
+    ]
+    path = t0_copy / "entities.csv"
+    text = path.read_text(encoding="utf-8") + "\n".join(rows) + "\n"
+    path.write_text(text, encoding="utf-8", newline="\n")
+    with GraphStore.open(build_graph(con, ontology, t0_copy), con) as store:
+
+        def first(query, **kwargs):
+            found = queries.resolve_entity(store, query, **kwargs)
+            assert {m.confidence for m in found[:3]} == {1.0}
+            return found[0].entity_id.removeprefix("lei:FXS99")[:3]
+
+        assert first("Kestrel Anvil AG") == "AG0"
+        assert first("Kestrel Anvil Ltd") == "LTD"
+        assert first("Kestrel Anvil S.A.S.") == "SAS"
+        # The jurisdiction asked for comes before the legal form.
+        assert first("Kestrel Anvil AG", jurisdiction="FR") == "SAS"
+
+
 def test_resolution_meets_the_bar_on_the_labelled_set(store):
     report = evaluate_labelled(store, ER_PATH)
     assert report.total >= 35

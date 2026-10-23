@@ -42,7 +42,7 @@ from ubo_sentinel.pipeline.sources import SOURCE_RANK
 
 # Raise this when a change here alters the rows Silver holds for the same Bronze
 # rows. A set built by another version is not reused.
-TRANSFORM_VERSION = 3
+TRANSFORM_VERSION = 4
 
 REJECT_UNRESOLVED_REF = "UNRESOLVED_REF"
 REJECT_SELF_LOOP = "SELF_LOOP_AFTER_MERGE"
