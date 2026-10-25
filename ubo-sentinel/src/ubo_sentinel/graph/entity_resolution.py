@@ -16,7 +16,7 @@ from typing import Any
 
 from ubo_sentinel.graph.store import GraphStore, id_list
 from ubo_sentinel.models.graph import CandidateLink, EntityMatch
-from ubo_sentinel.pipeline.entity_linking import BLOCK_PREFIX_LENGTH, LINK_FLOOR
+from ubo_sentinel.pipeline.entity_linking import BLOCK_PREFIX_LENGTH
 from ubo_sentinel.pipeline.jurisdiction import normalise_jurisdiction
 from ubo_sentinel.pipeline.name_match import (
     form_similarity,
@@ -24,9 +24,11 @@ from ubo_sentinel.pipeline.name_match import (
     similarity_normalised,
 )
 
-# Lowest name score that is returned as a candidate. A rule pack's review band
-# may not start below it.
-RESOLVE_FLOOR = LINK_FLOOR
+# Lowest name score that is returned as a candidate. Below Silver's link floor
+# (`LINK_FLOOR`): a candidate is shown to a person, who chooses, so a typo is
+# better found than missed; a link carries a designation unseen, so it is held
+# to more.
+RESOLVE_FLOOR = 0.75
 
 # Names scored for one query at most. Blocks are read from the rarest to the
 # most common until this many names are in hand.

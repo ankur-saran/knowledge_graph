@@ -14,7 +14,12 @@
       "Bash(grep -vE \"^\\\\s*$\")",
       "Bash(rm -rf /c/Users/ankur/AppData/Local/Temp/claude/c--Users-ankur-Projects-Claude-knowledge-graph/eb15ac11-d769-476e-9ea9-de4823bb8440/scratchpad/fxeval)",
       "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite all)",
-      "PowerShell(Get-Process python | Sort-Object WorkingSet64 -Descending | Select-Object -First 1 | ForEach-Object { $a = $_.TotalProcessorTime.TotalSeconds; Start-Sleep 5; $_.Refresh\\(\\); \"pid {0} cpu {1:N0}s \\(+{2:N1}s/5s\\) mem {3:N0} MB started {4}\" -f $_.Id, $_.TotalProcessorTime.TotalSeconds, \\($_.TotalProcessorTime.TotalSeconds-$a\\), \\($_.WorkingSet64/1MB\\), $_.StartTime }; Get-Date)"
+      "PowerShell(Get-Process python | Sort-Object WorkingSet64 -Descending | Select-Object -First 1 | ForEach-Object { $a = $_.TotalProcessorTime.TotalSeconds; Start-Sleep 5; $_.Refresh\\(\\); \"pid {0} cpu {1:N0}s \\(+{2:N1}s/5s\\) mem {3:N0} MB started {4}\" -f $_.Id, $_.TotalProcessorTime.TotalSeconds, \\($_.TotalProcessorTime.TotalSeconds-$a\\), \\($_.WorkingSet64/1MB\\), $_.StartTime }; Get-Date)",
+      "PowerShell(Get-Process python | Sort-Object WorkingSet64 -Descending | Select-Object -First 2 | ForEach-Object { $a = $_.TotalProcessorTime.TotalSeconds; Start-Sleep 5; $_.Refresh\\(\\); \"pid {0} cpu {1:N0}s \\(+{2:N1}s/5s\\) mem {3:N0} MB started {4}\" -f $_.Id, $_.TotalProcessorTime.TotalSeconds, \\($_.TotalProcessorTime.TotalSeconds-$a\\), \\($_.WorkingSet64/1MB\\), $_.StartTime }; Get-Date; Get-ChildItem C:\\\\Users\\\\ankur\\\\Projects\\\\Claude\\\\knowledge_graph\\\\ubo-sentinel\\\\var\\\\ | Select-Object Name, Length, LastWriteTime)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite er --snapshot real)",
+      "Bash(UBO_DB=/c/Users/ankur/AppData/Local/Temp/claude/c--Users-ankur-Projects-Claude-knowledge-graph/eb15ac11-d769-476e-9ea9-de4823bb8440/scratchpad/fxeval/ubo.duckdb PYTHONIOENCODING=utf-8 uv run python -c ' *)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite pipeline --update-golden)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite pipeline)"
     ],
     "additionalDirectories": [
       "C:\\Users\\ankur\\AppData\\Local\\Temp\\claude\\c--Users-ankur-Projects-Claude-knowledge-graph\\eb15ac11-d769-476e-9ea9-de4823bb8440\\scratchpad"

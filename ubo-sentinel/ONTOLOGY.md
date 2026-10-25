@@ -22,7 +22,7 @@ Both labels have the same properties: `id`, `lei`, `registration_authority_id`, 
 - Records that share an LEI are one entity. So are records that share a registration authority and number, unless that would put two LEIs or two entity types in one entity; those two entities are linked instead.
 - The entity is described by one of its records: a registry's before a list's, then the newest. A field that record leaves empty comes from the next record. `aliases` holds every other name and alias of every record.
 - `supporting_records` lists every record of the entity, including the one that describes it.
-- Entities with similar names are never merged. A pair that scores at least 0.75 is a link with that score as its confidence, unless both have an LEI or their jurisdictions differ.
+- Entities with similar names are never merged. A pair that scores at least 0.85 is a link with that score as its confidence, unless both have an LEI or their jurisdictions differ.
 
 ## Edges
 

@@ -192,7 +192,7 @@ def test_inactive_and_weak_matches_seed_nothing():
     subgraph = graph("T", [edge("A", "T", 60)])
     assert evaluate(subgraph, [designated("A", active=False)]).recommendation == "CLEAR"
     weak = designated("A", by="X", confidence=0.78)
-    assert evaluate(subgraph, [weak], review_band_low=0.8).recommendation == "CLEAR"
+    assert evaluate(subgraph, [weak]).recommendation == "CLEAR"
     assert evaluate(subgraph, [weak]).possibly_blocked_set == ["A", "T"]
 
 
@@ -507,7 +507,7 @@ def test_a_linked_record_with_owners_of_its_own_is_a_gap():
         link("T", "A"),
     ):
         same = graph("T", [edge("A", "T", 100)], links=[quiet])
-        assert evaluate(same, review_band_low=0.8).recommendation == "CLEAR"
+        assert evaluate(same).recommendation == "CLEAR"
 
 
 # --- the command ------------------------------------------------------------------------

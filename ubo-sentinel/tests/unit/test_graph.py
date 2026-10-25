@@ -459,7 +459,7 @@ def test_resolution_meets_the_bar_on_the_labelled_set(store):
     assert report.precision_at_1 >= 0.95, report.misses
     # No negative row returns a candidate at or above the floor.
     assert report.false_candidates == []
-    assert RESOLVE_FLOOR == LINK_FLOOR
+    assert RESOLVE_FLOOR < LINK_FLOOR
 
 
 def test_candidates_say_which_of_them_are_linked(store):

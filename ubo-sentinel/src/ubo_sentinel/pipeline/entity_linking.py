@@ -9,8 +9,13 @@ from collections.abc import Iterable
 
 # Lowest name score that is stored as a link. Silver is built per snapshot set,
 # not per rule pack, so it stores links and the rule engine classifies them; a
-# rule pack's `review_band_low` may not be below this.
-LINK_FLOOR = 0.75
+# rule pack's `review_band_low` may not be below this. A link carries a
+# designation to an entity with no one choosing it, so it must be precise: on
+# the first real refresh (10.7), once legal forms were stripped, every sampled
+# link below 0.85 was two unrelated names sharing one word ("king kong" and
+# "hong kong"). Query resolution, whose candidates a person chooses among, has
+# its own lower floor (`RESOLVE_FLOOR`).
+LINK_FLOOR = 0.85
 
 # Names are compared only when they share the first letters of some word.
 BLOCK_PREFIX_LENGTH = 4

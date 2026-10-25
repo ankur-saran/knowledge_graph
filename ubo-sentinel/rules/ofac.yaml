@@ -20,7 +20,7 @@ other_designations: review
 # A designation that reaches an entity by name only blocks at or above
 # `match_threshold` and is a review-band match down to `review_band_low`.
 match_threshold: 0.92
-review_band_low: 0.75
+review_band_low: 0.85
 # true: a name match at or above `match_threshold` blocks only when both records
 # state a jurisdiction and it is the same one; otherwise it is a review-band match.
 name_match_requires_jurisdiction: true
