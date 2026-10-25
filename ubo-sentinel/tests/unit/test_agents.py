@@ -380,7 +380,7 @@ def test_what_if_says_what_the_review_decides(screen):
 def test_what_if_shows_a_match_that_does_not_matter():
     engine = RuleEngine(PACK)
     subgraph = graph("T", [edge("O", "T", 5)])
-    matches = [designated("O", by="L", confidence=0.8)]
+    matches = [designated("O", by="L", confidence=0.88)]
     result = engine.evaluate(subgraph, matches)
     assert result.recommendation == "REVIEW"
     found = what_if(engine, subgraph, matches, result)

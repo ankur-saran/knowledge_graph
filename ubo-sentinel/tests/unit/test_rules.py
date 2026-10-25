@@ -191,20 +191,21 @@ def test_the_class_of_a_match_does_not_depend_on_how_its_record_was_joined():
 def test_inactive_and_weak_matches_seed_nothing():
     subgraph = graph("T", [edge("A", "T", 60)])
     assert evaluate(subgraph, [designated("A", active=False)]).recommendation == "CLEAR"
-    weak = designated("A", by="X", confidence=0.78)
-    assert evaluate(subgraph, [weak]).recommendation == "CLEAR"
+    weak = designated("A", by="X", confidence=0.88)
+    # Below the review band: nothing; inside it: possibly blocked.
+    assert evaluate(subgraph, [weak], review_band_low=0.9).recommendation == "CLEAR"
     assert evaluate(subgraph, [weak]).possibly_blocked_set == ["A", "T"]
 
 
 def test_a_blocking_match_outranks_a_review_band_match_on_one_node():
     subgraph = graph("T", [edge("A", "T", 60)])
-    result = evaluate(subgraph, [designated("A"), designated("A", by="X", confidence=0.8)])
+    result = evaluate(subgraph, [designated("A"), designated("A", by="X", confidence=0.88)])
     assert result.blocked_set == ["A", "T"] and not result.data_gaps
 
 
 def test_a_review_band_match_on_a_node_the_legal_test_blocks_adds_nothing():
     subgraph = graph("T", [edge("A", "X", 60), edge("X", "T", 10)])
-    result = evaluate(subgraph, [designated("A"), designated("X", by="L", confidence=0.8)])
+    result = evaluate(subgraph, [designated("A"), designated("X", by="L", confidence=0.88)])
     assert (result.blocked_set, result.possibly_blocked_set) == (["A", "X"], [])
     assert result.recommendation == "CLEAR" and not result.data_gaps
 

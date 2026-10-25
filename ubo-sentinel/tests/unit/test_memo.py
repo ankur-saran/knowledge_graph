@@ -120,7 +120,8 @@ def test_a_gap_is_a_cited_claim_and_a_next_action():
         lei_statuses={"A": "LAPSED"},
         links=[link("T", "X", confidence=0.9)],
     )
-    memo, result = memo_of(subgraph, [designated("P", by="L", confidence=0.8)], referenced=[LISTED])
+    band = designated("P", by="L", confidence=0.88)
+    memo, result = memo_of(subgraph, [band], referenced=[LISTED])
     assert memo.recommendation == "REVIEW"
     gaps = {(claim.params["gap"], claim.subject_id): claim for claim in claims(memo, "DATA_GAP")}
     assert {code for code, _ in gaps} == {

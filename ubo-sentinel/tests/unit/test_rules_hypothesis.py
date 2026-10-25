@@ -95,7 +95,7 @@ def cases(draw, ultimate=True):
         elif kind == "other_list":
             matches.append(designated(node, list_source=OTHER_LIST))
         elif kind == "band":
-            matches.append(designated(node, by="L", confidence=0.8))
+            matches.append(designated(node, by="L", confidence=0.88))
         elif kind == "refused":
             matches.append(designated(node, by="L", match_type="REGISTRATION"))
         else:

@@ -19,7 +19,10 @@
       "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite er --snapshot real)",
       "Bash(UBO_DB=/c/Users/ankur/AppData/Local/Temp/claude/c--Users-ankur-Projects-Claude-knowledge-graph/eb15ac11-d769-476e-9ea9-de4823bb8440/scratchpad/fxeval/ubo.duckdb PYTHONIOENCODING=utf-8 uv run python -c ' *)",
       "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite pipeline --update-golden)",
-      "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite pipeline)"
+      "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite pipeline)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python -c ' *)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite all --snapshot real)",
+      "Bash(git -C /c/Users/ankur/Projects/Claude/knowledge_graph/ubo-sentinel status --short .)"
     ],
     "additionalDirectories": [
       "C:\\Users\\ankur\\AppData\\Local\\Temp\\claude\\c--Users-ankur-Projects-Claude-knowledge-graph\\eb15ac11-d769-476e-9ea9-de4823bb8440\\scratchpad"
