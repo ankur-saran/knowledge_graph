@@ -1,5 +1,6 @@
 """Schema for `ontology/ontology.yaml` and its loader."""
 
+import os
 from pathlib import Path
 from typing import Literal, Self, get_args
 
@@ -12,6 +13,15 @@ from ubo_sentinel.models.relationship import RelType
 
 Role = Literal["analyst", "reviewer", "auditor", "engineer"]
 DecisionRight = Literal["APPROVED", "OVERRIDDEN", "ESCALATED"]
+
+# Commands are run from the repository root; `ubo ui` names the file absolutely,
+# so the review UI finds it from wherever Streamlit runs it.
+DEFAULT_ONTOLOGY_PATH = Path("ontology/ontology.yaml")
+ONTOLOGY_ENV_VAR = "UBO_ONTOLOGY"
+
+
+def ontology_path() -> Path:
+    return Path(os.environ.get(ONTOLOGY_ENV_VAR) or DEFAULT_ONTOLOGY_PATH)
 
 
 class _Spec(BaseModel):

@@ -306,6 +306,18 @@ def test_a_recorded_decision_is_read_through_the_view(decision, view):
     assert analyst.get_decision_by_id("0000000000000000") is None
 
 
+def test_a_decision_is_read_from_the_callers_log(con, graph_t0, ontology, view, tmp_path):
+    """`ubo eval` and the UI keep logs of their own; the default is `UBO_VAR`'s."""
+    scratch = AuditLog(tmp_path / "scratch")
+    request = ScreenRequest(query="Halcyon Ridge Minerals Ltd", snapshot=graph_t0)
+    decision = Supervisor(ontology, scratch).run(request, con).decision
+    store = view("reviewer").store
+    assert queries.get_decision_by_id(store, decision.decision_id) is None
+    assert queries.get_decision_by_id(store, decision.decision_id, scratch) == decision
+    found = view("analyst").get_decision_by_id(decision.decision_id, scratch)
+    assert found.masked and found.decision_id == decision.decision_id
+
+
 def test_a_query_that_is_a_persons_name_is_not_shown_back(con, graph_t0, ontology):
     request = ScreenRequest(query="Dmitri Volkanov", snapshot=graph_t0)
     person = Supervisor(ontology).run(request, con).decision

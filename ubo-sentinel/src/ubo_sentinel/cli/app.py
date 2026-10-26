@@ -11,10 +11,10 @@ import yaml
 from pydantic import ValidationError
 
 from ubo_sentinel import __version__
-from ubo_sentinel.models.ontology import load_ontology, require_command
+from ubo_sentinel.models.ontology import load_ontology, ontology_path, require_command
 
-# Commands are run from the repository root.
-ONTOLOGY_PATH = Path("ontology/ontology.yaml")
+# Commands are run from the repository root; `UBO_ONTOLOGY` names another file.
+ONTOLOGY_PATH = ontology_path()
 
 app = typer.Typer(
     name="ubo",
@@ -83,4 +83,5 @@ from ubo_sentinel.cli import (  # noqa: E402, F401
     review_cmd,
     sample_cmd,
     screen_cmd,
+    ui_cmd,
 )

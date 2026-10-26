@@ -1,0 +1,7 @@
+# The review UI is local-first: served to this machine only, no usage statistics sent.
+[server]
+address = "localhost"
+headless = true
+
+[browser]
+gatherUsageStats = false

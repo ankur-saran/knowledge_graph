@@ -5,19 +5,16 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated
 
-import duckdb
 import typer
 import yaml
 
 from ubo_sentinel.audit.log import AuditChainError, AuditLog
-from ubo_sentinel.audit.review import pending, review_decision, unscreened
+from ubo_sentinel.audit.review import is_superseded, pending, review_decision, unscreened
 from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
 from ubo_sentinel.cli.show import RenderWithheld, audit_head, decision_text, utf8_stdout
 from ubo_sentinel.graph.views import mask_decision
 from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.ontology import OntologyConfig, load_ontology
-from ubo_sentinel.pipeline.bronze import newest_set_of_family
-from ubo_sentinel.pipeline.db import connect, db_path
 
 
 class Action(StrEnum):
@@ -29,26 +26,6 @@ class Action(StrEnum):
 class Outcome(StrEnum):
     clear = "CLEAR"
     escalate = "ESCALATE"
-
-
-def is_superseded(decision: Decision) -> bool | None:
-    """True when a newer snapshot set of the decision's family exists; None when unknown.
-
-    A review needs no database: one that is missing, or held by a writer, is "unknown".
-    """
-    if not db_path().exists():
-        return None
-    try:
-        con = connect(read_only=True)
-    except duckdb.Error:
-        return None
-    try:
-        newest = newest_set_of_family(con, decision.snapshot_set_id)
-    except duckdb.Error:
-        return None
-    finally:
-        con.close()
-    return None if newest is None else newest != decision.snapshot_set_id
 
 
 def _history_lines(log: AuditLog, decision: Decision) -> list[str]:

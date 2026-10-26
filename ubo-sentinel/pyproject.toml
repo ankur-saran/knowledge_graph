@@ -58,7 +58,11 @@ source = [
     "src/ubo_sentinel/graph",
     "src/ubo_sentinel/audit",
     "src/ubo_sentinel/agents",
+    "src/ubo_sentinel/ui",
 ]
+# The Streamlit page is glue, run by `tests/unit/test_ui.py` through AppTest;
+# what it shows is decided in `ui/panels.py` and `ui/graph_viz.py`, which are gated.
+omit = ["src/ubo_sentinel/ui/app.py"]
 
 [tool.coverage.report]
 fail_under = 95

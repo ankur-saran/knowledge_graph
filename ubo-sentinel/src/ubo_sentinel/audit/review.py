@@ -12,6 +12,8 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Literal
 
+import duckdb
+
 from ubo_sentinel.audit.log import REVIEW_EVENTS, AuditLog
 from ubo_sentinel.models.canonical import sha256_hex
 from ubo_sentinel.models.decision import (
@@ -23,6 +25,8 @@ from ubo_sentinel.models.decision import (
 from ubo_sentinel.models.evidence import ReasonCode
 from ubo_sentinel.models.memo import Memo
 from ubo_sentinel.models.ontology import OntologyConfig
+from ubo_sentinel.pipeline.bronze import newest_set_of_family
+from ubo_sentinel.pipeline.db import connect, db_path
 
 Action = Literal["approve", "override", "escalate"]
 # How a reviewer settled the matches the rules could not: all confirmed, or all rejected.
@@ -109,11 +113,51 @@ def settle(
     return status, outcome, basis
 
 
+def check_stale(
+    decision: Decision,
+    outcome: FinalOutcome,
+    reason: str | None,
+    superseded: bool | None,
+    accept_stale: bool,
+) -> None:
+    """Raise `ReviewError` for a CLEAR on older data that the reviewer has not accepted as such."""
+    if outcome != "CLEAR" or not superseded:
+        return
+    if not accept_stale:
+        raise ReviewError(
+            f"Decision {decision.decision_id} was made on snapshot set {decision.snapshot_set_id},"
+            " and newer data exists: screen the entity again on it, or escalate."
+            " To clear on the older data all the same, accept it as stale and give a reason."
+        )
+    if not (reason or "").strip():
+        raise ReviewError("Clearing a decision made on older data needs a reason.")
+
+
 def _memo(decision: Decision) -> Memo | None:
     try:
         return Memo.model_validate(decision.memo_json)
     except ValueError:
         return None
+
+
+def is_superseded(decision: Decision) -> bool | None:
+    """True when a newer snapshot set of the decision's family exists; None when unknown.
+
+    A review needs no database: one that is missing, or held by a writer, is "unknown".
+    """
+    if not db_path().exists():
+        return None
+    try:
+        con = connect(read_only=True)
+    except duckdb.Error:
+        return None
+    try:
+        newest = newest_set_of_family(con, decision.snapshot_set_id)
+    except duckdb.Error:
+        return None
+    finally:
+        con.close()
+    return None if newest is None else newest != decision.snapshot_set_id
 
 
 def same_actor(one: str, other: str) -> bool:
@@ -150,15 +194,7 @@ def review_decision(
     if decision is None:
         raise ReviewError(f"No decision '{decision_id}' is on record.")
     status, outcome, basis = settle(decision, action, outcome, reason, matches)
-    if outcome == "CLEAR" and superseded:
-        if not accept_stale:
-            raise ReviewError(
-                f"Decision {decision_id} was made on snapshot set {decision.snapshot_set_id},"
-                " and newer data exists: screen the entity again on it, or escalate."
-                " To clear on the older data all the same, accept it as stale and give a reason."
-            )
-        if not (reason or "").strip():
-            raise ReviewError("Clearing a decision made on older data needs a reason.")
+    check_stale(decision, outcome, reason, superseded, accept_stale)
 
     def guard(records: list[dict[str, Any]]) -> None:
         events = [record for record in records if record["decision_id"] == decision_id]

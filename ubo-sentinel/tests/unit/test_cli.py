@@ -65,3 +65,43 @@ def test_shipped_ontology_defines_the_four_roles():
     from ubo_sentinel.cli.app import load_permissions
 
     assert set(load_permissions()) == {"analyst", "reviewer", "auditor", "engineer"}
+
+
+def test_the_ontology_can_be_named_by_the_environment(monkeypatch, tmp_path):
+    from ubo_sentinel.models.ontology import DEFAULT_ONTOLOGY_PATH, ontology_path
+
+    monkeypatch.delenv("UBO_ONTOLOGY", raising=False)
+    assert ontology_path() == DEFAULT_ONTOLOGY_PATH
+    monkeypatch.setenv("UBO_ONTOLOGY", str(tmp_path / "other.yaml"))
+    assert ontology_path() == tmp_path / "other.yaml"
+
+
+def test_ui_dry_run_names_a_local_server_and_the_role():
+    from ubo_sentinel.cli.ui_cmd import APP_PATH
+
+    result = runner.invoke(app, ["ui", "--role", "reviewer", "--port", "8600", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert APP_PATH.exists() and APP_PATH.name in result.output
+    for words in ("--server.address localhost", "--browser.gatherUsageStats false",
+                  "--server.port 8600", "-- --role reviewer"):  # fmt: skip
+        assert words in result.output
+
+
+def test_ui_starts_streamlit_from_here_with_the_ontology_named(monkeypatch):
+    from ubo_sentinel.cli import ui_cmd
+
+    started = {}
+
+    def call(command, cwd, env):
+        started.update(command=command, cwd=cwd, env=env)
+        return 0
+
+    monkeypatch.setattr(ui_cmd.subprocess, "call", call)
+    result = runner.invoke(app, ["ui"])
+    assert result.exit_code == 0, result.output
+    assert started["command"][1:4] == ["-m", "streamlit", "run"]
+    assert started["env"]["UBO_ONTOLOGY"] == str(ONTOLOGY_PATH.resolve())
+
+
+def test_ui_is_refused_to_an_unknown_role():
+    assert runner.invoke(app, ["ui", "--role", "intern", "--dry-run"]).exit_code == 2

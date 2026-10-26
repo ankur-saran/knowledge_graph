@@ -212,10 +212,13 @@ def get_source_record(store: GraphStore, provenance: Provenance) -> dict[str, An
 
 
 @query
-def get_decision_by_id(store: GraphStore, decision_id: str) -> Decision | None:
+def get_decision_by_id(
+    store: GraphStore, decision_id: str, log: AuditLog | None = None
+) -> Decision | None:
     """A recorded decision, with its review if it has one. None when there is no such decision.
 
     Decisions live in the audit log, not in the graph: the store only logs the
-    call, and a decision made on another snapshot set is returned as well.
+    call, and a decision made on another snapshot set is returned as well. The
+    log is the caller's (`ubo eval` keeps a scratch one); by default, `UBO_VAR`'s.
     """
-    return AuditLog().decision(decision_id)
+    return (log or AuditLog()).decision(decision_id)

@@ -14,6 +14,7 @@ from typing import Any
 
 import duckdb
 
+from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.graph import queries
 from ubo_sentinel.graph.store import GraphStore, id_list
 from ubo_sentinel.models.canonical import sha256_hex, short_id
@@ -312,10 +313,12 @@ class GraphView:
             }
         return record
 
-    def get_decision_by_id(self, decision_id: str) -> DecisionView | None:
-        """A recorded decision as this role sees it."""
+    def get_decision_by_id(
+        self, decision_id: str, log: AuditLog | None = None
+    ) -> DecisionView | None:
+        """A recorded decision as this role sees it, from the caller's log or `UBO_VAR`'s."""
         self._require_graph()
-        found = queries.get_decision_by_id(self.store, decision_id)
+        found = queries.get_decision_by_id(self.store, decision_id, log)
         return self.mask_decision(found) if found else None
 
     # --- masking ------------------------------------------------------------------------

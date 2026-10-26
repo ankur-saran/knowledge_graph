@@ -47,6 +47,8 @@ ARGS = {
     "review": ["review"],
     "audit-verify": ["audit", "verify"],
     "audit-replay": ["audit", "replay", "{decision_id}"],
+    # Prints the command that starts the UI: no server is started under test.
+    "ui": ["ui", "--dry-run"],
 }
 
 
