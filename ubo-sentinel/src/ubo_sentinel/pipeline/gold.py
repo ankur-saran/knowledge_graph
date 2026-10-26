@@ -27,7 +27,10 @@ _PROVENANCE = """
     confidence DOUBLE NOT NULL"""
 
 # Table -> (columns after `snapshot_set_id`, key within a set). The key orders
-# the rows for `gold_digest`.
+# the rows for `gold_digest`, and the build checks it is unique. The tables have
+# no PRIMARY KEY and no index, as in Silver: no screen's lookup used them (each is
+# a scan pruned by zone maps), and on a registry-sized set deleting a set's rows
+# for a rebuild took 90 minutes with them.
 _TABLES: dict[str, tuple[str, str]] = {
     # `up_degree` counts the edges the node is the lower end of (its owners,
     # parents and controllers); `down_degree` the edges it is the upper end of.
@@ -116,12 +119,6 @@ CREATE TABLE IF NOT EXISTS gold_builds (
 )
 """
 
-_INDEXES = (
-    "CREATE INDEX IF NOT EXISTS graph_edges_lower ON graph_edges (snapshot_set_id, lower_id)",
-    "CREATE INDEX IF NOT EXISTS graph_edges_upper ON graph_edges (snapshot_set_id, upper_id)",
-    "CREATE INDEX IF NOT EXISTS graph_sanctions_node ON graph_sanctions (snapshot_set_id, node_id)",
-)
-
 _PROV = "source, source_record_id, snapshot_id, as_of, confidence"
 
 
@@ -144,10 +141,21 @@ def _column_names(columns: str) -> list[str]:
 
 
 def _drop_outdated(con: duckdb.DuckDBPyConnection) -> None:
-    """Drop Gold when a table has the columns of an earlier version.
+    """Drop Gold when a table has the columns, key constraint or indexes of an earlier version.
 
     Gold is derived from Silver, so nothing is lost: `ubo build-graph` builds it again.
     """
+    keyed = con.execute(
+        "SELECT table_name FROM duckdb_constraints()"
+        " WHERE constraint_type = 'PRIMARY KEY' AND table_name IN (SELECT unnest($1))"
+        " UNION ALL SELECT table_name FROM duckdb_indexes()"
+        " WHERE table_name IN (SELECT unnest($1))",
+        [list(_TABLES)],
+    ).fetchall()
+    if keyed:
+        for table in (*_TABLES, "gold_builds"):
+            con.execute(f"DROP TABLE IF EXISTS {table}")
+        return
     existing: dict[str, list[str]] = {}
     for table, column in con.execute(
         "SELECT table_name, column_name FROM information_schema.columns"
@@ -164,14 +172,11 @@ def _drop_outdated(con: duckdb.DuckDBPyConnection) -> None:
 
 def create_schema(con: duckdb.DuckDBPyConnection) -> None:
     _drop_outdated(con)
-    for table, (columns, key) in _TABLES.items():
+    for table, (columns, _) in _TABLES.items():
         con.execute(
-            f"CREATE TABLE IF NOT EXISTS {table} (\n    snapshot_set_id TEXT NOT NULL,{columns},"
-            f"\n    PRIMARY KEY (snapshot_set_id, {key})\n)"
+            f"CREATE TABLE IF NOT EXISTS {table} (\n    snapshot_set_id TEXT NOT NULL,{columns}\n)"
         )
     con.execute(_BUILDS_DDL)
-    for index in _INDEXES:
-        con.execute(index)
 
 
 def gold_digest(con: duckdb.DuckDBPyConnection, snapshot_set_id: str, silver_digest: str) -> str:
@@ -237,8 +242,6 @@ def build_gold(con: duckdb.DuckDBPyConnection, snapshot_set: SnapshotSet) -> Gol
     if existing is not None and _is_current(existing, silver_digest):
         return GoldSummary(set_id, "already built", existing["counts"], existing["gold_digest"])
 
-    # Deleted in a transaction of its own: DuckDB does not let one transaction
-    # delete a key and insert it again.
     if existing is not None:
         with transaction(con):
             for table in (*GOLD_TABLES, "gold_builds"):
@@ -379,6 +382,16 @@ def _check(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
         found = con.execute(sql, [set_id]).fetchone()[0]
         if found:
             raise GoldError(f"Snapshot set {set_id}: {found} {problem}.")
+
+    for table, (_, key) in _TABLES.items():
+        rows, keys = con.execute(
+            f"SELECT count(*), count(DISTINCT ({key})) FROM {table} WHERE snapshot_set_id = ?",
+            [set_id],
+        ).fetchone()
+        if rows != keys:
+            raise GoldError(
+                f"Snapshot set {set_id}: {table} has {rows - keys} rows that share a key ({key})."
+            )
 
     for gold_table, silver_table in (
         ("graph_nodes", "silver_entities"),

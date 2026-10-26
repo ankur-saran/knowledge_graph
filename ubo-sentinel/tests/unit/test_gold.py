@@ -5,13 +5,14 @@ from conftest import build_graph
 from typer.testing import CliRunner
 
 from ubo_sentinel.cli.app import app
-from ubo_sentinel.pipeline import transformer
+from ubo_sentinel.pipeline import gold, transformer
 from ubo_sentinel.pipeline.bronze import resolve_set
 from ubo_sentinel.pipeline.db import DB_ENV_VAR, connect
 from ubo_sentinel.pipeline.gold import (
     GOLD_TABLES,
     GoldError,
     build_gold,
+    create_schema,
     is_built,
     load_build,
 )
@@ -142,6 +143,50 @@ def test_an_edge_whose_end_is_not_a_node_fails_the_build(con, ontology):
         build_gold(con, snapshot_set)
     for table in (*GOLD_TABLES, "gold_builds"):
         assert con.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0, table
+
+
+def test_two_rows_with_one_key_refuse_the_build(con, ontology, monkeypatch):
+    """Gold has no PRIMARY KEY (it made a rebuild's delete slow); the build checks the keys."""
+    snapshot_set = ingest_fixtures(con).snapshot_set
+    build_silver(con, snapshot_set, ontology)
+    write_links = gold._write_links
+
+    def twice(con, set_id):
+        write_links(con, set_id)
+        write_links(con, set_id)
+
+    monkeypatch.setattr(gold, "_write_links", twice)
+    with pytest.raises(GoldError, match="graph_links has .* rows that share a key"):
+        build_gold(con, snapshot_set)
+    for table in (*GOLD_TABLES, "gold_builds"):
+        assert con.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0, table
+
+
+def test_a_rebuild_leaves_one_row_per_key(con, graph_t0, ontology, monkeypatch):
+    snapshot_set = resolve_set(con, graph_t0)
+    monkeypatch.setattr(transformer, "LINK_FLOOR", 0.9)
+    build_silver(con, snapshot_set, ontology, rebuild=True)
+    rebuilt = build_gold(con, snapshot_set)
+    assert rebuilt.status == "rebuilt"
+    assert rebuilt.counts == {table: count(con, table, graph_t0) for table in GOLD_TABLES}
+    assert count(con, "graph_nodes", graph_t0) == count(con, "silver_entities", graph_t0)
+
+
+def test_gold_made_with_keys_and_indexes_is_dropped_and_built_again(con, graph_t0):
+    con.execute("DROP TABLE graph_sanctions")
+    con.execute(
+        "CREATE TABLE graph_sanctions (snapshot_set_id TEXT NOT NULL, id TEXT NOT NULL,"
+        " PRIMARY KEY (snapshot_set_id, id))"
+    )
+    con.execute("CREATE INDEX graph_nodes_old ON graph_nodes (snapshot_set_id, lei)")
+    create_schema(con)
+    assert not is_built(con, graph_t0)
+    assert con.execute(
+        "SELECT (SELECT count(*) FROM duckdb_constraints() WHERE constraint_type = 'PRIMARY KEY'"
+        "        AND table_name LIKE 'graph_%'),"
+        " (SELECT count(*) FROM duckdb_indexes() WHERE table_name LIKE 'graph_%')"
+    ).fetchone() == (0, 0)
+    assert build_gold(con, resolve_set(con, graph_t0)).status == "built"
 
 
 # --- the command ---------------------------------------------------------------------

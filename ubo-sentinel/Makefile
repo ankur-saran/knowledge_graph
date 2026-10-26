@@ -29,6 +29,6 @@ screen:
 eval:
 	uv run ubo eval --suite all
 
-# Step 10: download real data to var/downloads/ and ingest it.
+# Download the newest real data, ingest, normalize, build the graph and check it.
 refresh:
-	@echo "refresh is implemented in Step 10" && exit 1
+	uv run ubo refresh

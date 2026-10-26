@@ -22,7 +22,13 @@
       "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite pipeline)",
       "Bash(PYTHONIOENCODING=utf-8 uv run python -c ' *)",
       "Bash(PYTHONIOENCODING=utf-8 uv run ubo eval --suite all --snapshot real)",
-      "Bash(git -C /c/Users/ankur/Projects/Claude/knowledge_graph/ubo-sentinel status --short .)"
+      "Bash(git -C /c/Users/ankur/Projects/Claude/knowledge_graph/ubo-sentinel status --short .)",
+      "PowerShell(uv run python \"C:\\\\Users\\\\ankur\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-ankur-Projects-Claude-knowledge-graph\\\\eb15ac11-d769-476e-9ea9-de4823bb8440\\\\scratchpad\\\\explain.py\" var\\\\ubo.duckdb)",
+      "PowerShell(uv run pytest tests/unit/test_gold.py -q 2>&1)",
+      "PowerShell(uv run ruff check src tests)",
+      "PowerShell(uv run ruff format --check src tests)",
+      "PowerShell(uv run pytest --cov -q -p no:randomly 2>&1)",
+      "PowerShell(uv run pytest tests/integration/test_scale.py -m slow -q --no-cov 2>&1)"
     ],
     "additionalDirectories": [
       "C:\\Users\\ankur\\AppData\\Local\\Temp\\claude\\c--Users-ankur-Projects-Claude-knowledge-graph\\eb15ac11-d769-476e-9ea9-de4823bb8440\\scratchpad"
