@@ -40,23 +40,23 @@ provenance:
 # registers it. Only `reviewer` may hold decision rights.
 roles:
   analyst:
-    commands: [screen, ui]
+    commands: [screen, monitor, ui]
     masked_fields:
       Person: [legal_name, aliases, registration_number, lei]
     read_only: false
     decision_rights: []
   reviewer:
-    commands: [screen, review, audit-verify, audit-replay, ui]
+    commands: [screen, review, monitor, audit-verify, audit-replay, ui]
     masked_fields: {}
     read_only: false
     decision_rights: [APPROVED, OVERRIDDEN, ESCALATED]
   auditor:
-    commands: [eval, bench, audit-verify, audit-replay, ui]
+    commands: [eval, bench, monitor, audit-verify, audit-replay, ui]
     masked_fields: {}
     read_only: true
     decision_rights: []
   engineer:
-    commands: [download, ingest, refresh, sample, normalize, build-graph, eval, bench, audit-verify, ui]
+    commands: [download, ingest, refresh, sample, normalize, build-graph, eval, bench, monitor, audit-verify, ui]
     masked_fields: {}
     read_only: false
     decision_rights: []

@@ -45,6 +45,14 @@ class EntityLink(_Model):
     linked_has_upstream: bool
 
 
+class AffectedEntity(_Model):
+    """An entity that a change at `origin_id` could reach, and in how few hops down."""
+
+    entity_id: NonEmptyStr
+    origin_id: NonEmptyStr
+    hops: int = Field(ge=0)
+
+
 class CandidateLink(_Model):
     """Another candidate of the same query that may be the same entity as this one."""
 

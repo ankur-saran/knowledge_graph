@@ -21,6 +21,7 @@ from ubo_sentinel.models.canonical import sha256_hex, short_id
 from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.entity import Entity
 from ubo_sentinel.models.graph import (
+    AffectedEntity,
     EntityLink,
     EntityMatch,
     OwnerEdge,
@@ -297,6 +298,17 @@ class GraphView:
         found = queries.get_affected_entities(self.store, self._real(changed_node_id), max_depth)
         self._learn(found)
         return sorted(self._id(node_id) for node_id in found)
+
+    def get_affected_by(self, node_ids: list[str], max_depth: int) -> list[AffectedEntity]:
+        self._require_graph()
+        found = queries.get_affected_by(self.store, [self._real(n) for n in node_ids], max_depth)
+        self._learn([item.entity_id for item in found] + [item.origin_id for item in found])
+        return [
+            AffectedEntity(
+                entity_id=self._id(item.entity_id), origin_id=self._id(item.origin_id), hops=item.hops
+            )
+            for item in found
+        ]
 
     def get_source_record(self, provenance: Provenance) -> dict[str, Any] | None:
         """The published record, or a stub when it concerns an entity this role sees masked."""

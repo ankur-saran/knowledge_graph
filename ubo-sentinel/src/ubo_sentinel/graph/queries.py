@@ -19,6 +19,7 @@ from ubo_sentinel.graph.store import GraphStore, QueryCall, id_list
 from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.entity import Entity
 from ubo_sentinel.models.graph import (
+    AffectedEntity,
     EntityMatch,
     OwnerEdge,
     RepexRecord,
@@ -33,6 +34,7 @@ from ubo_sentinel.pipeline.silver import fold_provenance
 
 __all__ = [
     "QUERIES",
+    "get_affected_by",
     "get_affected_entities",
     "get_decision_by_id",
     "get_direct_owners",
@@ -174,25 +176,60 @@ def get_affected_entities(store: GraphStore, changed_node_id: str, max_depth: in
     """Every entity a change to this node's designations could reach.
 
     The node itself, the entities linked to it (a designation crosses one
-    link), and everything they own or control down to `max_depth` hops.
+    link), and everything they own or control down to `max_depth` hops, with
+    the entities linked to each of those (`get_affected_by`).
     """
-    linked = store.con.execute(
-        "SELECT linked_node_id FROM graph_links WHERE snapshot_set_id = ? AND node_id = ?",
-        [store.set_id, changed_node_id],
-    ).fetchall()
-    frontier = sorted({changed_node_id, *(node_id for (node_id,) in linked)})
-    reached = set(frontier)
-    for _ in range(max_depth):
-        below = store.con.execute(
-            "SELECT DISTINCT lower_id FROM graph_edges"
-            f" WHERE snapshot_set_id = ? AND upper_id IN {id_list()}",
-            [store.set_id, frontier],
-        ).fetchall()
-        frontier = sorted({node_id for (node_id,) in below} - reached)
+    return sorted({a.entity_id for a in _affected(store, [changed_node_id], max_depth)})
+
+
+@query
+def get_affected_by(store: GraphStore, node_ids: list[str], max_depth: int) -> list[AffectedEntity]:
+    """For changes at several nodes at once: each entity reached, from which node, in how few hops.
+
+    From each node: the node and the entities linked to it, then down the
+    edges (owner, parent or controller to what it holds) one hop at a time to
+    `max_depth`, and at every entity reached the entities linked to it. A link
+    costs no hop and is not crossed twice in a row: a designation crosses one
+    link, and a record's duplicate is screened beside it (`POSSIBLE_DUPLICATE`).
+    One query per hop, whatever the number of nodes.
+    """
+    return _affected(store, node_ids, max_depth)
+
+
+def _affected(store: GraphStore, node_ids: list[str], max_depth: int) -> list[AffectedEntity]:
+    best: dict[tuple[str, str], int] = {}
+
+    def take(pairs: set[tuple[str, str]], hops: int) -> set[tuple[str, str]]:
+        new = {pair for pair in pairs if pair not in best}
+        best.update(dict.fromkeys(new, hops))
+        return new
+
+    def neighbours(sql: str, pairs: set[tuple[str, str]]) -> set[tuple[str, str]]:
+        found: dict[str, list[str]] = defaultdict(list)
+        nodes = sorted({node for _, node in pairs})
+        for near, far in store.con.execute(sql, [store.set_id, nodes]).fetchall():
+            found[near].append(far)
+        return {(origin, far) for origin, node in pairs for far in found.get(node, ())}
+
+    links = (
+        "SELECT node_id, linked_node_id FROM graph_links"
+        f" WHERE snapshot_set_id = ? AND node_id IN {id_list()}"
+    )
+    below = (
+        "SELECT DISTINCT upper_id, lower_id FROM graph_edges"
+        f" WHERE snapshot_set_id = ? AND upper_id IN {id_list()}"
+    )
+    frontier = take({(node, node) for node in node_ids}, 0)
+    frontier |= take(neighbours(links, frontier), 0)
+    for hops in range(1, max_depth + 1):
         if not frontier:
             break
-        reached.update(frontier)
-    return sorted(reached)
+        reached = take(neighbours(below, frontier), hops)
+        frontier = reached | take(neighbours(links, reached), hops)
+    return [
+        AffectedEntity(entity_id=entity, origin_id=origin, hops=hops)
+        for (origin, entity), hops in sorted(best.items(), key=lambda item: item[0][::-1])
+    ]
 
 
 @query

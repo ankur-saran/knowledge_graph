@@ -12,6 +12,7 @@ from the line as parsed, so a round trip through the file cannot change a hash.
 import hashlib
 import json
 import os
+import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -22,7 +23,7 @@ from typing import Any, BinaryIO, get_args
 
 from pydantic import ValidationError
 
-from ubo_sentinel.models.audit_event import AuditEvent, EventType
+from ubo_sentinel.models.audit_event import RUN_EVENTS, RUN_PREFIX, AuditEvent, EventType
 from ubo_sentinel.models.canonical import canonical_json, sha256_hex
 from ubo_sentinel.models.decision import Decision, DecisionStatus, FinalOutcome
 from ubo_sentinel.models.ontology import OntologyConfig, require_decision_right, require_write
@@ -129,10 +130,59 @@ class _Ledger:
                 return "a review without an outcome"
             if event_type == "OVERRIDDEN" and not (record["note"] or "").strip():
                 return "an override without a reason"
+        elif event_type in RUN_EVENTS:
+            if not decision_id.startswith(RUN_PREFIX[event_type]):
+                return "a run event whose id does not name its run"
+            if status is not None:
+                return "a second record of one run"
         else:
             return None
         self.status[decision_id] = event_type
         return None
+
+
+@dataclass(frozen=True)
+class _Prefix:
+    """The part of a log this process has read and verified: its events, head and end.
+
+    `end` is the byte offset after the last verified line, and that line.
+    """
+
+    records: tuple[dict[str, Any], ...]
+    head: str
+    end: tuple[int, bytes]
+    status: dict[str, str]
+
+
+# Log file -> its verified prefix. Reading the log was linear in its length and
+# validated every recorded decision on every read; a re-screen run appends in
+# bulk. A later read checks that the last verified line is still where it was
+# and reads only what follows. That line holds the hash of the one before it, so
+# a rewrite of the chain before it shows there; a change that breaks the chain
+# without rewriting it is found by `verify()`, which reads every line.
+_PREFIXES: dict[Path, _Prefix] = {}
+_PREFIXES_LOCK = threading.Lock()
+
+
+def _verified_prefix(path: Path, f: BinaryIO) -> _Prefix | None:
+    with _PREFIXES_LOCK:
+        prefix = _PREFIXES.get(path.resolve())
+    if prefix is None:
+        return None
+    offset, last = prefix.end
+    if os.fstat(f.fileno()).st_size >= offset:
+        f.seek(offset - len(last))
+        if f.read(len(last)) == last:
+            return prefix
+    f.seek(0)
+    with _PREFIXES_LOCK:
+        _PREFIXES.pop(path.resolve(), None)
+    return None
+
+
+def _remember_prefix(path: Path, prefix: _Prefix) -> None:
+    with _PREFIXES_LOCK:
+        _PREFIXES[path.resolve()] = prefix
 
 
 class AuditLog:
@@ -148,8 +198,11 @@ class AuditLog:
         return self._checked()[0]
 
     def verify(self, ontology: OntologyConfig | None = None) -> ChainReport:
-        """Check the chain and what the events say. With an ontology, also who reviewed."""
-        records, report, _ = self._read()
+        """Check the chain and what the events say. With an ontology, also who reviewed.
+
+        Every line is read and checked again: a verification trusts no earlier read.
+        """
+        records, report, _ = self._scan(cached=False)
         if not report.intact or ontology is None:
             return report
         head = GENESIS_HASH
@@ -170,13 +223,23 @@ class AuditLog:
         return records, ledger
 
     def _read(self) -> tuple[list[dict[str, Any]], ChainReport, _Ledger]:
+        """The log as it stands, verifying only what this process has not verified before."""
+        return self._scan(cached=True)
+
+    def _scan(self, cached: bool) -> tuple[list[dict[str, Any]], ChainReport, _Ledger]:
         records: list[dict[str, Any]] = []
         ledger = _Ledger()
         head = GENESIS_HASH
         if not self.path.exists():
             return records, ChainReport(0, head), ledger
-        with self.path.open(encoding="utf-8") as f:
-            for number, line in enumerate(f, start=1):
+        with self.path.open("rb") as f:
+            prefix = _verified_prefix(self.path, f) if cached else None
+            offset, last = 0, b""
+            if prefix is not None:
+                records, head, offset, last = list(prefix.records), prefix.head, *prefix.end
+                ledger.status = dict(prefix.status)
+                f.seek(offset)
+            for number, line in enumerate(f, start=len(records) + 1):
                 problem = None
                 try:
                     record = json.loads(line)
@@ -196,6 +259,11 @@ class AuditLog:
                     return records, ChainReport(len(records), head, number, problem), ledger
                 records.append(record)
                 head = record["hash"]
+                offset, last = offset + len(line), line
+        if records and last.endswith(b"\n"):
+            # A copy: the caller goes on with the ledger (an append checks its event with it).
+            prefix = _Prefix(tuple(records), head, (offset, last), dict(ledger.status))
+            _remember_prefix(self.path, prefix)
         return records, ChainReport(len(records), head), ledger
 
     def events_of(self, decision_id: str) -> list[dict[str, Any]]:

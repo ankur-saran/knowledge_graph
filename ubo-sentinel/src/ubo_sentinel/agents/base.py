@@ -66,6 +66,10 @@ class ScreenRequest(_Model):
     max_depth: int | None = Field(default=None, ge=1)
     role: Role = "analyst"
     actor: str = "analyst"
+    # A re-screen that a monitor run queued: the decision it follows on newer
+    # data, and the run. Recorded with the request; never in a decision.
+    supersedes: str | None = None
+    monitor_run_id: str | None = None
 
     def identifiers(self) -> dict[str, str]:
         """The identifiers given with the query. They name a screen that finds nothing."""

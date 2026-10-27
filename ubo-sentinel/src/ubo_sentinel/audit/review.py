@@ -265,6 +265,20 @@ def unscreened(log: AuditLog) -> list[dict[str, Any]]:
     ]
 
 
+def supersedes_of(log: AuditLog) -> dict[str, str]:
+    """Decision id -> the decision it is a re-screen of, for the re-screens a monitor run made.
+
+    The link is the request's (`ScreenRequest.supersedes`), not the decision's:
+    the same decision reached by a person's own screen links nothing.
+    """
+    return {
+        record["decision_id"]: request["supersedes"]
+        for record in log.records()
+        if record["event_type"] == "RECOMMENDED"
+        and (request := record["payload"].get("request") or {}).get("supersedes")
+    }
+
+
 def _asked_for(request: dict[str, Any] | None, snapshot_set_id: str | None) -> tuple | None:
     """What a screen was asked for, on which set; None when the event does not say.
 

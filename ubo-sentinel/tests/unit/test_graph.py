@@ -238,7 +238,7 @@ def test_the_allow_list_is_the_modules_public_functions(store):
         and not name.startswith("_")
     } - {"query"}
     assert set(queries.QUERIES) == public == set(queries.__all__) - {"QUERIES"}
-    assert len(public) == 9
+    assert len(public) == 10
     # No query takes a snapshot set: the store fixes it.
     for spec in queries.QUERIES.values():
         assert "snapshot_set_id" not in spec.signature.parameters

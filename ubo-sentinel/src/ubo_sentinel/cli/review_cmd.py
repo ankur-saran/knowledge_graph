@@ -9,7 +9,13 @@ import typer
 import yaml
 
 from ubo_sentinel.audit.log import AuditChainError, AuditLog
-from ubo_sentinel.audit.review import is_superseded, pending, review_decision, unscreened
+from ubo_sentinel.audit.review import (
+    is_superseded,
+    pending,
+    review_decision,
+    supersedes_of,
+    unscreened,
+)
 from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
 from ubo_sentinel.cli.show import RenderWithheld, audit_head, decision_text, utf8_stdout
 from ubo_sentinel.graph.views import mask_decision
@@ -36,8 +42,11 @@ def _history_lines(log: AuditLog, decision: Decision) -> list[str]:
     if not others:
         return []
     lines = ["", f"Other decisions on this entity ({len(others)}):"]
+    follows = supersedes_of(log)
     for other in others:
         outcome = f", outcome {other.final_outcome}" if other.final_outcome else ""
+        if other.decision_id in follows:
+            outcome += f", re-screen of {follows[other.decision_id]}"
         lines.append(
             f"  {other.decision_id}  {other.recommendation:<8}  {other.status}{outcome}"
             f"  set {other.snapshot_set_id}  depth {other.max_depth}"
@@ -48,13 +57,16 @@ def _history_lines(log: AuditLog, decision: Decision) -> list[str]:
 
 def _queue(log: AuditLog, role: str, ontology: OntologyConfig) -> None:
     waiting = pending(log)
+    follows = supersedes_of(log)
     typer.echo(f"{len(waiting)} decisions wait for a review.")
     for decision in waiting:
         view = mask_decision(decision, role, ontology)
         newer = "  [newer data exists]" if is_superseded(decision) else ""
+        prior = follows.get(decision.decision_id)
+        rescreen = f"  [re-screen of {prior}]" if prior else ""
         typer.echo(
             f"  {view.decision_id}  {view.recommendation:<8}  {view.created_at:%Y-%m-%d %H:%M}"
-            f"  {view.target_id or view.memo.query_norm}  {', '.join(view.reasons)}{newer}"
+            f"  {view.target_id or view.memo.query_norm}  {', '.join(view.reasons)}{newer}{rescreen}"
         )
     failed = unscreened(log)
     if failed:
