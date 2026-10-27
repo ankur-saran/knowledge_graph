@@ -57,11 +57,11 @@ Read by the skills in `.claude/skills/`. A value of "not yet created" is filled 
 | Package root | `src/ubo_sentinel/` |
 | Test directory | `tests/unit/`, `tests/integration/` |
 | Test command | `uv run pytest` (integration only: `uv run pytest tests/integration`) |
-| Full test command (with coverage gate) | `uv run pytest --cov` (the gate, 95 % over `rules/`, `graph/`, `audit/`, `agents/`, is in `[tool.coverage]` in `pyproject.toml`; `make test` runs the same) |
+| Full test command (with coverage gate) | `uv run pytest --cov` (the gate, 95 % over `rules/`, `graph/`, `audit/`, `agents/`, `ui/` but `ui/app.py`, is in `[tool.coverage]` in `pyproject.toml`; `make test` runs the same) |
 | Lint command | `uv run ruff check .` and `uv run ruff format --check .` |
 | CLI entry point | `src/ubo_sentinel/cli/app.py` (run as `uv run ubo`) |
 | Models package | `src/ubo_sentinel/models/` |
-| Ontology file | `ontology/ontology.yaml` (loader: `load_ontology()` in `models/ontology.py`) |
+| Ontology file | `ontology/ontology.yaml` (loader: `load_ontology()` in `models/ontology.py`; env `UBO_ONTOLOGY` names another file, `ontology_path()`) |
 | Loader directory | `src/ubo_sentinel/pipeline/loaders/` (registry: `LOADERS` in its `__init__.py`; reference loader: `fixture_loader.py`, tests in `tests/unit/test_bronze.py`) |
 | Real-format loader base | `src/ubo_sentinel/pipeline/loaders/real_base.py` (`RealDataset`, `Column`, `ingest_real()`; reads a refresh directory and its manifest, `models/manifest.py`) |
 | Download | `src/ubo_sentinel/download/` (the only package that opens the network: `publishers.py` reads the publishers' indexes, `refresh.py` writes `var/downloads/<refresh_id>/`; tests use the mock publishers in `tests/publishers.py`, fixture `publishers`) |
@@ -103,11 +103,12 @@ Read by the skills in `.claude/skills/`. A value of "not yet created" is filled 
 | Memo | `src/ubo_sentinel/models/memo.py` (`Memo`, `Claim`, `Citation`, `DecisionView`); built and rendered in `agents/explainer.py`; template `src/ubo_sentinel/templates/memo.md.j2`; tests in `tests/unit/test_memo.py` |
 | Guardrails | `src/ubo_sentinel/agents/guardrail.py` (`check_memo()`, `check_prose()`, `check_render()`; tests in `tests/unit/test_guardrail.py`) |
 | Audit log | `src/ubo_sentinel/audit/log.py` (`AuditLog`: `append()`, `verify()`, `decision()`; tests in `tests/unit/test_audit_log.py`) |
-| Review | `src/ubo_sentinel/audit/review.py` (`review_decision()`, `settle()`, `pending()`, `unscreened()`; tests in `tests/unit/test_review.py`) |
+| Review | `src/ubo_sentinel/audit/review.py` (`review_decision()`, `settle()`, `check_stale()`, `is_superseded()`, `pending()`, `unscreened()`; tests in `tests/unit/test_review.py`) |
 | Review command | `uv run ubo review [<decision id>] --role reviewer [--actor WHO --action approve\|override\|escalate] [--outcome CLEAR\|ESCALATE] [--reason TEXT] [--confirm-matches \| --reject-matches] [--accept-stale]` (`src/ubo_sentinel/cli/review_cmd.py`); no id lists the queue; a decision is shown with the other decisions on its entity (`AuditLog.history()`) |
 | Replay | `src/ubo_sentinel/audit/replay.py` (`replay_decision()`, `ReplayReport`; tests in `tests/unit/test_audit_replay.py`) |
 | Audit commands | `uv run ubo audit verify [--expect-head HASH] [--expect-count N]` and `uv run ubo audit replay <decision id> [--deep]` (`src/ubo_sentinel/cli/audit_cmd.py`; tests in `tests/unit/test_audit_cli.py`). Exit code 4: not replayable here |
-| Decision display | `src/ubo_sentinel/cli/show.py` (`decision_text()`: mask, render, render guardrail) |
+| Decision display | `src/ubo_sentinel/present.py` (`decision_text()`: mask, render, render guardrail; `summary_lines()`, `audit_head()`), shared by the CLI (`cli/show.py` re-exports it) and the UI |
+| Review UI | `uv run ubo ui [--role R] [--port N] [--dry-run]` (`src/ubo_sentinel/cli/ui_cmd.py`) starts `src/ubo_sentinel/ui/app.py` (Streamlit glue) on localhost; logic in `ui/panels.py`, evidence graph from the memo in `ui/graph_viz.py`; tests in `tests/unit/test_ui.py` (AppTest, in-process) and `tests/unit/test_graph_viz.py`; local-only settings in `.streamlit/config.toml`; demo in `RUNBOOK.md` |
 | Screen command | `uv run ubo screen "<name or LEI>" [--snapshot SET] [--role analyst\|reviewer] [--pick N \| --target-id ID] [--json]` (`src/ubo_sentinel/cli/screen_cmd.py`; tests in `tests/unit/test_screen_cli.py`) |
 | Pipeline evaluation | `uv run ubo eval --suite pipeline [--json] [--update-golden]` (`src/ubo_sentinel/agents/evaluator.py`: `run_pipeline_suite()`, `golden_of()`, `compare_golden()`); golden decisions in `eval/golden_decisions.json` |
 | Runtime output directory | `var/` (env `UBO_VAR` overrides it for the audit log and decisions) |

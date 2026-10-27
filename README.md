@@ -10,14 +10,15 @@ The project lives in [`ubo-sentinel/`](ubo-sentinel/). Run every command from th
 
 ## Status
 
-Steps 0–9 of the build plan are done, on synthetic fixtures:
+Steps 0–11 of the build plan are done:
 
-- ingest, normalise and build the graph (`ubo ingest`, `ubo normalize`, `ubo build-graph`);
+- ingest, normalise and build the graph (`ubo ingest`, `ubo normalize`, `ubo build-graph`), from synthetic fixtures or from real GLEIF and OpenSanctions data (`ubo refresh`);
 - screen an entity into a recommendation with a cited memo (`ubo screen`);
 - review it, verify the audit log and replay a decision (`ubo review`, `ubo audit verify`, `ubo audit replay`);
-- measure the PRD's success metrics (`ubo eval`), with unit and integration tests.
+- do all of that in a local review UI with an evidence graph, as each role may (`ubo ui`);
+- measure the PRD's success metrics (`ubo eval`, `ubo bench`), with unit and integration tests.
 
-Real data (GLEIF, OpenSanctions), the review UI and the re-screen queue are the next steps.
+The re-screen queue (when a list changes, which decisions to screen again) is the next step.
 
 ## Setup
 
@@ -30,6 +31,7 @@ uv run ubo ingest --source fixtures
 uv run ubo normalize
 uv run ubo build-graph
 uv run ubo screen "Acme Trading FZE"
+uv run ubo ui                  # the review UI on http://localhost:8501
 uv run pytest --cov            # the full suite with the coverage gate (same as: make test)
 ```
 
@@ -41,7 +43,7 @@ Runtime output (database, audit log, decisions, downloads) is written to `ubo-se
 |---|---|
 | [ONTOLOGY.md](ubo-sentinel/ONTOLOGY.md) | Node labels, edge types, roles and permissions |
 | [AGENT_CONTRACTS.md](ubo-sentinel/AGENT_CONTRACTS.md) | Typed input and output of each agent |
-| [RUNBOOK.md](ubo-sentinel/RUNBOOK.md) | Demo script (Step 11) |
+| [RUNBOOK.md](ubo-sentinel/RUNBOOK.md) | Demo script: the UI and the commands, step by step |
 | [CLAUDE.md](ubo-sentinel/CLAUDE.md) | Conventions for building this repo with Claude Code |
 | [fixtures/README.md](ubo-sentinel/fixtures/README.md) | The synthetic fixtures and their format |
 
