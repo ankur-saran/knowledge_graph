@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from ubo_sentinel.audit.log import AuditChainError, AuditLog
 from ubo_sentinel.audit.replay import UnknownDecision, replay_decision
 from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
+from ubo_sentinel.models.audit_event import RUN_EVENTS
 from ubo_sentinel.models.ontology import OntologyConfig, load_ontology
 
 # Exit code when this installation cannot run the replay: neither identical nor different.
@@ -55,6 +56,8 @@ def verify(
         if expect_count is not None and report.count < expect_count:
             problems.append(f"{report.count} records where at least {expect_count} are expected")
     statuses = Counter(decision.status for decision in log.decisions()) if report.intact else {}
+    records = log.records() if report.intact else []
+    runs = sum(record["event_type"] in RUN_EVENTS for record in records)
 
     if as_json:
         typer.echo(
@@ -65,6 +68,7 @@ def verify(
                     "head": report.head,
                     "problems": problems,
                     "decisions": dict(sorted(statuses.items())),
+                    "monitor_runs": runs,
                 },
                 indent=2,
             )
@@ -79,6 +83,8 @@ def verify(
             typer.echo(
                 "Decisions: " + ", ".join(f"{n} {status}" for status, n in sorted(statuses.items()))
             )
+        if runs:
+            typer.echo(f"Monitor runs: {runs}")
     if problems:
         raise typer.Exit(code=1)
 

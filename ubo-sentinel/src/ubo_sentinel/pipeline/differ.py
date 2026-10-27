@@ -118,7 +118,9 @@ def check_comparable(con: duckdb.DuckDBPyConnection, prev: SnapshotSet, curr: Sn
     for snapshot_set in (prev, curr):
         set_id = snapshot_set.snapshot_set_id
         if not silver.is_built(con, set_id):
-            raise SetNotBuilt(f"Set {set_id} is not normalized: run `ubo normalize --snapshot {set_id}`.")
+            raise SetNotBuilt(
+                f"Set {set_id} is not normalized: run `ubo normalize --snapshot {set_id}`."
+            )
         if not gold.is_built(con, set_id):
             raise SetNotBuilt(
                 f"Set {set_id} has no current graph: run `ubo build-graph --snapshot {set_id}`."

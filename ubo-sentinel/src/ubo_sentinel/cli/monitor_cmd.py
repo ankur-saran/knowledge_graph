@@ -36,7 +36,9 @@ def monitor(
     ] = None,
     prev: Annotated[
         str | None,
-        typer.Option("--prev", help="Only the decisions made on this set; default: every older set."),
+        typer.Option(
+            "--prev", help="Only the decisions made on this set; default: every older set."
+        ),
     ] = None,
     family: Annotated[
         str | None, typer.Option("--family", help="fixtures, real or sample; default: of `latest`.")

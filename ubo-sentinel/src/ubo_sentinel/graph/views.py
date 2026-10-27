@@ -305,7 +305,9 @@ class GraphView:
         self._learn([item.entity_id for item in found] + [item.origin_id for item in found])
         return [
             AffectedEntity(
-                entity_id=self._id(item.entity_id), origin_id=self._id(item.origin_id), hops=item.hops
+                entity_id=self._id(item.entity_id),
+                origin_id=self._id(item.origin_id),
+                hops=item.hops,
             )
             for item in found
         ]

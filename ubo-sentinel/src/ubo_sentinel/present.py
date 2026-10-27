@@ -82,7 +82,11 @@ class Masker:
     """
 
     def __init__(
-        self, con: duckdb.DuckDBPyConnection, set_ids: list[str], role: str, ontology: OntologyConfig
+        self,
+        con: duckdb.DuckDBPyConnection,
+        set_ids: list[str],
+        role: str,
+        ontology: OntologyConfig,
     ) -> None:
         hidden = ontology.roles[role].masked_fields
         self._alias: dict[str, str] = {}
@@ -128,7 +132,9 @@ def _kinds(counts: dict[str, int]) -> str:
     return ", ".join(f"{n} {kind.lower()}" for kind, n in counts.items())
 
 
-def monitor_lines(run: MonitorRun, diffs: list[SetDiff], touched: dict[str, list[str]]) -> list[str]:
+def monitor_lines(
+    run: MonitorRun, diffs: list[SetDiff], touched: dict[str, list[str]]
+) -> list[str]:
     """The change digest and the queue, unmasked: pass the text through `guarded()`."""
     lines = [f"Monitor run {run.run_id} ({run.family}): compared with set {run.curr_set_id}"]
     by_prev = {diff.prev_set_id: diff for diff in diffs}
@@ -144,7 +150,9 @@ def monitor_lines(run: MonitorRun, diffs: list[SetDiff], touched: dict[str, list
         for change in changes:
             decisions = touched.get(change.change_id, [])
             fields = f" [{', '.join(change.fields)}]" if change.fields else ""
-            reach = f"  -> {len(decisions)} decision(s): {', '.join(decisions)}" if decisions else ""
+            reach = (
+                f"  -> {len(decisions)} decision(s): {', '.join(decisions)}" if decisions else ""
+            )
             lines.append(
                 f"    {change.change_id}  {change.cause:<9} {change.domain} {change.kind}{fields}"
                 f"  at {', '.join(change.anchor_ids)}{reach}"

@@ -106,6 +106,9 @@ class GoldScenario(_Spec):
     expected_recommendation: Recommendation
     # The outcome on the changed sanctions list, where it differs.
     expected_recommendation_t1: Recommendation | None = None
+    # The outcome on the changed graph (`fixtures/snapshot_t2`, loaded after t1: a stake,
+    # an LEI a list record states, an LEI that lapsed), where it differs from t1's.
+    expected_recommendation_t2: Recommendation | None = None
     expected_reasons: list[ReasonCode] = []
     expected_blocked: list[NonEmptyStr] = []
     expected_possibly_blocked: list[NonEmptyStr] = []

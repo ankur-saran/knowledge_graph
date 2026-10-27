@@ -45,6 +45,8 @@ ARGS = {
     "eval": ["eval", "--suite", "er"],
     "screen": ["screen", "Acme Trading FZE", "--actor", "someone"],
     "review": ["review"],
+    # Records nothing, so every role may run it: `auditor` is read-only.
+    "monitor": ["monitor", "--dry-run"],
     "audit-verify": ["audit", "verify"],
     "audit-replay": ["audit", "replay", "{decision_id}"],
     # Prints the command that starts the UI: no server is started under test.

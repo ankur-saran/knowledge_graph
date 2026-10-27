@@ -66,7 +66,8 @@ def _queue(log: AuditLog, role: str, ontology: OntologyConfig) -> None:
         rescreen = f"  [re-screen of {prior}]" if prior else ""
         typer.echo(
             f"  {view.decision_id}  {view.recommendation:<8}  {view.created_at:%Y-%m-%d %H:%M}"
-            f"  {view.target_id or view.memo.query_norm}  {', '.join(view.reasons)}{newer}{rescreen}"
+            f"  {view.target_id or view.memo.query_norm}  {', '.join(view.reasons)}"
+            f"{newer}{rescreen}"
         )
     failed = unscreened(log)
     if failed:

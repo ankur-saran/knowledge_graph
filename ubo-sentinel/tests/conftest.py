@@ -22,6 +22,7 @@ from ubo_sentinel.rules.pack import DEFAULT_PACK, load_rule_pack, pack_path
 # Commands are run from the repository root.
 T0 = Path("fixtures/snapshot_t0")
 T1 = Path("fixtures/snapshot_t1")
+T2 = Path("fixtures/snapshot_t2")
 GOLD_PATH = Path("eval/gold_scenarios.yaml")
 # The pack the fixtures and the gold scenarios are written for.
 PACK = load_rule_pack(pack_path(DEFAULT_PACK))
@@ -135,7 +136,8 @@ def canonical(entities):
 
 @pytest.fixture(scope="session")
 def templates(tmp_path_factory, ontology):
-    """Databases built once per session: `t0`, and `t0_t1` (the t1 list loaded after t0).
+    """Databases built once per session: `t0`, `t0_t1` (the t1 list loaded after t0) and
+    `t0_t1_t2` (then the t2 graph changes).
 
     Returns name -> (database file, the set ids it holds in the order built).
     Ids are content-derived, so a copy of a template is the database a test
@@ -148,7 +150,7 @@ def templates(tmp_path_factory, ontology):
         if name not in built:
             path = root / f"{name}.duckdb"
             connection = duckdb.connect(str(path))
-            paths = {"t0": [None], "t0_t1": [None, T1]}[name]
+            paths = {"t0": [None], "t0_t1": [None, T1], "t0_t1_t2": [None, T1, T2]}[name]
             set_ids = [build_graph(connection, ontology, item) for item in paths]
             connection.close()
             built[name] = (path, set_ids)

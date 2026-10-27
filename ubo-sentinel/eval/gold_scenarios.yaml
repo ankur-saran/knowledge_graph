@@ -207,13 +207,16 @@
   target_id: lei:FXS10TARGET000000000
   twin_of: SCEN-09
   expected_recommendation: CLEAR
+  expected_recommendation_t2: ESCALATE
   expected_blocked:
   - fx_list:s10-blocked
   expected_exposure:
     max_pct: '20'
     sum_pct: '20'
     has_unknown: false
-  rationale: 'Same shape as SCEN-09 with 20 %: effective exposure is below 25 % and there is no gap.'
+  rationale: 'Same shape as SCEN-09 with 20 %: effective exposure is below 25 % and there is no gap.
+    On the changed graph (t2) the designated party holds 50 % of the intermediate, which blocks it,
+    and through it the target.'
 
 - id: SCEN-11
   query: Pellucid Optics Pte Ltd
@@ -292,6 +295,7 @@
   query: Fairweather Bulk Carriers Ltd
   target_id: lei:FXS14TARGET000000000
   expected_recommendation: REVIEW
+  expected_recommendation_t2: ESCALATE
   expected_reasons:
   - DECISION_RELEVANT_GAP
   - POSSIBLY_BLOCKED
@@ -313,7 +317,8 @@
     b: lei:FXS14OWNER0000000000
     band: review
   rationale: The 60 % owner resembles a designated party by name only, in the review band. The owner
-    is possibly blocked, and through its majority so is the target.
+    is possibly blocked, and through its majority so is the target. On the changed graph (t2) the
+    list record states the owner's LEI, so the two records are one entity and the designation blocks it.
 
 - id: SCEN-15
   query: Thornaby Rolling Mills Ltd

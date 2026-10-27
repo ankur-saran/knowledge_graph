@@ -13,6 +13,7 @@ from conftest import PACK
 from ubo_sentinel.cli.app import ONTOLOGY_PATH
 from ubo_sentinel.models import (
     Basis,
+    EntityRow,
     EntityStatus,
     EntityType,
     GapCode,
@@ -34,9 +35,13 @@ from ubo_sentinel.pipeline.name_match import name_similarity
 # Commands are run from the repository root.
 T0 = Path("fixtures/snapshot_t0")
 T1 = Path("fixtures/snapshot_t1")
+T2 = Path("fixtures/snapshot_t2")
 GOLD_PATH = Path("eval/gold_scenarios.yaml")
 ER_PATH = Path("eval/er_labelled.csv")
-DATA_FILES = sorted([*T0.glob("*.csv"), *T1.glob("*.csv"), GOLD_PATH, ER_PATH])
+DATA_FILES = sorted([*T0.glob("*.csv"), *T1.glob("*.csv"), *T2.glob("*.csv"), GOLD_PATH, ER_PATH])
+# A change on t2 that moves no outcome: the monitor queues SCEN-16, and its
+# re-screen stays CLEAR (the lapsed LEI is on no path from a blocked party).
+T2_NO_OUTCOME_CHANGE = {"s16"}
 
 # The names are calibrated against the OFAC pack's match thresholds.
 REVIEW_BAND_LOW = PACK.review_band_low
@@ -131,6 +136,7 @@ def test_expected_files_exist():
         "repex.csv",
     }
     assert {path.name for path in T1.glob("*")} == {"sanctions.csv"}
+    assert {path.name for path in T2.glob("*")} == {"entities.csv", "relationships.csv"}
 
 
 # --- rows and references ---------------------------------------------------------
@@ -364,6 +370,36 @@ def test_changed_list_adds_removes_and_changes_one_designation(sanctions, sancti
     for scenario in gold:
         if scenario.expected_recommendation_t1:
             assert scenario.expected_recommendation_t1 != scenario.expected_recommendation
+
+
+# --- the changed graph ----------------------------------------------------------------
+
+
+def test_changed_graph_changes_a_stake_an_identifier_and_an_lei_status(
+    entities, relationships, gold
+):
+    """t2 (loaded after t1) changes what the list diff cannot see: a stake, an LEI that a
+    list record starts to state (so two records become one entity), an LEI that lapsed."""
+    before_e = {row.ref: row for row in entities}
+    after_e = {row.ref: row for row in read_rows(T2 / "entities.csv", EntityRow)}
+    before_r = {row.ref: row for row in relationships}
+    after_r = {row.ref: row for row in read_rows(T2 / "relationships.csv", RelationshipRow)}
+    assert set(after_e) == set(before_e) and set(after_r) == set(before_r)
+    changed_e = {ref for ref in before_e if before_e[ref] != after_e[ref]}
+    changed_r = {ref for ref in before_r if before_r[ref] != after_r[ref]}
+    assert changed_e == {"fx_list:s14-listed", "fx_registry:s16-parent"}
+    assert changed_r == {"fx_list:s10-rel-1", "fx_registry:s10-rel-2"}
+    assert after_e["fx_list:s14-listed"].lei == before_e["fx_registry:s14-owner"].lei
+    assert after_e["fx_registry:s16-parent"].lei_status == "LAPSED"
+    assert after_r["fx_list:s10-rel-1"].pct + after_r["fx_registry:s10-rel-2"].pct == 100
+
+    touched = {scenario_of(ref) for ref in changed_e | changed_r}
+    expecting_change = {f"s{s.id[-2:]}" for s in gold if s.expected_recommendation_t2}
+    assert touched - T2_NO_OUTCOME_CHANGE == expecting_change
+    for scenario in gold:
+        if scenario.expected_recommendation_t2:
+            before = scenario.expected_recommendation_t1 or scenario.expected_recommendation
+            assert scenario.expected_recommendation_t2 != before
 
 
 # --- labelled entity-resolution set -----------------------------------------------------

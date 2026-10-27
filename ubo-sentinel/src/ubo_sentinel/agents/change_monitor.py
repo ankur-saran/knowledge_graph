@@ -325,9 +325,7 @@ def build_queue(
         digests[set_id] = diff.diff_digest
         by_id = {change.change_id: change for change in diff.changes}
         deepest = max(b.decision.max_depth for b in group)
-        reached = traversal_hits(
-            con, [set_id, curr.snapshot_set_id], diff.changes, deepest
-        )
+        reached = traversal_hits(con, [set_id, curr.snapshot_set_id], diff.changes, deepest)
         for baseline in group:
             decision = baseline.decision
             if decision.target_id is None:
@@ -342,7 +340,9 @@ def build_queue(
             }
             if not by_footprint and not walked:
                 continue
-            basis = "BOTH" if by_footprint and walked else "FOOTPRINT" if by_footprint else "TRAVERSAL"
+            basis = (
+                "BOTH" if by_footprint and walked else "FOOTPRINT" if by_footprint else "TRAVERSAL"
+            )
             hits = {change.change_id: change for change in by_footprint}
             hits |= {change_id: by_id[change_id] for change_id in walked}
             status = "PENDING" if decision.target_id in present else "TARGET_GONE"
