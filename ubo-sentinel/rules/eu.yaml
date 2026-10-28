@@ -1,0 +1,38 @@
+# illustrative — not validated by counsel
+# EU "owned or controlled" test (Council best practices on restrictive measures),
+# expressed in this engine's keys. Schema and loader: ubo_sentinel.rules.pack.
+# Not legal advice.
+id: eu_illustrative_v1
+label: "Illustrative pack, not validated by counsel. Control by a designated person is sent for review, not treated as designation."
+
+# Possession of more than 50 % of the proprietary rights. Exactly half does not meet it.
+ownership_threshold_pct: 50
+threshold_operator: ">"
+# Whether the holdings of several designated persons are added together is an
+# assumption for counsel to confirm. Adding them is the cautious side: it can
+# only block more, and every block goes to a reviewer.
+aggregate_blocked_owners: true
+
+# FX-EU-LIST is the fixtures' stand-in (SCEN-30); eu_fsf is the OpenSanctions
+# dataset of the EU Financial Sanctions Files (checked 2026-10-28).
+designation_lists: [FX-EU-LIST, eu_fsf]
+other_designations: review
+
+match_threshold: 0.92
+review_band_low: 0.85
+name_match_requires_jurisdiction: true
+presume_majority_for_consolidation: true
+gap_scope: on_path
+review_exposure_pct: 25
+near_miss_pct: 40
+
+# The EU test also covers control (the right to appoint or remove a majority of
+# the board, a dominant influence). The engine cannot make control block, so a
+# control link from a blocked party is REVIEW (CONTROL_LINK): the gap the label states.
+control_link_review: true
+control_link_scope: upstream
+
+duplicate_link_review: true
+max_depth: 5
+max_depth_down: 1
+max_paths: 5000

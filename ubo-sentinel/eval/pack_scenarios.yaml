@@ -1,0 +1,140 @@
+# Pack scenarios: one small graph each, judged under every pack in rules/
+# (`ubo eval --suite packs`; schema in src/ubo_sentinel/rules/pack_scenarios.py).
+# A designation's `list` is `own` (the pack's own list) or `other` (a list no
+# pack applies), so one graph reads the same way under every pack. Every pack in
+# rules/ must be stated for every scenario. The UK and EU packs are illustrative.
+- id: PACK-01
+  title: a designated owner of exactly half
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 50}
+  designations:
+    - {node: A}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [EFFECTIVE_EXPOSURE, NEAR_MISS_AGGREGATE], blocked: [A]}
+    eu: {recommendation: REVIEW, reasons: [EFFECTIVE_EXPOSURE, NEAR_MISS_AGGREGATE], blocked: [A]}
+  rationale: >-
+    OFAC blocks at 50 percent or more; the UK and EU tests need more than half.
+    Under them the stake is a near miss and a large exposure, so a reviewer sees it.
+
+- id: PACK-02
+  title: a designated owner of just over half
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: "50.0001"}
+  designations:
+    - {node: A}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T]}
+    uk_ofsi: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T]}
+    eu: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T]}
+  rationale: More than half meets every pack's test.
+
+- id: PACK-03
+  title: two designated owners of 30 % each
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 30}
+    - {upper: B, lower: T, pct: 30}
+  designations:
+    - {node: A}
+    - {node: B}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, B, T]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [EFFECTIVE_EXPOSURE], blocked: [A, B]}
+    eu: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, B, T]}
+  rationale: >-
+    OFAC adds the holdings of blocked persons together (60 %). The UK pack tests
+    the largest holding (30 %), so only the exposure sends it to a reviewer. The
+    EU pack adds them, an assumption for counsel stated in rules/eu.yaml.
+
+- id: PACK-04
+  title: two designated owners of 25 % each
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 25}
+    - {upper: B, lower: T, pct: 25}
+  designations:
+    - {node: A}
+    - {node: B}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, B, T]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [EFFECTIVE_EXPOSURE], blocked: [A, B]}
+    eu: {recommendation: REVIEW, reasons: [EFFECTIVE_EXPOSURE, NEAR_MISS_AGGREGATE], blocked: [A, B]}
+  rationale: >-
+    Together exactly half: OFAC's ">=" blocks; the EU's ">" does not, and the
+    aggregate is a near miss; the UK pack tests 25 % alone.
+
+- id: PACK-05
+  title: indirect majority ownership
+  target: T
+  edges:
+    - {upper: A, lower: M, pct: 60}
+    - {upper: M, lower: T, pct: 90}
+  designations:
+    - {node: A}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, M, T]}
+    uk_ofsi: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, M, T]}
+    eu: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, M, T]}
+  rationale: >-
+    The owned entity is itself blocked, and it owns the target outright; every
+    pack follows ownership down the chain.
+
+- id: PACK-06
+  title: a designated controller and no ownership
+  target: T
+  edges:
+    - {upper: A, lower: T, rel: CONTROLS}
+  designations:
+    - {node: A}
+  expected:
+    ofac: {recommendation: REVIEW, reasons: [CONTROL_LINK], blocked: [A]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [CONTROL_LINK], blocked: [A]}
+    eu: {recommendation: REVIEW, reasons: [CONTROL_LINK], blocked: [A]}
+  rationale: >-
+    OFAC's rule is ownership only; control is a risk for review. The UK and EU
+    tests treat control as designation, which these packs cannot express: the
+    gap their label states. A reviewer sees it under every pack; none clears it.
+
+- id: PACK-07
+  title: a majority owner designated on another regime's list
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 60}
+  designations:
+    - {node: A, list: other}
+  expected:
+    ofac: {recommendation: REVIEW, reasons: [OTHER_REGIME_DESIGNATION]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [OTHER_REGIME_DESIGNATION]}
+    eu: {recommendation: REVIEW, reasons: [OTHER_REGIME_DESIGNATION]}
+  rationale: >-
+    Another regime's designation never blocks under a pack; it would meet the
+    pack's own test, so it is sent for review.
+
+- id: PACK-08
+  title: a review-band name match on a majority owner
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 60}
+  designations:
+    - {node: A, by: Y, confidence: 0.88}
+  expected:
+    ofac: {recommendation: REVIEW, reasons: [DECISION_RELEVANT_GAP, POSSIBLY_BLOCKED], possibly_blocked: [A, T], gaps: [REVIEW_BAND_MATCH]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [DECISION_RELEVANT_GAP, POSSIBLY_BLOCKED], possibly_blocked: [A, T], gaps: [REVIEW_BAND_MATCH]}
+    eu: {recommendation: REVIEW, reasons: [DECISION_RELEVANT_GAP, POSSIBLY_BLOCKED], possibly_blocked: [A, T], gaps: [REVIEW_BAND_MATCH]}
+  rationale: An unsettled match is the same under every pack; the reviewer settles it.
+
+- id: PACK-09
+  title: a small designated stake
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 10}
+  designations:
+    - {node: A}
+  expected:
+    ofac: {recommendation: CLEAR, blocked: [A]}
+    uk_ofsi: {recommendation: CLEAR, blocked: [A]}
+    eu: {recommendation: CLEAR, blocked: [A]}
+  rationale: Below every threshold and every risk signal.

@@ -255,6 +255,9 @@ class RulePackRef(_Model):
     review_exposure_pct: Exposure
     match_threshold: Confidence
     review_band_low: Confidence
+    # The pack's label (`RulePack.label`); left out when absent, so a memo made
+    # with a pack that has none is the memo it was before the field existed.
+    label: NonEmptyStr | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class Memo(_Model):

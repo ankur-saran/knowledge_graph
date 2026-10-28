@@ -71,6 +71,7 @@ def _pack_ref(pack: RulePack) -> RulePackRef:
         review_exposure_pct=pack.review_exposure_pct,
         match_threshold=pack.match_threshold,
         review_band_low=pack.review_band_low,
+        label=pack.label,
     )
 
 

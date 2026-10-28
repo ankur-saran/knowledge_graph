@@ -42,6 +42,10 @@ Rule recommendation: `{{ memo.recommendation }}`{% for reason in memo.reasons %}
 
 
 Rule pack: `{{ memo.rule_pack.id }}` (`{{ memo.rule_pack.hash[:16] }}`), blocking threshold `{{ memo.rule_pack.threshold_operator }}` {{ memo.rule_pack.ownership_threshold_pct | pct }} %
+{% if memo.rule_pack.label is not none %}
+
+> {{ memo.rule_pack.label }}
+{% endif %}
 
 ## Why
 

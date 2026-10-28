@@ -1,0 +1,38 @@
+# illustrative — not validated by counsel
+# UK "owned or controlled" test (OFSI guidance), expressed in this engine's keys.
+# Schema and loader: ubo_sentinel.rules.pack. Not legal advice.
+id: uk_ofsi_illustrative_v1
+label: "Illustrative pack, not validated by counsel. Control by a designated person is sent for review, not treated as designation."
+
+# Ownership of more than half of the shares or voting rights. Exactly half does not meet it.
+ownership_threshold_pct: 50
+threshold_operator: ">"
+# OFSI does not add together the separate holdings of different designated persons
+# (only a joint arrangement is one holding, which this engine cannot express):
+# the largest holding is tested. Counsel to confirm.
+aggregate_blocked_owners: false
+
+# FX-UK-LIST is the stand-in in the pack scenarios (eval/pack_scenarios.yaml);
+# gb_fcdo_sanctions is the OpenSanctions dataset of the UK Sanctions List, the
+# single official source of UK designations since 28 January 2026 (checked 2026-10-28).
+designation_lists: [FX-UK-LIST, gb_fcdo_sanctions]
+other_designations: review
+
+match_threshold: 0.92
+review_band_low: 0.85
+name_match_requires_jurisdiction: true
+presume_majority_for_consolidation: true
+gap_scope: on_path
+review_exposure_pct: 25
+near_miss_pct: 40
+
+# The UK test also covers control (the right to appoint the board, or affairs run
+# as a designated person wishes). The engine cannot make control block, so a
+# control link from a blocked party is REVIEW (CONTROL_LINK): the gap the label states.
+control_link_review: true
+control_link_scope: upstream
+
+duplicate_link_review: true
+max_depth: 5
+max_depth_down: 1
+max_paths: 5000

@@ -56,6 +56,10 @@ class RulePack(BaseModel):
     max_depth: int = Field(ge=1)
     max_depth_down: int = Field(ge=0)
     max_paths: int = Field(ge=1)
+    # The one optional key: what a memo says about the pack's standing ("illustrative
+    # — not validated by counsel"). Left out of the dump when absent, so a pack
+    # without one hashes as it did before the key existed.
+    label: NonEmptyStr | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("designation_lists")
     @classmethod
