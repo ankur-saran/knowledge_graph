@@ -280,3 +280,74 @@ def test_verify_reads_what_the_events_say_and_not_only_the_chain(log, append, on
     # A review whose recommendation was taken out.
     rewrite(log, lambda records: records.pop(0))
     assert log.verify().problem == "a review of a decision that was not recommended"
+
+
+# --- the verified prefix ------------------------------------------------------------------
+
+
+def test_a_read_checks_only_what_this_process_has_not_read(log, append, monkeypatch):
+    for target in ("asset-1", "asset-2", "asset-3"):
+        append(make_decision(target_id=target))
+    log.records()
+    checked = []
+    original = audit_log._Ledger.problem
+
+    def counted(self, record):
+        checked.append(record["seq"])
+        return original(self, record)
+
+    monkeypatch.setattr(audit_log._Ledger, "problem", counted)
+    assert len(AuditLog().records()) == 3 and checked == []
+    # Another log object on the same file, as the UI's sessions are.
+    append(make_decision(target_id="asset-4"))
+    checked.clear()
+    assert [r["seq"] for r in AuditLog().records()] == [0, 1, 2, 3] and checked == [3]
+    # A verification trusts no earlier read.
+    checked.clear()
+    assert log.verify().count == 4 and checked == [0, 1, 2, 3]
+
+
+def test_a_log_cut_short_or_rewritten_is_read_again_from_the_start(log, append):
+    for target in ("asset-1", "asset-2", "asset-3"):
+        append(make_decision(target_id=target))
+    whole = lines(log)
+    assert len(log.records()) == 3
+    log.path.write_text("\n".join(whole[:2]) + "\n", encoding="utf-8", newline="\n")
+    assert [r["seq"] for r in log.records()] == [0, 1]
+    # A new chain of the same length: its last line differs, so nothing is reused.
+    log.path.unlink()
+    for target in ("asset-7", "asset-8", "asset-9"):
+        append(make_decision(target_id=target))
+    assert [r["decision_id"] for r in log.records()] == [
+        make_decision(target_id=t).decision_id for t in ("asset-7", "asset-8", "asset-9")
+    ]
+
+
+def test_a_change_before_the_last_line_read_is_found_by_verify(log, append):
+    """The prefix is checked by its last line. A change before it that keeps the bytes'
+    length breaks the chain; a later read in the same process may not look, `verify` does."""
+    for target in ("asset-1", "asset-2", "asset-3"):
+        append(make_decision(target_id=target))
+    log.records()
+    data = log.path.read_bytes()
+    first = data.index(b'"actor":"analyst"')
+    log.path.write_bytes(data[:first] + b'"actor":"analysT"' + data[first + 17 :])
+    report = log.verify()
+    assert (report.intact, report.broken_line) == (False, 1)
+    # Another process, which has read nothing, refuses the log too.
+    audit_log._PREFIXES.clear()
+    with pytest.raises(AuditChainError, match="line 1"):
+        log.records()
+
+
+def test_a_monitor_run_is_an_event_of_its_own(log, append, ontology):
+    append(make_decision(target_id="asset-1"))
+    run = {"actor": "e", "role": "engineer", "created_at": AT, "event_type": "MONITOR_RUN"}
+    log.append(ontology=ontology, decision_id="monitor:abc", payload={"run": {}}, **run)
+    with pytest.raises(ValueError, match="second record of one run"):
+        log.append(ontology=ontology, decision_id="monitor:abc", payload={}, **run)
+    with pytest.raises(ValueError, match="does not name its run"):
+        log.append(ontology=ontology, decision_id="xyz", payload={}, **run)
+    assert [d.target_id for d in log.decisions()] == ["asset-1"]
+    assert log.decision("monitor:abc") is None
+    assert log.verify().count == 2

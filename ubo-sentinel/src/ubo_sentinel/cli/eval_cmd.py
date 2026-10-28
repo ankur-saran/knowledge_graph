@@ -12,6 +12,7 @@ import typer
 import yaml
 from pydantic import BaseModel, ValidationError
 
+from ubo_sentinel.agents import change_monitor
 from ubo_sentinel.agents.evaluator import compare_golden, golden_of, run_pipeline_suite
 from ubo_sentinel.agents.real_smoke import SmokeReport, load_smoke, run_smoke
 from ubo_sentinel.agents.supervisor import Supervisor
@@ -48,6 +49,8 @@ ER_PRECISION_TARGET = 0.95
 REPLAY_FIDELITY_TARGET = 1.0
 UNCITED_CLAIMS_TARGET = 0
 REAL_SMOKE_TARGET = 1.0
+# G6: every decision that newer data changes is on the re-screen queue.
+RESCREEN_RECALL_TARGET = 1.0
 # PRD section 7: a screen on the fixtures.
 LATENCY_P95_TARGET_SECONDS = 5.0
 
@@ -57,12 +60,16 @@ class Suite(StrEnum):
     pipeline = "pipeline"
     er = "er"
     real_smoke = "real-smoke"
-    # The fixtures: rules, pipeline, er. A real set: er, real-smoke.
+    # The re-screen queue against screening everything again: the gold
+    # scenarios on the set, then a later set of the family.
+    monitor = "monitor"
+    # The fixtures: rules, pipeline, er, and monitor when a later fixtures set is
+    # loaded. A real set: er, real-smoke.
     all = "all"
 
 
 # Suites written for the fixtures, and suites run on published data.
-FIXTURE_SUITES = {Suite.rules, Suite.pipeline}
+FIXTURE_SUITES = {Suite.rules, Suite.pipeline, Suite.monitor}
 REAL_SUITES = {Suite.real_smoke}
 
 
@@ -214,6 +221,22 @@ def _print_smoke(out: _Output, reports: list[SmokeReport]) -> bool:
     )
 
 
+def _print_monitor(out: _Output, evaluation: change_monitor.MonitorEvaluation, curr: str) -> bool:
+    out.echo(f"Change monitor (the gold scenarios' decisions against set {curr})")
+    out.echo(
+        f"  {len(evaluation.changed)} decisions change on the later set;"
+        f" {len(evaluation.queued)} are queued"
+    )
+    for decision_id in evaluation.missed:
+        out.echo(f"  MISSED  {decision_id} changes and is not queued")
+        out.problems.append(f"monitor: {decision_id} changes and is not queued")
+    met = out.metric("monitor", "Re-screen recall", evaluation.recall, RESCREEN_RECALL_TARGET)
+    # Reported, not held to a target: a queued decision that does not change costs
+    # a re-screen; a missed one is an entity dealt with on old data.
+    out.metric("monitor", "Re-screen precision", evaluation.precision, 0.0)
+    return met
+
+
 def _golden(out: _Output, current: dict, update: bool) -> bool:
     """Compare the suite's decisions with the golden file, or write the file."""
     if update:
@@ -356,6 +379,32 @@ def evaluate(
                 )
                 current = golden_of(reports, store.set_id, engine.rule_pack_hash)
                 ok = _golden(out, current, update_golden) and ok
+            if Suite.monitor in runs:
+                curr = change_monitor.default_curr(store.con, family)
+                if curr.seq <= store.snapshot_set.seq:
+                    message = (
+                        f"No set of the {family} family is later than {set_id}: the monitor suite"
+                        " compares one (load fixtures/snapshot_t1, normalize and build-graph)."
+                    )
+                    if suite is Suite.monitor:
+                        typer.echo(message, err=True)
+                        raise typer.Exit(code=2)
+                    out.echo(f"Change monitor: not run. {message}")
+                else:
+                    # Recorded nowhere: the log is a directory that is thrown away.
+                    with tempfile.TemporaryDirectory() as scratch:
+                        ontology, log = load_ontology(ONTOLOGY_PATH), AuditLog(Path(scratch))
+                        run_pipeline_suite(
+                            Supervisor(ontology, log),
+                            load_gold_scenarios(GOLD_PATH),
+                            store.set_id,
+                            store.con,
+                            engine.pack,
+                        )
+                        evaluation = change_monitor.evaluate_monitor(
+                            log, Supervisor(ontology), store.con, curr, engine.pack
+                        )
+                    ok = _print_monitor(out, evaluation, curr.snapshot_set_id) and ok
             if Suite.er in runs:
                 ok = _print_er(out, evaluate_labelled(store, er_path)) and ok
             if Suite.real_smoke in runs:

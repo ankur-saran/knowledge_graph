@@ -20,7 +20,6 @@ Re-screens go through the Supervisor by target id, so each is an ordinary
 decision that waits for a reviewer.
 """
 
-import json
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -182,32 +181,35 @@ def baselines(
     return list(newest.values()), done, sorted(unknown)
 
 
-def footprint(decision: Decision) -> tuple[set[str], set[str]]:
+def footprint(memo: Memo, target_id: str | None) -> tuple[set[str], set[str]]:
     """(every entity the memo names, the entities above the target the rules read)."""
-    memo = Memo.model_validate(decision.memo_json)
     named = {entity.id for entity in memo.entities}
     upward = {entity.id for entity in memo.entities if entity.depth is not None}
-    if decision.target_id is not None:
-        named.add(decision.target_id)
-        upward.add(decision.target_id)
+    if target_id is not None:
+        named.add(target_id)
+        upward.add(target_id)
     return named, upward
 
 
-def footprint_hits(decision: Decision, changes: list[Change]) -> list[Change]:
-    """The changes to what the decision's rules read.
+def reaching(named: set[str], upward: set[str], changes: list[Change]) -> list[Change]:
+    """The changes to what a decision's rules read, given its footprint.
 
     A designation, an entity field or a reporting exception on any entity the
     memo names; an owner, a stake, a set gap or a link at an entity above the
     target, at any depth up to the limit (a new owner of an entity at the
     limit is a new `DEPTH_LIMIT_REACHED`).
     """
-    named, upward = footprint(decision)
     hits = []
     for change in changes:
         scope = upward if change.domain in {"edge", "set_gap", "link"} else named
         if scope & set(change.anchor_ids):
             hits.append(change)
     return hits
+
+
+def footprint_hits(decision: Decision, changes: list[Change]) -> list[Change]:
+    memo = Memo.model_validate(decision.memo_json)
+    return reaching(*footprint(memo, decision.target_id), changes)
 
 
 def traversal_hits(
@@ -598,5 +600,79 @@ def changes_by_decision(run: MonitorRun) -> dict[str, list[str]]:
     return {change_id: sorted(ids) for change_id, ids in touched.items()}
 
 
-def monitor_json(run: MonitorRun) -> str:
-    return json.dumps(run.model_dump(mode="json"), indent=2, sort_keys=True, ensure_ascii=False)
+# --- evaluation ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MonitorEvaluation:
+    """How the queue compares with screening everything again (`ubo eval --suite monitor`).
+
+    `changed`: the decisions whose outcome (recommendation, reasons, blocked
+    and possibly-blocked sets, gaps) differs on the newer set. Recall is the
+    share of them on the queue (G6 promises all); precision, the share of the
+    queue that changed.
+    """
+
+    queued: list[str]
+    changed: list[str]
+    missed: list[str]
+
+    @property
+    def recall(self) -> float:
+        return 1.0 if not self.changed else 1 - len(self.missed) / len(self.changed)
+
+    @property
+    def precision(self) -> float:
+        hit = len(set(self.queued) & set(self.changed))
+        return 1.0 if not self.queued else hit / len(self.queued)
+
+
+def outcome_of(decision: Decision) -> tuple:
+    """What a re-screen must keep for the decision not to have changed."""
+    return (
+        decision.recommendation,
+        decision.reasons,
+        decision.blocked_set,
+        decision.possibly_blocked_set,
+        sorted((g.code, g.subject_id, g.decision_relevant) for g in decision.data_gaps),
+    )
+
+
+def evaluate_monitor(
+    log: AuditLog,
+    supervisor: Supervisor,
+    con: duckdb.DuckDBPyConnection,
+    curr: SnapshotSet,
+    pack: Any = None,
+) -> MonitorEvaluation:
+    """Queue the log's decisions against `curr`, then screen every one of them again on
+    `curr` (recording nothing) and compare. `supervisor` should have no audit log."""
+    run, _, _ = build_queue(log, con, curr)
+    queued = sorted(item.prior_decision_id for item in run.items)
+    held, _, _ = baselines(log, con, curr)
+    changed = []
+    for baseline in held:
+        decision = baseline.decision
+        request = baseline.request
+        screen = ScreenRequest(
+            query=request.get("query") or "",
+            lei=None if decision.target_id else request.get("lei"),
+            registration_number=None if decision.target_id else request.get("registration_number"),
+            target_id=decision.target_id,
+            snapshot=curr.snapshot_set_id,
+            rule_pack=request.get("rule_pack") or DEFAULT_PACK,
+            max_depth=decision.max_depth,
+        )
+        if decision.target_id and decision.target_id not in _present(
+            con, curr.snapshot_set_id, [decision.target_id]
+        ):
+            changed.append(decision.decision_id)
+            continue
+        outcome = supervisor.run(screen, con, pack)
+        if not isinstance(outcome, Recommended) or outcome_of(outcome.decision) != outcome_of(
+            decision
+        ):
+            changed.append(decision.decision_id)
+    changed.sort()
+    missed = sorted(set(changed) - set(queued))
+    return MonitorEvaluation(queued, changed, missed)

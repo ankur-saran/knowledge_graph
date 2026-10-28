@@ -4,6 +4,7 @@ Synthetic data for the offline demo and the tests. **Every name, LEI and designa
 
 - `snapshot_t0/` — `entities.csv`, `relationships.csv`, `sanctions.csv`, `repex.csv`
 - `snapshot_t1/` — `sanctions.csv` only: the same list with one designation added, one removed and one changed. The other three files are taken from `snapshot_t0/`.
+- `snapshot_t2/` — `entities.csv` and `relationships.csv`, loaded after t1 (Step 12): one stake raised (SCEN-10), one list record that states an LEI and so joins the registry's record (SCEN-14), one LEI that lapsed (SCEN-16, which keeps its outcome). The sanctions and exceptions are taken from the set before it.
 
 What each scenario must produce is in [../eval/gold_scenarios.yaml](../eval/gold_scenarios.yaml). The files are checked by `uv run pytest tests/unit/test_fixtures.py -v`.
 
@@ -35,5 +36,5 @@ Every file starts with `source`, `source_record_id`, `as_of`, `confidence`. Then
 - **Names are distinctive on purpose.** Two different entities may have similar names only where a gold scenario declares the pair. Avoid reusing words such as "Holdings" or "Trading" across scenarios.
 - **LEIs** are 20 characters, start with `FX` and are not valid real LEIs.
 - **Bytes matter.** Snapshot ids are computed from file bytes. Keep the files UTF-8 without a BOM, with LF line endings (`.gitattributes` enforces this on checkout).
-- **Aliases.** `uv run ubo ingest --source fixtures` loads `snapshot_t0/`, and the `fixtures` alias points at that set. Loading `snapshot_t1/` (`--path fixtures/snapshot_t1`) makes a new set and moves only `latest`, so `fixtures` always means t0.
-- **Row keys are stable.** `source_record_id` identifies a row across snapshots; the list diff relies on it.
+- **Aliases.** `uv run ubo ingest --source fixtures` loads `snapshot_t0/`, and the `fixtures` alias points at that set. Loading `snapshot_t1/` (`--path fixtures/snapshot_t1`) makes a new set and moves only `latest`, so `fixtures` always means t0. `snapshot_t2/` likewise.
+- **Row keys are stable.** `source_record_id` identifies a row across snapshots; the snapshot diff (`ubo monitor`) relies on it.

@@ -4,7 +4,7 @@ import json
 import shutil
 
 import pytest
-from conftest import build_graph
+from conftest import T1, build_graph
 from e2e import cli
 from real_format import SAMPLES, restamp
 
@@ -71,7 +71,7 @@ def test_two_databases_give_the_same_diff(fresh_con, ontology, tmp_path, monkeyp
     monkeypatch.setenv("UBO_DB", str(tmp_path / "other.duckdb"))
     other = connect()
     assert build_graph(other, ontology) == t0
-    assert build_graph(other, ontology, "fixtures/snapshot_t1") == t1
+    assert build_graph(other, ontology, T1) == t1
     assert diff_sets(other, t0, t1) == first
     other.close()
 

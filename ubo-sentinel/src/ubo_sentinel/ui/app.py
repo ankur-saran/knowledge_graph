@@ -13,11 +13,18 @@ from typing import Any
 
 import streamlit as st
 
+from ubo_sentinel.agents.audit import DeterminismViolation
 from ubo_sentinel.agents.base import ScreenRequest
 from ubo_sentinel.agents.explainer import render_memo
 from ubo_sentinel.audit.log import GENESIS_HASH, AuditChainError, AuditLog
 from ubo_sentinel.audit.replay import UnknownDecision
-from ubo_sentinel.audit.review import ReviewError, is_superseded, pending, unscreened
+from ubo_sentinel.audit.review import (
+    ReviewError,
+    is_superseded,
+    pending,
+    supersedes_of,
+    unscreened,
+)
 from ubo_sentinel.graph.store import GraphNotBuilt
 from ubo_sentinel.graph.views import GraphView, mask_decision
 from ubo_sentinel.models.decision import Decision
@@ -292,17 +299,57 @@ def screen_panel(role, actor, snapshot, rule_pack, log, ontology, records, decis
                 st.rerun()
 
 
+def rescreen_section(role, actor, log, ontology, records, decisions) -> None:
+    """The latest monitor run's queue (`ubo monitor`), and one item screened again."""
+    run = panels.latest_run(records)
+    if run is None:
+        return
+    run = panels.run_with_statuses(run, log)
+    st.markdown(f"#### Re-screen queue ({len(run.items)}), monitor run {run.run_id}")
+    st.caption(
+        f"Decisions that data newer than their own may change, against set {run.curr_set_id}."
+        " A re-screen is an ordinary decision: it waits for a reviewer other than its screener."
+    )
+    if not run.items:
+        return
+    st.dataframe(panels.rescreen_rows(run, decisions, role, ontology), hide_index=True)
+    pending_ids = [item.prior_decision_id for item in run.items if item.status == "PENDING"]
+    if not pending_ids:
+        return
+    chosen = st.selectbox("Re-screen the entity of", pending_ids, key="rescreen-item")
+    if st.button("Re-screen", disabled=not actor.strip(), key="rescreen-submit"):
+        try:
+            with _write_lock():
+                result = panels.rescreen_item(
+                    run, chosen, log, ontology, role=role, actor=actor.strip()
+                )
+        except (PermissionError, AuditChainError, DeterminismViolation) as exc:
+            st.error(str(exc))
+            return
+        if result.decision is None:
+            st.warning(f"Not screened ({result.outcome}): screen it from the Screen panel.")
+            return
+        records, _, _, _ = log_contents(log)
+        st.session_state["review_flash"] = (
+            f"Re-screened: decision {result.decision.decision_id},"
+            f" {result.decision.recommendation} ({result.transition}). {head_receipt(records)}"
+        )
+        st.rerun()
+
+
 def review_panel(role, actor, log, ontology, records, decisions, waiting, failed) -> None:
     flash = st.session_state.pop("review_flash", None)
     if flash:
         st.success(flash)
     st.markdown(f"#### Waiting for a review ({len(waiting)})")
     if waiting:
-        st.dataframe(panels.queue_rows(waiting, role, ontology), hide_index=True)
+        follows = supersedes_of(log)
+        st.dataframe(panels.queue_rows(waiting, role, ontology, follows=follows), hide_index=True)
     if failed:
         st.markdown(f"#### Screens that failed and were not run again ({len(failed)})")
         st.caption("Each is an entity nobody screened.")
         st.dataframe(panels.unscreened_rows(failed), hide_index=True)
+    rescreen_section(role, actor, log, ontology, records, decisions)
 
     ids = [d.decision_id for d in waiting] + [
         d.decision_id for d in reversed(decisions) if d.status != "RECOMMENDED"

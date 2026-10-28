@@ -87,10 +87,28 @@ uv run ubo build-graph
 
 `latest` now names the t1 set; `fixtures` still names t0.
 
-1. In the sidebar set the snapshot set to `latest`, and as `a.analyst` screen `Acme Trading FZE` (now `ESCALATE`), `Nettlebed Cider Company Ltd` (now `CLEAR`) and `Quenby Aerostructures Ltd` (now `ESCALATE`).
-2. As `r.reviewer`, open Acme's t0 decision (the `CLEAR`). It is marked *newer data exists*, and *Other decisions on this entity* shows the t1 `ESCALATE` beside it. Approving it as `CLEAR` is refused; ticking *Clear on the older data all the same* with a reason allows it, and the review event records that it was accepted as stale.
+1. **Find what the change may move, without screening every entity again:**
 
-The re-screen queue, which finds these decisions without screening each entity again, is Step 12 and is added to this runbook with it.
+   ```
+   uv run ubo monitor
+   ```
+
+   It diffs t1 against the set each recorded decision was made on and prints the change digest (one designation added, one removed, one changed, each with the decisions it reaches), then the re-screen queue. Of the entities screened in step 3, the change reaches Acme alone: its `CLEAR` is queued. (Screen `Quenby Aerostructures Ltd` and `Nettlebed Cider Company Ltd` on `fixtures` before loading t1 and they are queued too, a cleared entity first.) The run is recorded once in the audit log (`MONITOR_RUN`), with a receipt; run it again and it says *already on record*. `--dry-run` records nothing (the only mode for `auditor`); `--json` prints the run.
+2. **Screen the queue again:** `uv run ubo monitor --autorun --role analyst`. Each re-screen is an ordinary decision by `system:monitor` on t1: Acme `CLEAR -> ESCALATE (UPGRADE)` (Quenby `CLEAR -> ESCALATE`, Nettlebed `REVIEW -> CLEAR (DOWNGRADE)`, if they were screened). Nothing is cleared by the monitor: each waits for a reviewer. In the UI the reviewer's Review tab shows the same queue under *Re-screen queue* and re-screens one item at a time.
+3. As `r.reviewer`, the review queue marks each re-screen *re-screen of <decision>*. Open Acme's t0 decision (the `CLEAR`): it is marked *newer data exists*, and *Other decisions on this entity* shows the t1 `ESCALATE` beside it. Approving it as `CLEAR` is refused; ticking *Clear on the older data all the same* with a reason allows it, and the review event records that it was accepted as stale.
+
+## 6b. The graph changes
+
+`fixtures/snapshot_t2/` changes what a list diff cannot see: a stake (Marrowdale's designated owner now holds 50 % of the intermediate), an LEI a list record starts to state (so Fairweather's owner and the designated list record are one entity), and an LEI that lapsed (Silverline's parent).
+
+```
+uv run ubo ingest --source fixtures --path fixtures/snapshot_t2
+uv run ubo normalize
+uv run ubo build-graph
+uv run ubo monitor --autorun --role analyst
+```
+
+The digest names each change by cause (`OWNERSHIP`, `LINK`, `ENTITY`). Of the entities screened in step 3, Fairweather (approved in step 4, so queued last: its `ESCALATE` can only stay or fall) comes back `ESCALATE` with no match to settle, and Silverline (pick 1) stays `CLEAR`, with the lapsed LEI as an informational gap. (Screen `Marrowdale Dairy Ltd` with the snapshot set `latest` before loading t2, and it is queued too and comes back `ESCALATE`.) A queued decision whose outcome does not move costs a re-screen; a missed one would be an entity dealt with on old data. `uv run ubo eval --suite monitor` screens every gold scenario on `fixtures`, queues them against the newest set, screens all of them again and reports **Re-screen recall** (target 100 %) and precision.
 
 ## 7. Real data (optional, needs the network)
 
@@ -106,6 +124,8 @@ uv run ubo refresh
 |---|---|
 | `Snapshot set … is unknown. Run 'ubo ingest' first.` | Step 1. |
 | `Graph not built …` | Run the command it names (`ubo normalize`, `ubo build-graph`). |
+| `ubo monitor`: `… built by other code` | The older set was built by another transform: rebuild it with the commands named, then run the monitor again. |
+| `ubo monitor`: `… has not passed the data-quality check` | A real set `ubo refresh` did not accept; a shrunken file would look like delistings. Use `--allow-unaccepted --reason` only when you have checked it. |
 | `The audit log does not verify` | Nothing is shown or recorded on a broken chain. `ubo audit verify` names the first line that fails. |
 | The UI cannot read the ontology | Start it with `uv run ubo ui` from `ubo-sentinel/`, or set `UBO_ONTOLOGY`. |
 | A database lock error during `ubo ingest` | The UI holds no connection while idle; wait for a screen in progress to finish. |

@@ -11,6 +11,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+import duckdb
+
+from ubo_sentinel.agents import change_monitor
 from ubo_sentinel.agents.audit import DeterminismViolation
 from ubo_sentinel.agents.base import ScreenRequest, ScreenUsageError
 from ubo_sentinel.agents.guardrail import check_render
@@ -35,12 +38,14 @@ from ubo_sentinel.graph.views import (
     mask_decision,
     pseudonym_for,
 )
+from ubo_sentinel.models.change import MonitorRun
 from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.graph import EntityMatch
 from ubo_sentinel.models.memo import DecisionView, Memo
 from ubo_sentinel.models.ontology import OntologyConfig, require_command
 from ubo_sentinel.models.provenance import Provenance
 from ubo_sentinel.pipeline.bronze import UnknownSnapshotSet
+from ubo_sentinel.pipeline.db import connect, db_path
 from ubo_sentinel.rules.pack import UnknownRulePack
 
 WITHHELD = "Withheld by the render guardrail: it held a value that is masked for this role."
@@ -318,16 +323,105 @@ def queue_rows(
     role: str,
     ontology: OntologyConfig,
     superseded: Callable[[Decision], bool | None] = is_superseded,
+    follows: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """The review queue as `ubo review` lists it: gravest first, then oldest."""
+    """The review queue as `ubo review` lists it: gravest first, then oldest.
+
+    `follows` maps a re-screen a monitor run made to the decision it follows.
+    """
     newer: dict[str, bool | None] = {}
     rows = []
     for decision in waiting:
         # Superseded depends on the set alone: one database read per set.
         if decision.snapshot_set_id not in newer:
             newer[decision.snapshot_set_id] = superseded(decision)
-        rows.append(decision_row(decision, role, ontology, newer[decision.snapshot_set_id]))
+        row = decision_row(decision, role, ontology, newer[decision.snapshot_set_id])
+        if follows is not None:
+            row["re-screen of"] = follows.get(decision.decision_id, "")
+        rows.append(row)
     return rows
+
+
+def latest_run(records: list[dict[str, Any]]) -> MonitorRun | None:
+    """The newest monitor run on record."""
+    runs = [r for r in records if r["event_type"] == change_monitor.RUN_EVENT]
+    return MonitorRun.model_validate(runs[-1]["payload"]["run"]) if runs else None
+
+
+def run_with_statuses(run: MonitorRun, log: AuditLog) -> MonitorRun:
+    """The run with each item's status as the log stands now; as recorded when the
+    database cannot be read (missing, or held by a writer)."""
+    if not db_path().exists():
+        return run
+    try:
+        con = connect(read_only=True)
+    except duckdb.Error:
+        return run
+    try:
+        return change_monitor.refresh_statuses(run, log, con)
+    except (duckdb.Error, UnknownSnapshotSet):
+        return run
+    finally:
+        con.close()
+
+
+def rescreen_rows(
+    run: MonitorRun, decisions: list[Decision], role: str, ontology: OntologyConfig
+) -> list[dict[str, Any]]:
+    """The re-screen queue as `ubo monitor` lists it, each subject as the role may see it."""
+    by_id = {decision.decision_id: decision for decision in decisions}
+    rows = []
+    for number, item in enumerate(run.items, 1):
+        prior = by_id.get(item.prior_decision_id)
+        view = mask_decision(prior, role, ontology) if prior else None
+        subject = (view.target_id or view.memo.query_norm) if view else item.query_norm
+        rows.append(
+            {
+                "#": number,
+                "subject": subject or "",
+                "was": item.prior_recommendation
+                + (f" / {item.prior_outcome}" if item.prior_outcome else ""),
+                "status before": item.prior_status,
+                "why": item.reason,
+                "causes": ", ".join(item.causes),
+                "found by": item.basis,
+                "depth": item.max_depth,
+                "prior decision": item.prior_decision_id,
+                "queue": item.status,
+            }
+        )
+    return rows
+
+
+def rescreen_item(
+    run: MonitorRun,
+    prior_decision_id: str,
+    log: AuditLog,
+    ontology: OntologyConfig,
+    role: str,
+    actor: str,
+) -> change_monitor.RescreenResult:
+    """Screen one queued decision again on the run's set, as `ubo monitor --autorun` does.
+
+    Raises `PermissionError` for a role that may not screen, and what the
+    Supervisor raises for a request that cannot be run.
+    """
+    require_command(ontology, role, "screen")
+    [item] = [i for i in run.items if i.prior_decision_id == prior_decision_id]
+    one = run.model_copy(update={"items": [item]})
+    con = connect(read_only=True)
+    try:
+        [result] = change_monitor.rescreen(
+            one,
+            Supervisor(ontology, log),
+            con,
+            actor=actor,
+            role=role,
+            requests=change_monitor.recorded_requests(log),
+        )
+    finally:
+        con.close()
+    return result
 
 
 def unscreened_rows(failed: list[dict[str, Any]]) -> list[dict[str, str]]:

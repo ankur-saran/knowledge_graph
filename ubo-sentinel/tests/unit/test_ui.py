@@ -13,6 +13,7 @@ import pytest
 from e2e import person_pii, screen_gold
 from streamlit.testing.v1 import AppTest
 
+from ubo_sentinel.agents import change_monitor as cm
 from ubo_sentinel.agents.base import ScreenRequest
 from ubo_sentinel.agents.supervisor import Supervisor
 from ubo_sentinel.agents.traversal import TraversalAgent
@@ -20,6 +21,8 @@ from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.audit.review import unscreened
 from ubo_sentinel.graph.views import MASK, mask_decision
 from ubo_sentinel.models.evidence import GapCode, ReasonCode
+from ubo_sentinel.pipeline.bronze import resolve_set
+from ubo_sentinel.pipeline.db import connect
 from ubo_sentinel.ui import panels
 
 APP = str(Path(__file__).resolve().parents[2] / "src" / "ubo_sentinel" / "ui" / "app.py")
@@ -375,3 +378,58 @@ def test_a_failed_screen_is_shown_by_kind_and_logged_once(t0, monkeypatch):
     app.run()
     app.run()
     assert [r["event_type"] for r in AuditLog().records()] == ["SCREEN_FAILED"]
+
+
+# --- the re-screen queue ------------------------------------------------------------------
+
+
+@pytest.fixture
+def monitored(fresh_db, ontology, scenarios):
+    """SCEN-01, 03 and 17 screened on t0, the t1 list loaded, and a monitor run recorded."""
+    t0, t1 = fresh_db("t0_t1")
+    log = AuditLog()
+    supervisor = Supervisor(ontology, log)
+    prior = {
+        sid: screen_gold(supervisor, scenarios[sid], t0, actor="a.analyst").decision
+        for sid in ("SCEN-01", "SCEN-03", "SCEN-17")
+    }
+    con = connect(read_only=True)
+    run, _, _ = cm.build_queue(log, con, resolve_set(con, t1))
+    con.close()
+    cm.record_run(log, ontology, run, actor="e", role="engineer", now=supervisor.now)
+    return prior, run
+
+
+def test_the_rescreen_queue_is_the_latest_run_with_its_statuses(monitored, ontology):
+    prior, run = monitored
+    log = AuditLog()
+    assert panels.latest_run(log.records()) == run
+    rows = panels.rescreen_rows(run, log.decisions(), "reviewer", ontology)
+    assert {row["prior decision"] for row in rows} == {
+        prior["SCEN-01"].decision_id,
+        prior["SCEN-17"].decision_id,
+    }
+    assert {row["queue"] for row in rows} == {"PENDING"}
+    with pytest.raises(PermissionError):
+        panels.rescreen_item(run, rows[0]["prior decision"], log, ontology, "engineer", "e")
+    result = panels.rescreen_item(run, rows[0]["prior decision"], log, ontology, "reviewer", "r")
+    assert result.decision.status == "RECOMMENDED"
+    statuses = [item.status for item in panels.run_with_statuses(run, AuditLog()).items]
+    assert sorted(statuses) == ["DONE", "PENDING"]
+    follows = {result.decision.decision_id: rows[0]["prior decision"]}
+    waiting = [d for d in AuditLog().decisions() if d.status == "RECOMMENDED"]
+    shown = panels.queue_rows(waiting, "reviewer", ontology, lambda d: None, follows)
+    assert [r["re-screen of"] for r in shown if r["re-screen of"]] == [rows[0]["prior decision"]]
+
+
+def test_the_reviewer_rescreens_from_the_review_panel(monitored):
+    prior, run = monitored
+    app = page("reviewer", "r.reviewer")
+    assert not app.exception
+    assert f"Re-screen queue (2), monitor run {run.run_id}" in shown_text(app)
+    count = len(AuditLog().records())
+    app.button(key="rescreen-submit").click()
+    app.run()
+    assert not app.exception
+    assert "Re-screened: decision" in app.success[0].value
+    assert len(AuditLog().records()) == count + 1
