@@ -78,7 +78,10 @@ def test_the_order_of_the_lists_changes_nothing():
 
 
 def test_a_pack_needs_every_key():
-    for key in RulePack.model_fields:
+    # `label` is the one optional key: what a memo says of the pack's standing (Step 13).
+    optional = {name for name, field in RulePack.model_fields.items() if not field.is_required()}
+    assert optional == {"label"}
+    for key in set(RulePack.model_fields) - optional:
         data = PACK.model_dump()
         del data[key]
         with pytest.raises(ValidationError):

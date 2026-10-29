@@ -1,0 +1,13 @@
+query_name,expected_entity_id
+the Acme Trading company (Dubai),lei:FXS01TARGET000000000
+Halcyon Ridge,lei:FXS03TARGET000000000
+Brackenridge plc group holding,lei:FXS00HUB000000000000
+Acme Trdg FZE,lei:FXS01TARGET000000000
+Quillon Harbor Grp,lei:FXS01PARENT000000000
+Halcyon Ridge Mining,lei:FXS03TARGET000000000
+Fenwold Turbines,lei:FXS30TARGET000000000
+Greywether Book Binders,lei:FXS20TARGET000000000
+Petrakis Navigation,lei:FXS14OWNER0000000000
+Corvanta Bulk Carriers Aktiengesellschaft,lei:FXS30OWNER0000000000
+Mirzakhan Petrochemical OOO,fx_list:s05-owner-b
+Vostrek Maritime Limited Liability Company,lei:FXS02TARGET000000000

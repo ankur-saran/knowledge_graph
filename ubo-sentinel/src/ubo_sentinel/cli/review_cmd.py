@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 import yaml
 
+from ubo_sentinel.agents.guardrail import check_render
 from ubo_sentinel.audit.log import AuditChainError, AuditLog
 from ubo_sentinel.audit.review import (
     is_superseded,
@@ -21,6 +22,7 @@ from ubo_sentinel.cli.show import RenderWithheld, audit_head, decision_text, utf
 from ubo_sentinel.graph.views import mask_decision
 from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.ontology import OntologyConfig, load_ontology
+from ubo_sentinel.present import advisory_lines
 
 
 class Action(StrEnum):
@@ -123,6 +125,12 @@ def review(
         # Nothing is decided on a memo that could not be shown.
         typer.echo(decision_text(decision, role, ontology, as_json=as_json))
         if not as_json:
+            advisory = "\n".join(advisory_lines(decision, role, ontology))
+            # The render guardrail holds for advisory text as for the memo.
+            if advisory and check_render(advisory, decision, role, ontology):
+                raise RenderWithheld("The advisory text shows a value masked for this role.")
+            if advisory:
+                typer.echo(advisory)
             for line in _history_lines(log, decision):
                 typer.echo(line)
 

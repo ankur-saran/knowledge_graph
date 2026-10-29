@@ -1,5 +1,6 @@
 """`ubo eval`: run the gold scenarios and the labelled entity-resolution set."""
 
+import csv
 import json
 import math
 import tempfile
@@ -12,7 +13,7 @@ import typer
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from ubo_sentinel.agents import change_monitor
+from ubo_sentinel.agents import change_monitor, intake_assist
 from ubo_sentinel.agents.evaluator import compare_golden, golden_of, run_pipeline_suite
 from ubo_sentinel.agents.real_smoke import SmokeReport, load_smoke, run_smoke
 from ubo_sentinel.agents.supervisor import Supervisor
@@ -21,6 +22,8 @@ from ubo_sentinel.audit.replay import replay_all
 from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
 from ubo_sentinel.graph.entity_resolution import ErReport, evaluate_labelled
 from ubo_sentinel.graph.store import GraphNotBuilt, GraphStore
+from ubo_sentinel.llm.client import LLMUnavailable, client_for
+from ubo_sentinel.llm.config import load_config
 from ubo_sentinel.models.gold_scenario import load_gold_scenarios
 from ubo_sentinel.models.ontology import load_ontology
 from ubo_sentinel.pipeline import bronze
@@ -44,6 +47,8 @@ ER_PATHS = {
     bronze.FAMILY_FIXTURES: Path("eval/er_labelled.csv"),
     bronze.FAMILY_REAL: Path("eval/er_labelled_real.csv"),
 }
+# Messy queries for the intake assist (Step 13.5), scored only with UBO_LLM_INTAKE on.
+ER_MESSY_PATH = Path("eval/er_messy.csv")
 # Invariants of real screens that hold on any refresh: `agents/real_smoke.py`.
 SMOKE_PATH = Path("eval/real_smoke.yaml")
 # The decisions of the gold scenarios on the fixtures: `golden_of()` in `agents/evaluator.py`.
@@ -211,6 +216,29 @@ def _print_er(out: _Output, report: ErReport) -> bool:
         out.problems.append(f"er: '{query}' returned a candidate")
     met = out.metric("er", "ER precision@1", report.precision_at_1, ER_PRECISION_TARGET)
     return met and not report.false_candidates
+
+
+def _print_assist(out: _Output, store: GraphStore) -> bool:
+    """Recall@5 on messy queries without and with the intake assist (`UBO_LLM_INTAKE`)."""
+    try:
+        config = load_config()
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    if not config.enabled("intake") or store.snapshot_set.family != bronze.FAMILY_FIXTURES:
+        return True
+    try:
+        client = client_for(config)
+    except LLMUnavailable as exc:
+        out.echo(f"Intake assist: not run ({exc})")
+        return True
+    with ER_MESSY_PATH.open(encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+    report = intake_assist.evaluate_assist(store, rows, client, config.model, config.max_tokens)
+    out.echo(f"Intake assist ({config.mode}; {report.not_assisted} of {report.total} not assisted)")
+    out.metric("er", "Recall@5 without assist", report.recall_without, 0.0)
+    # The assist may only add candidates: with it, recall is never lower.
+    return out.metric("er", "Recall@5 with assist", report.recall_with, report.recall_without)
 
 
 def _print_smoke(out: _Output, reports: list[SmokeReport]) -> bool:
@@ -472,6 +500,7 @@ def evaluate(
                 ok = _run_packs(out) and ok
             if Suite.er in runs:
                 ok = _print_er(out, evaluate_labelled(store, er_path)) and ok
+                ok = _print_assist(out, store) and ok
             if Suite.real_smoke in runs:
                 try:
                     entries = load_smoke(smoke)

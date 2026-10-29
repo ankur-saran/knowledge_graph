@@ -1,9 +1,11 @@
 """What a role is shown of a decision, in the CLI and the review UI: masked, then checked."""
 
 from collections import Counter
+from typing import Any
 
 import duckdb
 
+from ubo_sentinel.agents import llm_prose, match_adjudicator
 from ubo_sentinel.agents.explainer import render_memo
 from ubo_sentinel.agents.guardrail import check_render
 from ubo_sentinel.audit.log import AuditLog
@@ -169,4 +171,66 @@ def monitor_lines(
             f"  {item.reason}{causes}  by {item.basis}{hops}  depth {item.max_depth}"
             f"  prior {item.prior_decision_id}  {item.status}"
         )
+    return lines
+
+
+# --- advisory text beside a decision (Step 13) -------------------------------------------
+
+LABEL = "LLM-assisted, advisory: not part of the decision, checked against the memo by code."
+
+
+def card_lines(cards: list[dict[str, Any]]) -> list[str]:
+    lines = ["Match cards (code, not a model):"]
+    for item in cards:
+        a, b = item["a"], item["b"]
+        lines += [
+            f"  {a['id']}  matched to  {b['id']}"
+            f"  ({item['match_type']}, {item['match_confidence']})",
+            f"    names     {'; '.join(a['names'])}  |  {'; '.join(b['names'])}",
+            f"    score     {item['name_score']}  shared tokens: "
+            f"{', '.join(item['shared_name_tokens']) or '-'}  alias match: {item['alias_match']}",
+            f"    country   {a['jurisdiction'] or '-'}  |  {b['jurisdiction'] or '-'}"
+            f"  (agree: {item['jurisdictions_agree']})",
+            f"    type      {item['type_a']}  |  {item['type_b']}",
+            f"    conflicts LEI: {item['lei_conflict']}  registration: "
+            f"{item['registration_conflict']}",
+            f"    lists     {', '.join(item['list_sources']) or '-'}",
+        ]
+    return lines
+
+
+def _assessment_lines(found: dict[str, Any]) -> list[str]:
+    lines = []
+    for item in found["output"]["assessments"]:
+        lines.append(
+            f"  {item['key']}: {item['assessment']} (on {', '.join(item['evidence_fields'])})"
+        )
+        lines.append(f"    {item['rationale']}")
+    for key in found["output"].get("not_sent", []):
+        lines.append(f"  {key}: not asked (a masked party: nothing to compare)")
+    return lines
+
+
+def advisory_text(
+    found: dict[str, Any], decision: Decision, role: str, ontology: OntologyConfig
+) -> list[str]:
+    if found["status"] != "ACCEPTED":
+        return [f"Not shown: {found['status']} ({'; '.join(found['faults']) or '-'})."]
+    if found["feature"] == "prose":
+        body = [llm_prose.render_prose(found, decision, role, ontology)]
+    else:
+        body = _assessment_lines(found)
+    return [f"{LABEL} Model {found['model']}, prompt v{found['prompt_version']}.", *body]
+
+
+def advisory_lines(decision: Decision, role: str, ontology: OntologyConfig) -> list[str]:
+    """What sits beside a decision for a reviewer: the match cards (code), and each accepted
+    LLM annotation, labelled. Shown by `ubo review` and the review UI."""
+    lines: list[str] = []
+    cards = match_adjudicator.match_cards(decision, role, ontology)
+    if cards:
+        lines += card_lines(cards)
+    for feature in sorted(decision.llm_annotations):
+        found = decision.llm_annotations[feature]
+        lines += [f"LLM annotation ({feature}):", *advisory_text(found, decision, role, ontology)]
     return lines

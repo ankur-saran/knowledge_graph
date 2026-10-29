@@ -6,7 +6,7 @@ flag: they are code, shown whatever the setting. An answer is recorded as an
 """
 
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
 import yaml
@@ -24,57 +24,12 @@ from ubo_sentinel.llm.config import FEATURE_FLAGS, MASTER_FLAG, load_config
 from ubo_sentinel.llm.egress import EgressRefused
 from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.ontology import OntologyConfig, load_ontology
-
-LABEL = "LLM-assisted, advisory: not part of the decision, checked against the memo by code."
+from ubo_sentinel.present import advisory_text, card_lines
 
 
 class Feature(StrEnum):
     prose = "prose"
     match = "match"
-
-
-def _card_lines(cards: list[dict[str, Any]]) -> list[str]:
-    lines = ["Match cards (code, not a model):"]
-    for item in cards:
-        a, b = item["a"], item["b"]
-        lines += [
-            f"  {a['id']}  matched to  {b['id']}"
-            f"  ({item['match_type']}, {item['match_confidence']})",
-            f"    names     {'; '.join(a['names'])}  |  {'; '.join(b['names'])}",
-            f"    score     {item['name_score']}  shared tokens: "
-            f"{', '.join(item['shared_name_tokens']) or '-'}  alias match: {item['alias_match']}",
-            f"    country   {a['jurisdiction'] or '-'}  |  {b['jurisdiction'] or '-'}"
-            f"  (agree: {item['jurisdictions_agree']})",
-            f"    type      {item['type_a']}  |  {item['type_b']}",
-            f"    conflicts LEI: {item['lei_conflict']}  registration: "
-            f"{item['registration_conflict']}",
-            f"    lists     {', '.join(item['list_sources']) or '-'}",
-        ]
-    return lines
-
-
-def _assessment_lines(found: dict[str, Any]) -> list[str]:
-    lines = []
-    for item in found["output"]["assessments"]:
-        lines.append(
-            f"  {item['key']}: {item['assessment']} (on {', '.join(item['evidence_fields'])})"
-        )
-        lines.append(f"    {item['rationale']}")
-    for key in found["output"].get("not_sent", []):
-        lines.append(f"  {key}: not asked (a masked party: nothing to compare)")
-    return lines
-
-
-def _show(
-    found: dict[str, Any], decision: Decision, role: str, ontology: OntologyConfig
-) -> list[str]:
-    if found["status"] != "ACCEPTED":
-        return [f"Not shown: {found['status']} ({'; '.join(found['faults']) or '-'})."]
-    if found["feature"] == "prose":
-        body = [llm_prose.render_prose(found, decision, role, ontology)]
-    else:
-        body = _assessment_lines(found)
-    return [f"{LABEL} Model {found['model']}, prompt v{found['prompt_version']}.", *body]
 
 
 @app.command()
@@ -111,7 +66,7 @@ def annotate(
             lines.append("No unsettled name match: nothing to compare.")
             _echo(lines, decision, role, ontology)
             return
-        lines += _card_lines(cards)
+        lines += card_lines(cards)
     if not config.enabled(feature.value):
         flag = FEATURE_FLAGS[feature.value]
         lines.append(f"LLM {feature.value}: off (set {MASTER_FLAG}=on and {flag}=on).")
@@ -146,7 +101,7 @@ def annotate(
                      f"{' (recorded)' if recorded else ' (already on record)'}.")  # fmt: skip
     else:
         lines.append(f"Annotation {found.annotation_id}: on record (the model was not asked).")
-    lines += _show(found.model_dump(mode="json"), decision, role, ontology)
+    lines += advisory_text(found.model_dump(mode="json"), decision, role, ontology)
     _echo(lines, decision, role, ontology)
     typer.echo(audit_head(log))
     if found.status != "ACCEPTED":

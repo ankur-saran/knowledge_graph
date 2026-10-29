@@ -58,6 +58,7 @@ source = [
     "src/ubo_sentinel/graph",
     "src/ubo_sentinel/audit",
     "src/ubo_sentinel/agents",
+    "src/ubo_sentinel/llm",
     "src/ubo_sentinel/ui",
 ]
 # The Streamlit page is glue, run by `tests/unit/test_ui.py` through AppTest;

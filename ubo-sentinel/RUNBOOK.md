@@ -118,6 +118,29 @@ uv run ubo refresh
 
 `refresh` downloads GLEIF and the OpenSanctions sanctions collection (about 1 GB), then builds and checks them; it takes about half an hour. Then, with the snapshot set `real`, screen by LEI `253400WSS48YWMBUA688` (Gazprombank: `ESCALATE`, `DIRECT_DESIGNATION`) and `HWUPKR0MPOU8FGXBT394` (Apple Inc.: `CLEAR`). `eval/real_smoke.yaml` lists more, each with the recommendation it was verified with. The UI names the OpenSanctions licence (CC BY-NC 4.0) under every decision that read it.
 
+## 8. Other regimes, Neo4j and LLM assists (optional)
+
+The UK and EU packs are illustrative, not validated by counsel, and send control to review instead of treating it as designation. One graph, every pack:
+
+```
+uv run ubo eval --suite packs
+uv run ubo screen "Fenwold Turbine Services Ltd" --rule-pack eu
+```
+
+Under OFAC, Fenwold is `REVIEW` (`OTHER_REGIME_DESIGNATION`): its owner is on the EU list only. Under the EU pack the same designation blocks, and the memo carries the pack's label.
+
+`uv run ubo export neo4j --snapshot fixtures` writes CSVs, `import.cypher` and a manifest under `var/export/<set id>/` (persons masked for an analyst; `--role reviewer` for names). Copy the CSVs into Neo4j's import directory and run `cypher-shell -f import.cypher`, or load a server directly with `--uri bolt://localhost:7687` and the password in `NEO4J_PASSWORD`. Nothing reads Neo4j back.
+
+The LLM assists need `uv sync --extra optional`, an Anthropic API key, `UBO_LLM=on` and the feature's flag. Each answer is advisory, recorded in the audit log, and changes no decision.
+
+```
+uv run ubo annotate <decision id> --feature match --role reviewer   # the match cards: no flag needed
+UBO_LLM=on UBO_LLM_PROSE=on uv run ubo annotate <decision id> --feature prose
+UBO_LLM=on UBO_LLM_INTAKE=on uv run ubo screen "Halcyon Ridge"
+```
+
+The model reads the analyst's view only. A summary names parties through slots that code fills, so a reviewer reads names where an analyst reads pseudonyms. The intake assist lists the candidates its search variants found by id: screen one with the `--target-id … --assist-run …` it prints.
+
 ## Troubleshooting
 
 | Message | Do |

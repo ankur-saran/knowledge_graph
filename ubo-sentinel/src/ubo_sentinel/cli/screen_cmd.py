@@ -7,18 +7,23 @@ import typer
 import yaml
 from pydantic import ValidationError
 
+from ubo_sentinel.agents import intake_assist
 from ubo_sentinel.agents.audit import DeterminismViolation
 from ubo_sentinel.agents.base import Resolution, ScreenRequest, ScreenUsageError
 from ubo_sentinel.agents.supervisor import (
     NeedsDisambiguation,
     ScreenFailed,
     Supervisor,
+    utc_now,
 )
 from ubo_sentinel.audit.log import AuditChainError, AuditLog
 from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
 from ubo_sentinel.cli.show import RenderWithheld, audit_head, decision_text, utf8_stdout
-from ubo_sentinel.graph.store import GraphNotBuilt
+from ubo_sentinel.graph.store import GraphNotBuilt, GraphStore
 from ubo_sentinel.graph.views import mask_candidates
+from ubo_sentinel.llm.client import LLMUnavailable, client_for
+from ubo_sentinel.llm.config import load_config
+from ubo_sentinel.models.graph import EntityMatch
 from ubo_sentinel.models.ontology import OntologyConfig, load_ontology
 from ubo_sentinel.pipeline import bronze
 from ubo_sentinel.pipeline.bronze import UnknownSnapshotSet
@@ -37,6 +42,59 @@ def _candidate_lines(resolution: Resolution, role: str, ontology: OntologyConfig
             f"  {match.status}  {match.match_type} {match.confidence:.2f}{lei}  ({match.entity_id})"
         )
     return lines
+
+
+def _assist_lines(
+    request: ScreenRequest,
+    known: list[EntityMatch],
+    log: AuditLog,
+    role: str,
+    ontology: OntologyConfig,
+) -> list[str]:
+    """Search variants from a model (`UBO_LLM_INTAKE`), resolved; [] when off or not asked."""
+    try:
+        config = load_config()
+    except ValueError as exc:
+        return [f"Intake assist: not run ({exc})"]
+    identifiers = bool(request.identifiers())
+    if not config.enabled("intake") or not intake_assist.may_ask(known, ontology, identifiers):
+        return []
+    try:
+        client = client_for(config)
+        with GraphStore.open(request.snapshot) as store:
+            run = intake_assist.assist(
+                store, request.query, known, client, config.model, config.max_tokens,
+                jurisdiction=request.jurisdiction,
+            )  # fmt: skip
+    except LLMUnavailable as exc:
+        return [f"Intake assist: no model ({exc})."]
+    intake_assist.record(log, ontology, run, request.actor, role, utc_now())
+    if run.status != "ACCEPTED":
+        return [f"Intake assist: {run.status} ({'; '.join(run.faults) or '-'}); nothing shown."]
+    if not run.candidates:
+        return ["Intake assist (LLM-assisted): its search variants found no other candidate."]
+    lines = [
+        "Intake assist (LLM-assisted, advisory): search variants found other candidates.",
+        f"These are never picked for you: screen one with --target-id ID --assist-run {run.run_id}",
+    ]
+    shown = mask_candidates([c.match for c in run.candidates], role, ontology)
+    for match in shown:
+        lines.append(
+            f"  - {match.legal_name}  [{match.jurisdiction or '--'}]  {match.entity_type}"
+            f"  {match.match_type} {match.confidence:.2f}  ({match.entity_id})"
+        )
+    return lines
+
+
+def _check_assist_run(log: AuditLog, run_id: str, target_id: str | None) -> None:
+    """A target screened from an assist run must be one that run found."""
+    event_id = f"intake:{run_id}"
+    event = next((r for r in log.records() if r["decision_id"] == event_id), None)
+    if event is None:
+        raise ScreenUsageError(f"No intake assist run {run_id} is on record.")
+    found = {c["match"]["entity_id"] for c in event["payload"]["candidates"]}
+    if target_id not in found:
+        raise ScreenUsageError(f"Run {run_id} did not find {target_id}; give one of its ids.")
 
 
 @app.command()
@@ -66,6 +124,10 @@ def screen(
     actor: Annotated[
         str | None, typer.Option("--actor", help="Who is screening; default: the role.")
     ] = None,
+    assist_run: Annotated[
+        str | None,
+        typer.Option("--assist-run", help="The intake assist run --target-id came from."),
+    ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Print the decision as JSON.")] = False,
 ) -> None:
     """Screen an entity: resolve it, walk its owners, apply the rule pack, write the memo."""
@@ -89,13 +151,20 @@ def screen(
             max_depth=max_depth,
             role=role,
             actor=actor or role,
+            assist_run_id=assist_run,
         )
         log = AuditLog()
+        if assist_run is not None:
+            if target_id is None:
+                raise ScreenUsageError("--assist-run needs --target-id.")
+            _check_assist_run(log, assist_run, target_id)
         supervisor = Supervisor(ontology, log)
         outcome = supervisor.run(request)
         if isinstance(outcome, NeedsDisambiguation):
             typer.echo(f"'{query}' has {len(outcome.candidates)} candidates:")
             for line in _candidate_lines(outcome.resolution, role, ontology):
+                typer.echo(line)
+            for line in _assist_lines(request, outcome.candidates, log, role, ontology):
                 typer.echo(line)
             if as_json or not sys.stdin.isatty():
                 typer.echo("Run again with --pick N.", err=True)
@@ -148,5 +217,8 @@ def screen(
         raise typer.Exit(code=1) from exc
     typer.echo(text)
     if not as_json:
+        if outcome.resolution.method == "NOT_FOUND" and query and target_id is None:
+            for line in _assist_lines(request, [], log, role, ontology):
+                typer.echo(line)
         # A receipt: `ubo audit verify --expect-head` later shows a log cut short.
         typer.echo(audit_head(log))

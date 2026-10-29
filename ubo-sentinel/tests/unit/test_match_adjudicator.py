@@ -147,3 +147,21 @@ def test_the_command_records_an_assessment(decisions, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "LIKELY_DIFFERENT (on name_score, shared_name_tokens)" in result.output
     assert "LLM-assisted" in result.output
+
+
+def test_review_shows_the_cards_and_an_accepted_assessment(decisions, ontology):
+    from ubo_sentinel.ui import panels
+
+    decision, log = decisions["SCEN-14"], AuditLog()
+    shown = cli("review", decision.decision_id, "--role", "reviewer")
+    assert shown.exit_code == 0 and "Match cards (code, not a model)" in shown.output
+    assert "LLM annotation" not in shown.output
+    found, _ = adjudicator.annotate_matches(
+        decision, ontology, FakeClient(good_answer), MODEL, 1000
+    )
+    annotations.record(log, ontology, found, "someone", "reviewer", decision.created_at)
+    shown = cli("review", decision.decision_id, "--role", "reviewer")
+    assert "LLM annotation (match):" in shown.output and "LIKELY_DIFFERENT" in shown.output
+    folded = log.decision(decision.decision_id)
+    assert "LIKELY_DIFFERENT" in panels.advisory(folded, "reviewer", ontology)
+    assert panels.advisory(decisions["SCEN-03"], "reviewer", ontology) is None

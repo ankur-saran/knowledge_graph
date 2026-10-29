@@ -70,6 +70,9 @@ class ScreenRequest(_Model):
     # data, and the run. Recorded with the request; never in a decision.
     supersedes: str | None = None
     monitor_run_id: str | None = None
+    # A target found through a model's search variants (Step 13.5): the
+    # `INTAKE_ASSISTED` run it came from. Recorded with the request; never in a decision.
+    assist_run_id: str | None = None
 
     def identifiers(self) -> dict[str, str]:
         """The identifiers given with the query. They name a screen that finds nothing."""

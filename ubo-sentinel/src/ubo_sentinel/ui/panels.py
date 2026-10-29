@@ -46,6 +46,7 @@ from ubo_sentinel.models.ontology import OntologyConfig, require_command
 from ubo_sentinel.models.provenance import Provenance
 from ubo_sentinel.pipeline.bronze import UnknownSnapshotSet
 from ubo_sentinel.pipeline.db import connect, db_path
+from ubo_sentinel.present import advisory_lines
 from ubo_sentinel.rules.pack import UnknownRulePack
 
 WITHHELD = "Withheld by the render guardrail: it held a value that is masked for this role."
@@ -203,6 +204,13 @@ class WhatIfChoice:
     @property
     def decisive(self) -> bool:
         return self.if_confirmed != self.if_rejected
+
+
+def advisory(decision: Decision, role: str, ontology: OntologyConfig) -> str | None:
+    """The match cards and accepted LLM annotations beside a decision (Step 13), through
+    the render guardrail; None when there are none or the text is withheld."""
+    lines = advisory_lines(decision, role, ontology)
+    return guarded("\n".join(lines), decision, role, ontology) if lines else None
 
 
 def what_if_choice(decision: Decision) -> WhatIfChoice | None:

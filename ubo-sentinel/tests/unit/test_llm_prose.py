@@ -198,9 +198,14 @@ def test_a_review_after_an_annotation_keeps_both(decisions, ontology):
     found, _ = _annotate(decision, ontology, good_prose)
     annotations.record(log, ontology, found, "someone", "reviewer", decision.created_at)
     review_decision(
-        log, ontology, decision.decision_id, action="approve", actor="checker",
-        role="reviewer", now=lambda: decision.created_at,
-    )  # fmt: skip
+        log,
+        ontology,
+        decision.decision_id,
+        action="approve",
+        actor="checker",
+        role="reviewer",
+        now=lambda: decision.created_at,
+    )
     folded = log.decision(decision.decision_id)
     assert folded.status == "APPROVED" and "prose" in folded.llm_annotations
 
@@ -255,3 +260,26 @@ def test_replay_mode_answers_from_recordings_only(decisions, llm_on, monkeypatch
     assert "No recorded response" in result.output
     events = [r for r in AuditLog().records() if r["event_type"] == "ANNOTATED"]
     assert json.dumps(events[0]["payload"]["annotation"]["status"]) == '"UNAVAILABLE"'
+
+
+def test_an_analyst_reads_the_summary_in_review_with_no_person(decisions, ontology, entities):
+    from ubo_sentinel.present import advisory_lines
+
+    decision, log = decisions["SCEN-03"], AuditLog()
+    found, _ = _annotate(decision, ontology, good_prose)
+    annotations.record(log, ontology, found, "someone", "reviewer", decision.created_at)
+    folded = log.decision(decision.decision_id)
+    analyst = "\n".join(advisory_lines(folded, "analyst", ontology))
+    assert "LLM-assisted" in analyst and MASK in analyst
+    assert [v for v in person_pii(entities) if v in analyst] == []
+    rejected = found.model_copy(update={"status": "REJECTED", "faults": ["x"]})
+    text = "\n".join(
+        advisory_lines(
+            folded.model_copy(
+                update={"llm_annotations": {"prose": rejected.model_dump(mode="json")}}
+            ),
+            "reviewer",
+            ontology,
+        )
+    )
+    assert "Not shown: REJECTED (x)." in text

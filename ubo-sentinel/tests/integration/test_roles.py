@@ -53,6 +53,8 @@ ARGS = {
     "ui": ["ui", "--dry-run"],
     # Files under UBO_VAR; the roles that may read the graph (an analyst's masked).
     "export-neo4j": ["export", "neo4j", "--snapshot", "fixtures"],
+    # The match cards are code and need no flag; a model is asked only with UBO_LLM on.
+    "annotate": ["annotate", "{decision_id}", "--feature", "match"],
 }
 
 

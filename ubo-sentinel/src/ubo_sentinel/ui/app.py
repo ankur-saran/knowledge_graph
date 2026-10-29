@@ -145,6 +145,11 @@ def show_decision(
         if not choice.decisive:
             st.caption("The match does not decide the outcome either way.")
 
+    advisory = panels.advisory(decision, role, ontology)
+    if advisory:
+        with st.expander("Match cards and LLM-assisted notes (advisory)"):
+            st.text(advisory)
+
     with st.expander("Memo", expanded=True):
         st.markdown(memo_text)
     words = panels.glossary(view.memo)

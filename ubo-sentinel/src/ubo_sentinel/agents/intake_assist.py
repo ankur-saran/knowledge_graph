@@ -234,3 +234,47 @@ def record(
 
 class _OnRecord(Exception):
     pass
+
+
+# --- evaluation (`ubo eval --suite er` with UBO_LLM_INTAKE on) -----------------------------
+
+
+class AssistReport(BaseModel):
+    """Recall@5 on messy queries without and with the assist. The assist never changes
+    what the resolver returns for the query itself, so precision@1 cannot move."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    total: int
+    found_without: int
+    found_with: int
+    # Queries for which no accepted answer was available (no recording, a refusal).
+    not_assisted: int
+
+    @property
+    def recall_without(self) -> float:
+        return self.found_without / self.total if self.total else 1.0
+
+    @property
+    def recall_with(self) -> float:
+        return self.found_with / self.total if self.total else 1.0
+
+
+def evaluate_assist(
+    store: GraphStore, rows: list[dict[str, str]], client: LLMClient, model: str, max_tokens: int
+) -> AssistReport:
+    """`rows`: `query_name` and `expected_entity_id` (`eval/er_messy.csv`)."""
+    without = with_ = not_assisted = 0
+    for row in rows:
+        known = queries.resolve_entity(store, row["query_name"])
+        top = [match.entity_id for match in known[:5]]
+        hit = row["expected_entity_id"] in top
+        without += hit
+        run = assist(store, row["query_name"], known, client, model, max_tokens)
+        not_assisted += run.status != "ACCEPTED"
+        # The assist's candidates are listed apart from the resolver's: its own top five.
+        extra = [c.match.entity_id for c in run.candidates[:5]]
+        with_ += hit or row["expected_entity_id"] in extra
+    return AssistReport(
+        total=len(rows), found_without=without, found_with=with_, not_assisted=not_assisted
+    )
