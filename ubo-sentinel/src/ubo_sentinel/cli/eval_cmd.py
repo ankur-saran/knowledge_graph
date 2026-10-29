@@ -28,6 +28,13 @@ from ubo_sentinel.pipeline.bronze import UnknownSnapshotSet
 from ubo_sentinel.rules.engine import RuleEngine
 from ubo_sentinel.rules.evaluator import ScenarioReport, run_rules_suite
 from ubo_sentinel.rules.pack import DEFAULT_PACK, UnknownRulePack, load_rule_pack, pack_path
+from ubo_sentinel.rules.pack_scenarios import (
+    PACK_SCENARIOS_PATH,
+    PackReport,
+    load_pack_scenarios,
+    run_pack_suite,
+    shipped_packs,
+)
 
 # Commands are run from the repository root.
 GOLD_PATH = Path("eval/gold_scenarios.yaml")
@@ -51,6 +58,8 @@ UNCITED_CLAIMS_TARGET = 0
 REAL_SMOKE_TARGET = 1.0
 # G6: every decision that newer data changes is on the re-screen queue.
 RESCREEN_RECALL_TARGET = 1.0
+# Every pack concludes what each pack scenario states for it.
+PACK_AGREEMENT_TARGET = 1.0
 # PRD section 7: a screen on the fixtures.
 LATENCY_P95_TARGET_SECONDS = 5.0
 
@@ -63,6 +72,9 @@ class Suite(StrEnum):
     # The re-screen queue against screening everything again: the gold
     # scenarios on the set, then a later set of the family.
     monitor = "monitor"
+    # Every pack in rules/ on the small inline graphs of eval/pack_scenarios.yaml.
+    # Needs no database; part of `all` on any set.
+    packs = "packs"
     # The fixtures: rules, pipeline, er, and monitor when a later fixtures set is
     # loaded. A real set: er, real-smoke.
     all = "all"
@@ -237,6 +249,42 @@ def _print_monitor(out: _Output, evaluation: change_monitor.MonitorEvaluation, c
     return met
 
 
+def _print_packs(out: _Output, report: PackReport) -> bool:
+    out.echo("Rule packs (eval/pack_scenarios.yaml: one graph, every pack)")
+    out.echo(("  " + f"{'scenario':<9}" + "".join(f"{pack:<11}" for pack in report.packs)).rstrip())
+    by_scenario: dict[str, dict[str, str]] = {}
+    for outcome in report.outcomes:
+        mark = "" if outcome.passed else "!"
+        by_scenario.setdefault(outcome.scenario_id, {})[outcome.pack] = (
+            outcome.result.recommendation + mark
+        )
+    for scenario_id, row in by_scenario.items():
+        cells = "".join(f"{row.get(pack, '?'):<11}" for pack in report.packs)
+        out.echo(f"  {scenario_id:<9}{cells}".rstrip())
+    for outcome in report.outcomes:
+        for name, (expected, actual) in outcome.diffs.items():
+            out.echo(
+                f"  FAIL {outcome.scenario_id} {outcome.pack} {name}: expected {_show(expected)}"
+            )
+            pad = " " * len(outcome.scenario_id + outcome.pack + name)
+            out.echo(f"       {pad}  actual   {_show(actual)}")
+        if outcome.diffs:
+            out.problems.append(f"packs: {outcome.scenario_id} under {outcome.pack} failed")
+    for scenario_id, packs in report.unstated.items():
+        out.echo(f"  UNSTATED {scenario_id}: no expectation for {', '.join(packs)}")
+        out.problems.append(f"packs: {scenario_id} states nothing for {', '.join(packs)}")
+    return out.metric("packs", "Pack agreement", report.agreement, PACK_AGREEMENT_TARGET)
+
+
+def _run_packs(out: _Output) -> bool:
+    try:
+        report = run_pack_suite(load_pack_scenarios(PACK_SCENARIOS_PATH), shipped_packs())
+    except (OSError, yaml.YAMLError, ValidationError, ValueError) as exc:
+        typer.echo(f"Cannot run the pack scenarios: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    return _print_packs(out, report)
+
+
 def _golden(out: _Output, current: dict, update: bool) -> bool:
     """Compare the suite's decisions with the golden file, or write the file."""
     if update:
@@ -305,6 +353,21 @@ def evaluate(
         raise typer.Exit(code=2) from exc
 
     ok = True
+    if suite is Suite.packs:
+        # Inline graphs and the pure rule engine: no snapshot set is read.
+        ok = _run_packs(out)
+        if as_json:
+            document = {
+                "ok": ok,
+                "snapshot_set_id": None,
+                "rule_pack": None,
+                "metrics": [asdict(metric) for metric in out.metrics],
+                "problems": out.problems,
+            }
+            typer.echo(json.dumps(document, indent=2))
+        if not ok:
+            raise typer.Exit(code=1)
+        return
     try:
         with GraphStore.open(snapshot) as store:
             set_id = store.set_id
@@ -405,6 +468,8 @@ def evaluate(
                             log, Supervisor(ontology), store.con, curr, engine.pack
                         )
                     ok = _print_monitor(out, evaluation, curr.snapshot_set_id) and ok
+            if suite is Suite.all:
+                ok = _run_packs(out) and ok
             if Suite.er in runs:
                 ok = _print_er(out, evaluate_labelled(store, er_path)) and ok
             if Suite.real_smoke in runs:

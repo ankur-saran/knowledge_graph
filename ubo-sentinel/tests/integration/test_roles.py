@@ -51,6 +51,8 @@ ARGS = {
     "audit-replay": ["audit", "replay", "{decision_id}"],
     # Prints the command that starts the UI: no server is started under test.
     "ui": ["ui", "--dry-run"],
+    # Files under UBO_VAR; the roles that may read the graph (an analyst's masked).
+    "export-neo4j": ["export", "neo4j", "--snapshot", "fixtures"],
 }
 
 

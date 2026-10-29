@@ -40,18 +40,18 @@ provenance:
 # registers it. Only `reviewer` may hold decision rights.
 roles:
   analyst:
-    commands: [screen, monitor, ui]
+    commands: [screen, monitor, ui, export-neo4j, annotate]
     masked_fields:
       Person: [legal_name, aliases, registration_number, lei]
     read_only: false
     decision_rights: []
   reviewer:
-    commands: [screen, review, monitor, audit-verify, audit-replay, ui]
+    commands: [screen, review, monitor, audit-verify, audit-replay, ui, export-neo4j, annotate]
     masked_fields: {}
     read_only: false
     decision_rights: [APPROVED, OVERRIDDEN, ESCALATED]
   auditor:
-    commands: [eval, bench, monitor, audit-verify, audit-replay, ui]
+    commands: [eval, bench, monitor, audit-verify, audit-replay, ui, export-neo4j]
     masked_fields: {}
     read_only: true
     decision_rights: []

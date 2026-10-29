@@ -173,7 +173,14 @@ def mask_decision(decision: Decision, role: str, ontology: OntologyConfig) -> De
         # identifier given with it is that party's too.
         data["query"] = MASK
         data["query_identifiers"] = dict.fromkeys(data["query_identifiers"], MASK)
-    data |= {"llm_annotations": {}, "masked": True}
+    # An annotation made from the analyst's view (Step 13, `llm/egress.py`) holds only
+    # what that view holds, so it stays; any other is withheld from a masking role.
+    kept = {
+        feature: annotation
+        for feature, annotation in data["llm_annotations"].items()
+        if isinstance(annotation, dict) and annotation.get("egress") == "analyst_masked"
+    }
+    data |= {"llm_annotations": kept, "masked": True}
     return DecisionView.model_validate(data)
 
 

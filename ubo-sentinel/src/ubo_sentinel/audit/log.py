@@ -23,7 +23,13 @@ from typing import Any, BinaryIO, get_args
 
 from pydantic import ValidationError
 
-from ubo_sentinel.models.audit_event import RUN_EVENTS, RUN_PREFIX, AuditEvent, EventType
+from ubo_sentinel.models.audit_event import (
+    ANNOTATION_KEY,
+    RUN_EVENTS,
+    RUN_PREFIX,
+    AuditEvent,
+    EventType,
+)
 from ubo_sentinel.models.canonical import canonical_json, sha256_hex
 from ubo_sentinel.models.decision import Decision, DecisionStatus, FinalOutcome
 from ubo_sentinel.models.ontology import OntologyConfig, require_decision_right, require_write
@@ -135,6 +141,17 @@ class _Ledger:
                 return "a run event whose id does not name its run"
             if status is not None:
                 return "a second record of one run"
+        elif event_type == "ANNOTATED":
+            # Advisory text beside a decision: it changes no status.
+            if status is None or status in RUN_EVENTS:
+                return "an annotation of a decision that was not recommended"
+            key = f"{ANNOTATION_KEY}{payload.get('annotation_id') or ''}"
+            if key == ANNOTATION_KEY:
+                return "an annotation without an id"
+            if key in self.status:
+                return "a second record of one annotation"
+            self.status[key] = event_type
+            return None
         else:
             return None
         self.status[decision_id] = event_type
@@ -407,6 +424,12 @@ def _fold(events: list[dict[str, Any]]) -> Decision | None:
     for record in events:
         if record["event_type"] == "RECOMMENDED":
             decision = Decision.model_validate(record["payload"]["decision"])
+        elif record["event_type"] == "ANNOTATED" and decision is not None:
+            annotation = record["payload"]["annotation"]
+            # Only an accepted answer is shown beside the decision; every call is in the log.
+            if annotation["status"] == "ACCEPTED":
+                annotations = decision.llm_annotations | {annotation["feature"]: annotation}
+                decision = decision.model_copy(update={"llm_annotations": annotations})
         elif record["event_type"] in REVIEW_EVENTS and decision is not None:
             decision = Decision.model_validate(
                 decision.model_dump()
