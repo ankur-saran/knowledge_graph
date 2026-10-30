@@ -391,3 +391,27 @@ def test_a_snapshot_records_its_rejects_and_its_source(con, tmp_path):
         "SELECT reject_count, source_meta FROM bronze_snapshots WHERE snapshot_id = ?",
         [snapshot.snapshot_id],
     ).fetchone() == (3, '{"licence":"l","url":"u"}')
+
+
+def test_an_optional_dataset_is_a_member_when_given_and_never_needed(con):
+    manager = SnapshotManager(con)
+    required, optional = ["entities", "sanctions"], ["addresses"]
+
+    def commit(supplied, **kwargs):
+        return manager.commit_set("fixtures", supplied, required=required, **kwargs)
+
+    first = commit({"entities": "e1", "sanctions": "s1"}, optional=optional)
+    assert first.is_complete and set(first.snapshot_ids) == {"entities", "sanctions"}
+    # Loaded alone, it takes the rest from the newest set and is not complete:
+    # `fixtures` stays where it was.
+    with_addresses = commit({"addresses": "a1"}, optional=optional)
+    assert not with_addresses.is_complete
+    assert with_addresses.snapshot_ids == {"addresses": "a1", "entities": "e1", "sanctions": "s1"}
+    assert resolve_set(con, "fixtures").snapshot_set_id == first.snapshot_set_id
+    assert resolve_set(con, "latest").snapshot_set_id == with_addresses.snapshot_set_id
+    # A later partial load inherits it from its base, like any other dataset.
+    later = commit({"sanctions": "s2"}, optional=optional)
+    assert later.snapshot_ids == {"addresses": "a1", "entities": "e1", "sanctions": "s2"}
+    # One that is neither required nor optional is refused, as before.
+    with pytest.raises(IngestError, match="do not belong"):
+        commit({"addresses": "a2"})

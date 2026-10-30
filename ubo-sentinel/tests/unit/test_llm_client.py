@@ -12,7 +12,7 @@ from ubo_sentinel.llm.client import (
     RecordedClient,
     client_for,
 )
-from ubo_sentinel.llm.config import DEFAULT_MODEL, load_config
+from ubo_sentinel.llm.config import DEFAULT_INVESTIGATE_MODEL, DEFAULT_MODEL, load_config
 
 SCHEMA = {"type": "object", "properties": {"x": {"type": "integer"}}, "required": ["x"]}
 
@@ -62,6 +62,24 @@ def test_a_feature_needs_the_master_switch_and_its_own_flag(monkeypatch):
     assert load_config().model == "claude-sonnet-5-5"
     monkeypatch.setenv("UBO_LLM_MODE", "nope")
     with pytest.raises(ValueError, match="UBO_LLM_MODE"):
+        load_config()
+
+
+def test_the_investigator_has_its_own_flag_model_and_budget(monkeypatch):
+    for name in ("UBO_LLM_INVESTIGATE_MODEL", "UBO_LLM_INVESTIGATE_MAX_STEPS"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("UBO_LLM", "on")
+    monkeypatch.setenv("UBO_LLM_INVESTIGATE", "on")
+    config = load_config()
+    assert config.enabled("investigate") and not config.enabled("prose")
+    assert config.investigate.model == DEFAULT_INVESTIGATE_MODEL != config.model
+    assert (config.investigate.max_steps, config.investigate.max_seconds) == (12, 90.0)
+    monkeypatch.setenv("UBO_LLM_INVESTIGATE_MODEL", "claude-sonnet-5-5")
+    monkeypatch.setenv("UBO_LLM_INVESTIGATE_MAX_STEPS", "4")
+    config = load_config()
+    assert (config.investigate.model, config.investigate.max_steps) == ("claude-sonnet-5-5", 4)
+    monkeypatch.setenv("UBO_LLM_INVESTIGATE_MAX_STEPS", "0")
+    with pytest.raises(ValueError, match="above 0"):
         load_config()
 
 

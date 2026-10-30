@@ -2,8 +2,10 @@
 
 import pytest
 from e2e import cli, person_pii, screen_gold
+from llm_fakes import FakeClient, good_prose
 from real_format import SAMPLES
 
+from ubo_sentinel.agents import llm_prose
 from ubo_sentinel.agents import supervisor as supervisor_module
 from ubo_sentinel.agents.base import ScreenRequest
 from ubo_sentinel.agents.supervisor import Supervisor
@@ -11,6 +13,7 @@ from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.audit.review import review_decision
 from ubo_sentinel.cli.app import app
 from ubo_sentinel.cli.show import decision_text
+from ubo_sentinel.llm import annotation as annotations
 from ubo_sentinel.models.canonical import canonical_json
 from ubo_sentinel.models.memo import Memo
 
@@ -49,6 +52,8 @@ ARGS = {
     "monitor": ["monitor", "--dry-run"],
     "audit-verify": ["audit", "verify"],
     "audit-replay": ["audit", "replay", "{decision_id}"],
+    # Rebuilds a recorded annotation's input; never calls a model.
+    "audit-replay-annotation": ["audit", "replay-annotation", "{annotation_id}"],
     # Prints the command that starts the UI: no server is started under test.
     "ui": ["ui", "--dry-run"],
     # Files under UBO_VAR; the roles that may read the graph (an analyst's masked).
@@ -63,8 +68,17 @@ ARGS = {
 def test_each_role_runs_exactly_its_commands(fresh_db, publishers, ontology, command, role):
     assert set(ARGS) == registered_commands()
     fresh_db("t0")
-    decision = Supervisor(ontology, AuditLog()).run(ScreenRequest(query="Vostrek Maritime LLC"))
-    args = [arg.format(decision_id=decision.decision.decision_id) for arg in ARGS[command]]
+    log = AuditLog()
+    decision = Supervisor(ontology, log).run(ScreenRequest(query="Vostrek Maritime LLC")).decision
+    annotation_id = ""
+    if command == "audit-replay-annotation":
+        found, _ = llm_prose.annotate_prose(decision, ontology, FakeClient(good_prose), "m", 1000)
+        annotations.record(log, ontology, found, "someone", "reviewer", decision.created_at)
+        annotation_id = found.annotation_id
+    args = [
+        arg.format(decision_id=decision.decision_id, annotation_id=annotation_id)
+        for arg in ARGS[command]
+    ]
 
     result = cli(*args, "--role", role)
     permitted = command in ontology.roles[role].commands

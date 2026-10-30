@@ -351,3 +351,22 @@ def test_a_monitor_run_is_an_event_of_its_own(log, append, ontology):
     assert [d.target_id for d in log.decisions()] == ["asset-1"]
     assert log.decision("monitor:abc") is None
     assert log.verify().count == 2
+
+
+def test_an_investigation_is_a_run_about_one_recommended_decision(log, append, ontology):
+    decision = make_decision(target_id="asset-1")
+    append(decision)
+    run = {"actor": "a", "role": "analyst", "created_at": AT, "event_type": "INVESTIGATED"}
+    about = {"decision_id": decision.decision_id}
+    log.append(ontology=ontology, decision_id="investigation:abc", payload=about, **run)
+    with pytest.raises(ValueError, match="second record of one run"):
+        log.append(ontology=ontology, decision_id="investigation:abc", payload=about, **run)
+    with pytest.raises(ValueError, match="does not name its run"):
+        log.append(ontology=ontology, decision_id="monitor:def", payload=about, **run)
+    for nothing in ({}, {"decision_id": "0000000000000000"}, {"decision_id": "investigation:abc"}):
+        with pytest.raises(ValueError, match="not recommended"):
+            log.append(ontology=ontology, decision_id="investigation:def", payload=nothing, **run)
+    # It changes no decision and folds to none.
+    assert log.decision(decision.decision_id) == decision
+    assert log.decision("investigation:abc") is None
+    assert log.verify().count == 2

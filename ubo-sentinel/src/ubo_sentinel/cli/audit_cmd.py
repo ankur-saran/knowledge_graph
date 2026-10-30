@@ -1,4 +1,4 @@
-"""`ubo audit`: verify the audit log's chain, and replay a recorded decision."""
+"""`ubo audit`: verify the audit log's chain, and replay a recorded decision or annotation."""
 
 import json
 from collections import Counter
@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from ubo_sentinel.audit.log import AuditChainError, AuditLog
 from ubo_sentinel.audit.replay import UnknownDecision, replay_decision
 from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
+from ubo_sentinel.llm.replay import UnknownRecord, replay_annotation
 from ubo_sentinel.models.audit_event import RUN_EVENTS
 from ubo_sentinel.models.ontology import OntologyConfig, load_ontology
 
@@ -124,6 +125,37 @@ def replay(
         typer.echo(
             "Note: this event holds no evidence digests; the database was compared with itself."
         )
+    if report.verdict == "NOT_REPLAYABLE":
+        raise typer.Exit(code=EXIT_NOT_REPLAYABLE)
+    if not report.identical:
+        raise typer.Exit(code=1)
+
+
+@audit_app.command("replay-annotation")
+def replay_annotation_cmd(
+    annotation_id: Annotated[str, typer.Argument(help="The annotation to replay.")],
+    role: Annotated[str, typer.Option("--role")] = "auditor",
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Rebuild what the model read for an annotation and run its guardrail again on the
+    stored answer. Never calls the model; writes nothing."""
+    require_role(role, "audit-replay")
+    try:
+        report = replay_annotation(AuditLog(), _ontology(), annotation_id)
+    except UnknownRecord as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    except AuditChainError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    if as_json:
+        typer.echo(report.model_dump_json(indent=2))
+    elif report.identical:
+        typer.echo(f"Replay identical: annotation {annotation_id} ({report.feature})")
+    else:
+        typer.echo(f"Replay {report.verdict}: annotation {annotation_id} ({report.feature})")
+        typer.echo(report.detail)
     if report.verdict == "NOT_REPLAYABLE":
         raise typer.Exit(code=EXIT_NOT_REPLAYABLE)
     if not report.identical:

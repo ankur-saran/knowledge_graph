@@ -11,7 +11,7 @@ from real_format import SAMPLES, restamp
 from ubo_sentinel.models.canonical import canonical_json
 from ubo_sentinel.pipeline.bronze import UnknownSnapshotSet, resolve_set
 from ubo_sentinel.pipeline.db import connect
-from ubo_sentinel.pipeline.differ import DiffRefused, SetNotBuilt, diff_sets
+from ubo_sentinel.pipeline.differ import DiffRefused, SetNotBuilt, diff_entity, diff_sets
 
 
 def summary(diff):
@@ -62,6 +62,30 @@ def test_the_changed_graph_shows_a_stake_a_merge_and_a_lapsed_lei(fresh_con):
     assert stakes == [("20.0000", "50.0000"), ("80.0000", "50.0000")]
     # The order and the ids are the data's, so a second run is byte for byte the same.
     assert canonical_json(diff) == canonical_json(diff_sets(con, t1, t2))
+
+
+def test_one_entity_s_changes_are_the_set_diff_s_rows_about_it(fresh_con):
+    con, (_, t1, t2) = fresh_con("t0_t1_t2")
+    whole = {c.change_id: c for c in diff_sets(con, t1, t2).changes}
+
+    def of(entity_id):
+        changes = diff_entity(con, t1, t2, entity_id)
+        # The same comparison, read for one entity: each change is the set diff's own.
+        assert all(whole[c.change_id] == c for c in changes)
+        return {(c.domain, c.kind, tuple(c.fields)) for c in changes}
+
+    owner = "lei:FXS14OWNER0000000000"
+    assert of(owner) == {
+        ("designation", "CHANGED", ("designated_node_id", "match_confidence", "match_type")),
+        ("link", "REMOVED", ()),
+    }
+    # Both stakes in the intermediate changed: an edge is about both its ends.
+    assert of("lei:FXS10INTER0000000000") == {("edge", "CHANGED", ("pct",))}
+    assert len(diff_entity(con, t1, t2, "lei:FXS10INTER0000000000")) == 2
+    assert of("lei:FXS16PARENT000000000") == {("entity", "CHANGED", ("lei_status",))}
+    assert diff_entity(con, t1, t2, "fx_registry:s03-target") == []
+    with pytest.raises(UnknownSnapshotSet):
+        diff_entity(con, t1, "no-such-set", owner)
 
 
 def test_two_databases_give_the_same_diff(fresh_con, ontology, tmp_path, monkeypatch):

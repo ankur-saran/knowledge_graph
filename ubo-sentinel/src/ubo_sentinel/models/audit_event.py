@@ -20,14 +20,20 @@ EventType = Literal[
     "MONITOR_RUN",
     "ANNOTATED",
     "INTAKE_ASSISTED",
+    "INVESTIGATED",
 ]
 
 # Events that record a run, not a decision: their `decision_id` is `<kind>:<run id>`
 # (`monitor:<run id>`), no decision is folded from them, and one run id is
 # recorded once. `INTAKE_ASSISTED` records the search variants a model proposed
-# for a query (Step 13.5). Step 14's investigation events join this set.
-RUN_EVENTS = frozenset({"MONITOR_RUN", "INTAKE_ASSISTED"})
-RUN_PREFIX = {"MONITOR_RUN": "monitor:", "INTAKE_ASSISTED": "intake:"}
+# for a query (Step 13.5). `INVESTIGATED` records one investigation of a
+# recommended decision, named in `payload.decision_id` (Step 14).
+RUN_EVENTS = frozenset({"MONITOR_RUN", "INTAKE_ASSISTED", "INVESTIGATED"})
+RUN_PREFIX = {
+    "MONITOR_RUN": "monitor:",
+    "INTAKE_ASSISTED": "intake:",
+    "INVESTIGATED": "investigation:",
+}
 # An annotation is recorded once: the ledger keeps its id under this prefix.
 ANNOTATION_KEY = "annotation:"
 

@@ -40,6 +40,9 @@ class _Table:
     key: str
     # The fields compared, as SQL expressions with their names.
     compared: tuple[tuple[str, str], ...]
+    # SQL expressions naming the entities a row is about: one entity's history
+    # (`diff_entity`) is the rows where one of them is that entity.
+    about: tuple[str, ...]
     # Read alongside, never compared.
     info: tuple[tuple[str, str], ...] = ()
     where: str = "TRUE"
@@ -54,6 +57,7 @@ _TABLES = (
         "graph_sanctions",
         "id",
         tuple((name, name) for name in (*_MATCH_FIELDS, *_DESIGNATION_FIELDS)),
+        about=("node_id", "designated_node_id"),
         info=(("source", "source"), ("source_record_id", "source_record_id")),
     ),
     _Table(
@@ -64,6 +68,7 @@ _TABLES = (
             (name, name)
             for name in ("upper_id", "lower_id", "rel_type", "pct", "basis", "is_ultimate")
         ),
+        about=("upper_id", "lower_id"),
     ),
     # Each link once, from its smaller end.
     _Table(
@@ -76,6 +81,7 @@ _TABLES = (
             ("match_type", "match_type"),
             ("confidence", "confidence"),
         ),
+        about=("node_id", "linked_node_id"),
         where="node_id < linked_node_id",
     ),
     # Names are left out: a new alias shows as the link it makes, and a renamed
@@ -92,18 +98,21 @@ _TABLES = (
             ("repex_reason", "repex_reason"),
             ("has_upstream", "up_degree > 0"),
         ),
+        about=("id",),
     ),
     _Table(
         "exception",
         "silver_reporting_exceptions",
         "source || '|' || source_record_id",
         (("entity_id", "entity_id"), ("category", "category"), ("reason", "reason")),
+        about=("entity_id",),
     ),
     _Table(
         "set_gap",
         "silver_gaps",
         "code || '|' || subject_id",
         (("code", "code"), ("subject_id", "subject_id")),
+        about=("subject_id",),
     ),
 )
 
@@ -158,27 +167,50 @@ def diff_sets(con: duckdb.DuckDBPyConnection, prev_set: str, curr_set: str) -> S
     )
 
 
+def diff_entity(
+    con: duckdb.DuckDBPyConnection, prev_set: str, curr_set: str, entity_id: str
+) -> list[Change]:
+    """The changes between two built sets in the rows about one entity, in a stable order.
+
+    The same fields and causes as `diff_sets`, read only where the entity is
+    one of a row's ends (`_Table.about`). Raises as `diff_sets` does.
+    """
+    prev, curr = resolve_set(con, prev_set), resolve_set(con, curr_set)
+    check_comparable(con, prev, curr)
+    a, b = prev.snapshot_set_id, curr.snapshot_set_id
+    changes: list[Change] = []
+    for spec in _TABLES:
+        changes += _changes(con, spec, _compare(con, spec, a, b, entity_id), a, b)
+    return sorted(changes, key=lambda c: (c.domain, c.key, c.kind))
+
+
 def _compare(
-    con: duckdb.DuckDBPyConnection, spec: _Table, a: str, b: str
+    con: duckdb.DuckDBPyConnection, spec: _Table, a: str, b: str, about: str | None = None
 ) -> list[tuple[str, dict[str, Any] | None, dict[str, Any] | None]]:
-    """(key, row in a, row in b) for every key whose compared fields differ, in key order."""
+    """(key, row in a, row in b) for every key whose compared fields differ, in key order.
+
+    With `about`, only the rows about that entity.
+    """
     fields = [*spec.compared, *spec.info]
     select = ", ".join(f"{expr} AS {name}" for name, expr in fields)
+    where = spec.where
+    if about is not None:
+        where += " AND $about IN (" + ", ".join(spec.about) + ")"
     side = (
         f"SELECT {spec.key} AS k, {select} FROM {spec.table}"
-        f" WHERE snapshot_set_id = ? AND {spec.where}"
+        f" WHERE snapshot_set_id = $set AND {where}"
     )
     differs = " OR ".join(f"a.{name} IS DISTINCT FROM b.{name}" for name, _ in spec.compared)
     columns = ", ".join(f"a.{name}, b.{name}" for name, _ in fields)
     found = con.execute(
         f"""
-        WITH a AS ({side}), b AS ({side})
+        WITH a AS ({side.replace("$set", "$a")}), b AS ({side.replace("$set", "$b")})
         SELECT coalesce(a.k, b.k) AS k, a.k IS NOT NULL, b.k IS NOT NULL, {columns}
         FROM a FULL OUTER JOIN b ON a.k = b.k
         WHERE a.k IS NULL OR b.k IS NULL OR {differs}
         ORDER BY 1
         """,
-        [a, b],
+        {"a": a, "b": b} | ({} if about is None else {"about": about}),
     ).fetchall()
     rows = []
     for key, in_a, in_b, *values in found:

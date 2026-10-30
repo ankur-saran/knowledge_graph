@@ -46,12 +46,14 @@ roles:
     read_only: false
     decision_rights: []
   reviewer:
-    commands: [screen, review, monitor, audit-verify, audit-replay, ui, export-neo4j, annotate]
+    commands: [screen, review, monitor, audit-verify, audit-replay, audit-replay-annotation, ui,
+               export-neo4j, annotate]
     masked_fields: {}
     read_only: false
     decision_rights: [APPROVED, OVERRIDDEN, ESCALATED]
   auditor:
-    commands: [eval, bench, monitor, audit-verify, audit-replay, ui, export-neo4j]
+    commands: [eval, bench, monitor, audit-verify, audit-replay, audit-replay-annotation, ui,
+               export-neo4j]
     masked_fields: {}
     read_only: true
     decision_rights: []

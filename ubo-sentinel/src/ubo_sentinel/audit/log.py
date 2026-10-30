@@ -141,6 +141,11 @@ class _Ledger:
                 return "a run event whose id does not name its run"
             if status is not None:
                 return "a second record of one run"
+            if event_type == "INVESTIGATED":
+                # A run about one decision, as an annotation is.
+                about = self.status.get(payload.get("decision_id") or "")
+                if about is None or about in RUN_EVENTS:
+                    return "an investigation of a decision that was not recommended"
         elif event_type == "ANNOTATED":
             # Advisory text beside a decision: it changes no status.
             if status is None or status in RUN_EVENTS:

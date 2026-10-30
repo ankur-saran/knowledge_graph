@@ -409,14 +409,19 @@ class SnapshotManager:
         snapshot_ids: dict[str, str],
         required: Collection[str],
         base: str | None = None,
+        optional: Collection[str] = (),
     ) -> SnapshotSet:
         """Record the set made of `snapshot_ids`, one per dataset in `required`.
 
         Datasets this ingest did not supply are taken from `base`, or from the
         newest set of the same family. Sets of another family are never used, so
         fixture data and real data cannot end up in one set.
+
+        An `optional` dataset (Step 14's addresses, which no decision reads) is
+        a member when it is supplied, or when the base set has it; a set without
+        one is still complete, so loading one does not move `fixtures`.
         """
-        unknown = sorted(set(snapshot_ids) - set(required))
+        unknown = sorted(set(snapshot_ids) - set(required) - set(optional))
         if unknown:
             raise IngestError(f"Datasets {unknown} do not belong to the '{family}' family.")
 
@@ -430,6 +435,9 @@ class SnapshotManager:
                         f"Snapshot set {base_set.snapshot_set_id} has no '{dataset}' dataset."
                     )
                 members[dataset] = base_set.snapshot_ids[dataset]
+            for dataset in sorted(set(optional) - set(snapshot_ids)):
+                if dataset in base_set.snapshot_ids:
+                    members[dataset] = base_set.snapshot_ids[dataset]
 
         set_id = snapshot_set_id_for(members)
         existing = _load_set(self.con, set_id)
