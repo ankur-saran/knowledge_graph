@@ -50,8 +50,11 @@ def test_the_report_counts_what_the_sources_held(con, ontology):
     report = quality_report(con, build(con, ontology))
     assert {name: d["rows"] for name, d in report["datasets"].items()} == {
         "gleif_l1": 20,
+        # The same records as gleif_l1 and os_entities, read for their addresses (Step 14).
+        "gleif_l1_addresses": 20,
         "gleif_repex": 10,
         "gleif_rr": 13,
+        "os_addresses": 15,
         "os_entities": 16,
         "os_relationships": 8,
         "os_sanctions": 9,

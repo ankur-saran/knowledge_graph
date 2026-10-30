@@ -485,6 +485,7 @@ def ingest_real(
     required: Sequence[str],
     base: str | None = None,
     source: str = FAMILY_REAL,
+    optional: Sequence[str] = (),
 ) -> IngestSummary:
     """Ingest `datasets` from a refresh directory; datasets of `required` it lacks come from `base`.
 
@@ -530,7 +531,7 @@ def ingest_real(
                 supplied[dataset.name] = snapshot.snapshot_id
                 status[dataset.name] = "new" if snapshot.is_new else "already present"
             snapshot_set = manager.commit_set(
-                manifest.family, supplied, required=required, base=base
+                manifest.family, supplied, required=required, base=base, optional=optional
             )
 
     info = {
@@ -540,7 +541,7 @@ def ingest_real(
         ).fetchall()
     }
     summaries = []
-    for name in sorted(required):
+    for name in sorted({*required, *optional} & set(snapshot_set.snapshot_ids)):
         snapshot_id = snapshot_set.snapshot_ids[name]
         table, rows, rejects = info[snapshot_id]
         summaries.append(

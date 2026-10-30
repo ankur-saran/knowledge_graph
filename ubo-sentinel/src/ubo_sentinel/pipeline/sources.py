@@ -20,3 +20,7 @@ SOURCE_RANK: dict[str, int] = {
 # row states its own. A published record is taken as the publisher states it;
 # confidence below 1 belongs to links Silver infers, not to the records.
 SOURCE_CONFIDENCE: dict[str, float] = {"gleif": 1.0, "opensanctions": 1.0}
+
+# Datasets that are context, not graph (Step 14's addresses): Silver leaves them,
+# and `pipeline/context.py` derives them after Gold.
+CONTEXT_DATASETS = frozenset({"addresses", "gleif_l1_addresses", "os_addresses"})

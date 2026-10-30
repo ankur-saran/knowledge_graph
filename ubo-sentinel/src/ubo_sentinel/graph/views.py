@@ -18,15 +18,22 @@ from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.graph import queries
 from ubo_sentinel.graph.store import GraphStore, id_list
 from ubo_sentinel.models.canonical import sha256_hex, short_id
+from ubo_sentinel.models.change import Change, EntityHistoryStep
 from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.entity import Entity
+from ubo_sentinel.models.evidence import EvidencePath
 from ubo_sentinel.models.graph import (
+    AddressPeer,
     AffectedEntity,
+    CommonController,
     EntityLink,
     EntityMatch,
+    HeldEdge,
     OwnerEdge,
     RepexRecord,
     SanctionMatch,
+    SharedAddress,
+    SiblingGroup,
     SubGraph,
 )
 from ubo_sentinel.models.memo import DecisionView, Memo
@@ -42,6 +49,19 @@ MASK = "[PII MASKED]"
 METADATA_ONLY_ROLES = frozenset({"engineer"})
 
 _PROVENANCE_KEY = ("source", "source_record_id", "snapshot_id")
+
+# Fields of a change (`models/change.py`) whose values are node ids.
+_CHANGE_ID_FIELDS = frozenset(
+    {"node_id", "designated_node_id", "upper_id", "lower_id", "linked_node_id", "entity_id",
+     "subject_id"}
+)  # fmt: skip
+
+
+def _node_ids(change: Change) -> list[str]:
+    """Every node id a change holds: its anchors and its id fields before and after."""
+    rows = [row for row in (change.before, change.after) if row]
+    held = [row[name] for row in rows for name in _CHANGE_ID_FIELDS & row.keys() if row[name]]
+    return [*change.anchor_ids, *held]
 
 
 def pseudonym_for(entity_id: str, label: str) -> str:
@@ -342,6 +362,98 @@ class GraphView:
         found = queries.get_decision_by_id(self.store, decision_id, log)
         return self.mask_decision(found) if found else None
 
+    # --- Step 14: beyond the screened graph -----------------------------------------------
+    # An address of an entity this role sees masked is masked with it: for a person
+    # it is where they live. The ontology masks a label's fields; an address is
+    # read here as one of them.
+
+    def get_entities_sharing_address(self, entity_id: str, limit: int = 50) -> list[SharedAddress]:
+        self._require_graph()
+        entity_id = self._real(entity_id)
+        found = queries.get_entities_sharing_address(self.store, entity_id, limit)
+        self._learn([entity_id, *(peer.entity.id for item in found for peer in item.peers)])
+        masked = self._is_masked(entity_id)
+        return [
+            item.model_copy(
+                update={
+                    "peers": [self._mask_peer(peer) for peer in item.peers],
+                    **(
+                        {
+                            "address": MASK,
+                            "address_norm": MASK,
+                            "provenance": self._mask_provenance(item.provenance),
+                        }
+                        if masked
+                        else {}
+                    ),
+                }
+            )
+            for item in found
+        ]
+
+    def get_common_controllers(
+        self, entity_ids: list[str], limit: int = 50
+    ) -> list[CommonController]:
+        self._require_graph()
+        found = queries.get_common_controllers(
+            self.store, [self._real(i) for i in entity_ids], limit
+        )
+        self._learn([i for item in found for i in (item.controller.id, *item.held_ids)])
+        return [
+            CommonController(
+                controller=self._mask_entity(item.controller),
+                held_ids=sorted(self._id(i) for i in item.held_ids),
+                edges=[self._mask_edge(edge) for edge in item.edges],
+                fund_manager=item.fund_manager,
+            )
+            for item in found
+        ]
+
+    def get_sibling_entities(self, entity_id: str, limit: int = 50) -> list[SiblingGroup]:
+        self._require_graph()
+        entity_id = self._real(entity_id)
+        found = queries.get_sibling_entities(self.store, entity_id, limit)
+        self._learn([entity_id])
+        return [
+            SiblingGroup(
+                parent=self._mask_entity(item.parent),
+                relationship=self._mask_edge(item.relationship),
+                total=item.total,
+                siblings=[
+                    HeldEdge(
+                        entity=self._mask_entity(held.entity),
+                        relationship=self._mask_edge(held.relationship),
+                    )
+                    for held in item.siblings
+                ],
+                fund_manager=item.fund_manager,
+            )
+            for item in found
+        ]
+
+    def find_paths_between(
+        self, source_id: str, target_id: str, max_depth: int, max_paths: int = 50
+    ) -> list[EvidencePath]:
+        self._require_graph()
+        found = queries.find_paths_between(
+            self.store, self._real(source_id), self._real(target_id), max_depth, max_paths
+        )
+        self._learn([node for path in found for node in path.node_ids])
+        return [
+            path.model_copy(update={"node_ids": [self._id(node) for node in path.node_ids]})
+            for path in found
+        ]
+
+    def get_entity_history(self, entity_id: str, max_sets: int = 5) -> list[EntityHistoryStep]:
+        self._require_graph()
+        entity_id = self._real(entity_id)
+        found = queries.get_entity_history(self.store, entity_id, max_sets)
+        self._learn([entity_id, *(i for step in found for c in step.changes for i in _node_ids(c))])
+        return [
+            step.model_copy(update={"changes": [self._mask_change(c) for c in step.changes]})
+            for step in found
+        ]
+
     # --- masking ------------------------------------------------------------------------
 
     def pseudonym(self, entity_id: str, label: str) -> str:
@@ -426,6 +538,48 @@ class GraphView:
                 update[name] = MASK
         return entity.model_copy(update=update)
 
+    def _mask_peer(self, peer: AddressPeer) -> AddressPeer:
+        if not self._is_masked(peer.entity.id):
+            return peer
+        return AddressPeer(
+            entity=self._mask_entity(peer.entity),
+            kinds=peer.kinds,
+            address=MASK,
+            provenance=self._mask_provenance(peer.provenance),
+        )
+
+    def _mask_change(self, change: Change) -> Change:
+        """A change with each node id it holds as this role knows the node."""
+
+        def ids(row: dict[str, Any] | None) -> dict[str, Any] | None:
+            if row is None:
+                return None
+            return {k: self._id(v) if k in _CHANGE_ID_FIELDS and v else v for k, v in row.items()}
+
+        key = change.key
+        if change.domain == "entity":
+            key = self._id(key)
+        elif change.domain in ("link", "set_gap"):
+            head, _, tail = key.partition("|")
+            key = (
+                f"{self._id(head)}|{self._id(tail)}"
+                if change.domain == "link"
+                else (f"{head}|{self._id(tail)}")
+            )
+        elif change.domain == "exception" and any(
+            self._is_masked(row["entity_id"]) for row in (change.before, change.after) if row
+        ):
+            # The key is the exception record's id, which names the party.
+            key = f"{key.partition('|')[0]}|{MASK}"
+        return change.model_copy(
+            update={
+                "key": key,
+                "anchor_ids": sorted(self._id(i) for i in change.anchor_ids),
+                "before": ids(change.before),
+                "after": ids(change.after),
+            }
+        )
+
     def _mask_edge(self, edge: Relationship) -> Relationship:
         return edge.model_copy(
             update={"subject_id": self._id(edge.subject_id), "object_id": self._id(edge.object_id)}
@@ -503,6 +657,16 @@ class GraphView:
                 f"SELECT entity_id FROM silver_reporting_exceptions WHERE {where}", key
             ).fetchall()
         )
+        # An address record (Step 14's context layer) names whose address it is.
+        if con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'ctx_addresses'"
+        ).fetchone():
+            ids.update(
+                entity_id
+                for (entity_id,) in con.execute(
+                    f"SELECT entity_id FROM ctx_addresses WHERE {where}", key
+                ).fetchall()
+            )
         # An edge cites the record that decided it and every record that supports it.
         cited = json.dumps(provenance.source_record_id, ensure_ascii=False)
         for subject_id, object_id, supporting in con.execute(

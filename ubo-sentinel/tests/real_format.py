@@ -588,6 +588,8 @@ OS_ENTITIES = [
         jurisdiction=["ae"],
         country=["ae"],
         weakAlias=["Sarvanta"],
+        # Shared with its refinery below (Step 14's addresses).
+        address=["Office 1204, Gold Tower, Jumeirah Lakes Towers, Dubai"],
     ),
     _sanction("os-fx-sarv-sdn", "NK-fxSarvanta", _SDN, "US-FXR-EO2", startDate=["2025-01-15"]),
     # No LEI and no country: a name alone.
@@ -621,7 +623,14 @@ OS_ENTITIES = [
     # Percentages as they are written.
     _company("NK-fxOrvMarine", "Orvasko Marine Services Ltd", [_SDN], target=False, country=["cy"]),
     _ownership("NK-fxOwn2", "NK-fxOrvasko", "NK-fxOrvMarine", _SDN, percentage="50%"),
-    _company("NK-fxSarvRefining", "Sarvanta Refining FZCO", [_SDN], target=False, country=["ae"]),
+    _company(
+        "NK-fxSarvRefining",
+        "Sarvanta Refining FZCO",
+        [_SDN],
+        target=False,
+        country=["ae"],
+        address=["Office 1204 Gold Tower, Jumeirah Lakes Towers, Dubai"],
+    ),
     _ownership("NK-fxOwn3", "NK-fxSarvanta", "NK-fxSarvRefining", _SDN, percentage="25-50"),
     _company("NK-fxMiroTrading", "Mirovane Trading Kft.", [_SDN], target=False, country=["hu"]),
     _ownership("NK-fxOwn4", "NK-fxMirovane", "NK-fxMiroTrading", _SDN, percentage="majority"),

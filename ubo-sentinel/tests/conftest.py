@@ -13,6 +13,7 @@ from ubo_sentinel.audit.log import VAR_ENV_VAR
 from ubo_sentinel.cli.app import ONTOLOGY_PATH
 from ubo_sentinel.download import http
 from ubo_sentinel.models import EntityRow, load_gold_scenarios, load_ontology, read_rows
+from ubo_sentinel.pipeline.context import build_context
 from ubo_sentinel.pipeline.db import DB_ENV_VAR, connect
 from ubo_sentinel.pipeline.gold import build_gold
 from ubo_sentinel.pipeline.loaders.fixture_loader import ingest_fixtures
@@ -23,6 +24,8 @@ from ubo_sentinel.rules.pack import DEFAULT_PACK, load_rule_pack, pack_path
 T0 = Path("fixtures/snapshot_t0")
 T1 = Path("fixtures/snapshot_t1")
 T2 = Path("fixtures/snapshot_t2")
+# t0 and the investigation cases with their addresses (Step 14), loaded after t0.
+INV = Path("fixtures/snapshot_inv")
 GOLD_PATH = Path("eval/gold_scenarios.yaml")
 # The pack the fixtures and the gold scenarios are written for.
 PACK = load_rule_pack(pack_path(DEFAULT_PACK))
@@ -82,10 +85,12 @@ def gold():
 
 
 def build_graph(con, ontology, path=None):
-    """Ingest a fixture directory and build Silver and Gold. Returns the set id."""
+    """Ingest a fixture directory and build Silver, Gold and the context layer.
+    Returns the set id."""
     snapshot_set = ingest_fixtures(con, path).snapshot_set
     build_silver(con, snapshot_set, ontology)
     build_gold(con, snapshot_set)
+    build_context(con, snapshot_set)
     return snapshot_set.snapshot_set_id
 
 
@@ -136,8 +141,8 @@ def canonical(entities):
 
 @pytest.fixture(scope="session")
 def templates(tmp_path_factory, ontology):
-    """Databases built once per session: `t0`, `t0_t1` (the t1 list loaded after t0) and
-    `t0_t1_t2` (then the t2 graph changes).
+    """Databases built once per session: `t0`, `t0_t1` (the t1 list loaded after t0),
+    `t0_t1_t2` (then the t2 graph changes) and `t0_inv` (the investigation cases after t0).
 
     Returns name -> (database file, the set ids it holds in the order built).
     Ids are content-derived, so a copy of a template is the database a test
@@ -150,7 +155,12 @@ def templates(tmp_path_factory, ontology):
         if name not in built:
             path = root / f"{name}.duckdb"
             connection = duckdb.connect(str(path))
-            paths = {"t0": [None], "t0_t1": [None, T1], "t0_t1_t2": [None, T1, T2]}[name]
+            paths = {
+                "t0": [None],
+                "t0_t1": [None, T1],
+                "t0_t1_t2": [None, T1, T2],
+                "t0_inv": [None, INV],
+            }[name]
             set_ids = [build_graph(connection, ontology, item) for item in paths]
             connection.close()
             built[name] = (path, set_ids)

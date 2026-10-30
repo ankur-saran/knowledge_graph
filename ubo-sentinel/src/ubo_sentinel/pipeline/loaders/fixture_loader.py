@@ -10,6 +10,7 @@ from pathlib import Path
 import duckdb
 
 from ubo_sentinel.models.fixture_rows import (
+    AddressRow,
     EntityRow,
     RelationshipRow,
     RepexRow,
@@ -37,6 +38,8 @@ class FixtureDataset:
     name: str
     table: str
     model: type[_Row]
+    # A set is complete without it (`commit_set(optional=)`): context, never the graph.
+    optional: bool = False
 
 
 # File name -> dataset. A directory may hold any non-empty subset of these.
@@ -45,6 +48,7 @@ DATASETS: dict[str, FixtureDataset] = {
     "relationships.csv": FixtureDataset("relationships", "bronze_relationships", RelationshipRow),
     "sanctions.csv": FixtureDataset("sanctions", "bronze_sanctions", SanctionRow),
     "repex.csv": FixtureDataset("repex", "bronze_repex", RepexRow),
+    "addresses.csv": FixtureDataset("addresses", "bronze_addresses", AddressRow, optional=True),
 }
 
 
@@ -112,7 +116,11 @@ def ingest_fixtures(
             supplied[dataset.name] = snapshot.snapshot_id
             status[dataset.name] = "new" if snapshot.is_new else "already present"
         snapshot_set = manager.commit_set(
-            FAMILY_FIXTURES, supplied, required=[d.name for d in DATASETS.values()], base=base
+            FAMILY_FIXTURES,
+            supplied,
+            required=[d.name for d in DATASETS.values() if not d.optional],
+            base=base,
+            optional=[d.name for d in DATASETS.values() if d.optional],
         )
 
     row_counts = dict(con.execute("SELECT snapshot_id, row_count FROM bronze_snapshots").fetchall())
@@ -125,6 +133,7 @@ def ingest_fixtures(
             status=status.get(dataset.name, "inherited"),
         )
         for dataset in DATASETS.values()
+        if dataset.name in snapshot_set.snapshot_ids
     ]
     return IngestSummary(
         source=FAMILY_FIXTURES,

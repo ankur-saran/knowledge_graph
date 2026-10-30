@@ -15,6 +15,7 @@ from ubo_sentinel.graph.store import GraphNotBuilt, GraphStore
 from ubo_sentinel.models import EntityRow, SubGraph
 from ubo_sentinel.models.graph import upper_lower
 from ubo_sentinel.pipeline.bronze import UnknownSnapshotSet
+from ubo_sentinel.pipeline.context import ContextNotBuilt
 from ubo_sentinel.pipeline.entity_linking import LINK_FLOOR
 from ubo_sentinel.pipeline.loaders.fixture_loader import ingest_fixtures
 from ubo_sentinel.pipeline.transformer import build_silver
@@ -238,7 +239,8 @@ def test_the_allow_list_is_the_modules_public_functions(store):
         and not name.startswith("_")
     } - {"query"}
     assert set(queries.QUERIES) == public == set(queries.__all__) - {"QUERIES"}
-    assert len(public) == 10
+    # Step 5's eight, `get_decision_by_id` (7.8), `get_affected_by` (12) and Step 14's five.
+    assert len(public) == 15
     # No query takes a snapshot set: the store fixes it.
     for spec in queries.QUERIES.values():
         assert "snapshot_set_id" not in spec.signature.parameters
@@ -483,3 +485,117 @@ def test_candidates_say_which_of_them_are_linked(store):
 def test_a_decision_that_was_never_made_is_none(store):
     assert queries.get_decision_by_id(store, "0000000000000000") is None
     assert store.calls[-1].name == "get_decision_by_id"
+
+
+# --- Step 14: beyond the screened graph ----------------------------------------------------
+
+I01_TARGET, I01_DESIGNATED = "lei:FXI01TARGET000000000", "fx_list:i01-designated"
+I03_TARGET, I03_DESIGNATED = "lei:FXI03TARGET000000000", "lei:FXI03DESIG0000000000"
+I03_DIRECTOR, I04_TARGET = "fx_list:i03-director", "lei:FXI04TARGET000000000"
+I04_PARENT, I04_SIBLING = "lei:FXI04PARENT000000000", "lei:FXI04SIBLING00000000"
+I05_A, I05_MID, I05_B = (
+    "lei:FXI05A00000000000000",
+    "lei:FXI05MID000000000000",
+    "lei:FXI05B00000000000000",
+)
+
+
+@pytest.fixture
+def inv(fresh_con):
+    """A store on the investigation set (t0 and its cases, with addresses)."""
+    con, (_, inv_set) = fresh_con("t0_inv")
+    with GraphStore.open(inv_set, con) as opened:
+        yield opened
+
+
+def test_an_address_written_two_ways_is_shared(inv):
+    (place,) = queries.get_entities_sharing_address(inv, I01_TARGET)
+    assert (place.kinds, place.country, place.total, place.mass) == (["LEGAL"], "CY", 1, False)
+    (peer,) = place.peers
+    assert (peer.entity.id, peer.kinds) == (I01_DESIGNATED, ["OTHER"])
+    assert peer.address != place.address  # as each record wrote it
+    # Each side sees the other; a citation leads to the published record.
+    (back,) = queries.get_entities_sharing_address(inv, I01_DESIGNATED)
+    assert [p.entity.id for p in back.peers] == [I01_TARGET]
+    assert queries.get_source_record(inv, peer.provenance)["address"].startswith("14 ARCH")
+
+
+def test_a_mass_address_is_counted_not_listed(inv):
+    (place,) = queries.get_entities_sharing_address(inv, "lei:FXI06TARGET000000000")
+    assert place.mass and place.total > queries.MASS_ADDRESS_LIMIT and place.peers == []
+    (kunaev,) = queries.get_entities_sharing_address(inv, I03_DESIGNATED)
+    assert kunaev.total == 2 and not kunaev.mass
+    (first,) = queries.get_entities_sharing_address(inv, I03_DESIGNATED, limit=1)[0].peers
+    assert first.entity.id == "fx_list:i06-owner"
+    assert queries.get_entities_sharing_address(inv, I05_A) == []
+
+
+def test_addresses_need_the_context_layer(inv):
+    inv.con.execute("DELETE FROM ctx_builds")
+    with pytest.raises(ContextNotBuilt, match="ubo build-graph"):
+        queries.get_entities_sharing_address(inv, I01_TARGET)
+
+
+def test_a_common_director_of_the_target_and_a_designated_company(inv):
+    (common,) = queries.get_common_controllers(inv, [I03_TARGET, I03_DESIGNATED, I01_TARGET])
+    assert common.controller.id == I03_DIRECTOR
+    assert common.held_ids == sorted([I03_TARGET, I03_DESIGNATED])
+    assert {e.rel_type for e in common.edges} == {"CONTROLS"} and not common.fund_manager
+    assert queries.get_common_controllers(inv, [I03_TARGET]) == []
+    assert queries.get_common_controllers(inv, [I03_TARGET, I03_DESIGNATED], limit=0) == []
+
+
+def test_ultimate_parent_records_make_no_common_controller(store):
+    """Every subsidiary of a group shares its ultimate parent; that says nothing."""
+    # Two background subsidiaries reach the hub by ultimate-parent records only.
+    pair = ["lei:FXS00SUB700000000000", "lei:FXS00SUB800000000000"]
+    found = queries.get_common_controllers(store, pair)
+    assert HUB not in {item.controller.id for item in found}
+    assert all(not edge.is_ultimate for item in found for edge in item.edges)
+
+
+def test_a_designated_sibling_under_one_parent(inv):
+    (group,) = queries.get_sibling_entities(inv, I04_TARGET)
+    assert (group.parent.id, group.total, str(group.relationship.pct)) == (I04_PARENT, 1, "60.0000")
+    (sibling,) = group.siblings
+    assert (sibling.entity.id, str(sibling.relationship.pct)) == (I04_SIBLING, "70.0000")
+    assert queries.get_sibling_entities(inv, I04_TARGET, limit=0)[0].siblings == []
+    assert queries.get_sibling_entities(inv, I04_PARENT) == []
+
+
+def test_a_path_between_two_parties_runs_from_the_holder_down(inv):
+    (path,) = queries.find_paths_between(inv, I05_B, I05_A, max_depth=3)
+    assert path.node_ids == [I05_A, I05_MID, I05_B] and len(path.edge_ids) == 2
+    assert queries.find_paths_between(inv, I05_A, I05_B, 3) == [path]
+    assert queries.find_paths_between(inv, I05_A, I05_B, 1) == []
+    assert queries.find_paths_between(inv, I05_A, I01_TARGET, 5) == []
+    with pytest.raises(ValueError, match="max_depth"):
+        queries.find_paths_between(inv, I05_A, I05_B, queries.MAX_PATH_DEPTH + 1)
+
+
+def test_an_entity_s_history_across_the_family_newest_first(fresh_con):
+    con, (t0, t1, t2) = fresh_con("t0_t1_t2")
+    owner = "lei:FXS14OWNER0000000000"
+    with GraphStore.open(t2, con) as at_t2:
+        steps = queries.get_entity_history(at_t2, owner)
+        assert [(s.prev_set_id, s.curr_set_id) for s in steps] == [(t1, t2), (t0, t1)]
+        assert {c.domain for c in steps[0].changes} == {"designation", "link"}
+        assert steps[1].changes == [] and steps[1].refused is None
+        assert len(queries.get_entity_history(at_t2, owner, max_sets=1)) == 1
+    with GraphStore.open(t0, con) as at_t0:
+        assert queries.get_entity_history(at_t0, owner) == []
+
+
+def test_a_step_between_sets_built_by_other_code_says_so(fresh_con, monkeypatch):
+    from ubo_sentinel.pipeline import differ
+
+    con, (t0, t1) = fresh_con("t0_t1")
+
+    def refuse(*args):
+        raise differ.DiffRefused("other code")
+
+    monkeypatch.setattr(differ, "diff_entity", refuse)
+    with GraphStore.open(t1, con) as at_t1:
+        (step,) = queries.get_entity_history(at_t1, "fx_list:s08-owner")
+    assert (step.prev_set_id, step.changes) == (t0, [])
+    assert step.refused == "the two sets were built by other code"

@@ -117,6 +117,68 @@ class OwnerEdge(_Model):
     relationship: Relationship
 
 
+# --- Step 14: what an investigation reads beyond the screened graph -----------------------
+
+AddressKind = Literal["LEGAL", "HEADQUARTERS", "OTHER"]
+
+
+class AddressPeer(_Model):
+    """Another entity at a place, and its record that says so."""
+
+    entity: Entity
+    kinds: list[AddressKind]
+    address: NonEmptyStr
+    provenance: Provenance
+
+
+class SharedAddress(_Model):
+    """A place an entity's records state, and the other entities at it.
+
+    A place held by more than the query's mass limit (a formation agent's, a
+    registered office) is `mass`: its count is given and its peers are not.
+    """
+
+    kinds: list[AddressKind]
+    address: NonEmptyStr
+    address_norm: NonEmptyStr
+    country: str | None = None
+    provenance: Provenance
+    # Other entities at the place, all of them; `peers` holds at most the limit asked.
+    total: int = Field(ge=0)
+    mass: bool
+    peers: list[AddressPeer]
+
+
+class HeldEdge(_Model):
+    """An entity held (owned, consolidated or controlled), and the edge that says so."""
+
+    entity: Entity
+    relationship: Relationship
+
+
+class CommonController(_Model):
+    """One owner, parent or controller of two or more of the entities asked about."""
+
+    controller: Entity
+    # The given entities it holds directly, and its edges to them.
+    held_ids: list[NonEmptyStr]
+    edges: list[Relationship]
+    # A `CONTROLS` edge of basis `other` is a fund manager's (GLEIF): it may manage
+    # thousands of funds, so sharing one says little.
+    fund_manager: bool
+
+
+class SiblingGroup(_Model):
+    """A direct owner, parent or controller of an entity, and the other entities it holds."""
+
+    parent: Entity
+    relationship: Relationship
+    # Every other entity it holds directly; `siblings` holds at most the limit asked.
+    total: int = Field(ge=0)
+    siblings: list[HeldEdge]
+    fund_manager: bool
+
+
 class SubGraph(_Model):
     """The graph around one target: everything a screen reads.
 

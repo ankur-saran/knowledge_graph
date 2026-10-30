@@ -202,10 +202,13 @@ def test_build_graph_command_prints_counts_and_is_idempotent():
     for table in GOLD_TABLES:
         assert table in first.output
 
+    assert "Context: built, 0 addresses" in first.output
+
     second = runner.invoke(app, ["build-graph"])
     assert second.exit_code == 0
-    assert "(already built)" in second.output
-    assert second.output.splitlines()[1:] == first.output.splitlines()[1:]
+    assert "(already built)" in second.output and "Context: already built" in second.output
+    lines = second.output.replace("already built", "built").splitlines()[1:]
+    assert lines == first.output.splitlines()[1:]
 
 
 def test_build_graph_command_refuses_what_it_cannot_build():

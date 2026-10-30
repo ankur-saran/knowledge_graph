@@ -96,6 +96,9 @@ def test_a_real_decision_replays_identically():
         "os_entities",
         "os_sanctions",
         "os_relationships",
+        # Members of the set the screen read; no rule reads them (Step 14's context).
+        "gleif_l1_addresses",
+        "os_addresses",
     }
     for args in ([], ["--deep", "--role", "reviewer"]):
         replayed = cli("audit", "replay", decision["decision_id"], *args)

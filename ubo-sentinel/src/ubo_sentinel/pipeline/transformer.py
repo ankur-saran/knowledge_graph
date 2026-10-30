@@ -38,7 +38,7 @@ from ubo_sentinel.pipeline.silver import (
     load_build,
     silver_digest,
 )
-from ubo_sentinel.pipeline.sources import SOURCE_RANK
+from ubo_sentinel.pipeline.sources import CONTEXT_DATASETS, SOURCE_RANK
 
 # Raise this when a change here alters the rows Silver holds for the same Bronze
 # rows. A set built by another version is not reused.
@@ -193,6 +193,9 @@ def _register_functions(con: duckdb.DuckDBPyConnection) -> None:
 def _stage(con: duckdb.DuckDBPyConnection, snapshot_set: SnapshotSet) -> None:
     create_stage_tables(con)
     for dataset, snapshot_id in snapshot_set.snapshot_ids.items():
+        # Context (Step 14's addresses) is derived after Gold, never into Silver.
+        if dataset in CONTEXT_DATASETS:
+            continue
         if dataset not in MAPPERS:
             raise SilverError(f"No mapper for dataset '{dataset}'.")
         table, recorded = con.execute(

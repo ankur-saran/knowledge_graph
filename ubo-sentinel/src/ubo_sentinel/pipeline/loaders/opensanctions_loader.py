@@ -86,3 +86,20 @@ OS_RELATIONSHIPS = RealDataset(
 )
 
 OS_DATASETS = (OS_ENTITIES, OS_SANCTIONS, OS_RELATIONSHIPS)
+
+# The `address` the companies, organisations and people state (Step 14): the
+# same records as `os_entities`, another projection, so that dataset and its
+# snapshot are as they were. Separate `Address` records are not read. Optional
+# in a real set: context an investigation reads, never the graph.
+OS_ADDRESSES = RealDataset(
+    name="os_addresses",
+    table="bronze_addresses",
+    source=SOURCE,
+    file=FILE,
+    format=Format.NDJSON,
+    columns=_record("address", "country"),
+    key=("id",),
+    select=("schema", frozenset(OS_ENTITY_SCHEMAS)),
+)
+
+OS_CONTEXT_DATASETS = (OS_ADDRESSES,)

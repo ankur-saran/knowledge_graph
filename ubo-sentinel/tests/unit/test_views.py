@@ -4,6 +4,7 @@ import json
 
 import pytest
 from conftest import T1, build_graph
+from e2e import person_pii
 
 from ubo_sentinel.agents.base import ScreenRequest
 from ubo_sentinel.agents.supervisor import Supervisor
@@ -236,7 +237,7 @@ def test_an_engineer_sees_what_was_built_and_none_of_the_graph(store, view):
 
 
 def test_a_view_offers_exactly_the_allow_listed_queries(store, ontology):
-    offered = {name for name in vars(GraphView) if name.startswith(("get_", "resolve_"))}
+    offered = {name for name in vars(GraphView) if name.startswith(("get_", "resolve_", "find_"))}
     assert offered == set(queries.QUERIES)
     with pytest.raises(PermissionError, match="Unknown role"):
         GraphView(store, "intern", ontology)
@@ -372,3 +373,77 @@ def test_candidates_are_masked_without_a_store(store, view, ontology):
     assert mask_candidates(found, "reviewer", ontology) == found
     with pytest.raises(PermissionError, match="Unknown role"):
         mask_candidates(found, "intern", ontology)
+
+
+# --- Step 14: beyond the screened graph ----------------------------------------------------
+
+DIRECTOR, PERSON_AT_KUNAEV = "fx_list:i03-director", "fx_list:s03-owner-a"
+I03_TARGET, I03_DESIGNATED = "lei:FXI03TARGET000000000", "lei:FXI03DESIG0000000000"
+
+
+@pytest.fixture
+def inv_view(fresh_con, ontology):
+    con, (_, inv_set) = fresh_con("t0_inv")
+    with GraphStore.open(inv_set, con) as store:
+        yield lambda role: GraphView(store, role, ontology)
+
+
+def test_an_analyst_sees_a_common_director_as_a_pseudonym(inv_view):
+    (analyst,) = inv_view("analyst").get_common_controllers([I03_TARGET, I03_DESIGNATED])
+    assert analyst.controller.id.startswith("person:") and analyst.controller.legal_name == MASK
+    assert analyst.held_ids == sorted([I03_TARGET, I03_DESIGNATED])
+    assert {edge.subject_id for edge in analyst.edges} == {analyst.controller.id}
+    (reviewer,) = inv_view("reviewer").get_common_controllers([I03_TARGET, I03_DESIGNATED])
+    assert (reviewer.controller.id, reviewer.controller.legal_name) == (
+        DIRECTOR,
+        "Casimir Ondrejka",
+    )
+
+
+def test_a_person_s_address_is_masked_with_the_person(inv_view):
+    analyst = inv_view("analyst")
+    (place,) = analyst.get_entities_sharing_address(I03_DESIGNATED)
+    person = next(p for p in place.peers if p.entity.entity_type == "Person")
+    assert person.entity.id.startswith("person:") and person.address == MASK
+    assert person.provenance.source_record_id == MASK
+    company = next(p for p in place.peers if p.entity.entity_type == "LegalEntity")
+    assert company.address == "22 Kunaev St., Room 5, Almaty"
+    # Asked about the person, by the pseudonym the view gave: their own places are masked.
+    for own in analyst.get_entities_sharing_address(person.entity.id):
+        assert (own.address, own.address_norm) == (MASK, MASK)
+    # The published record of the person's address is a stub for the analyst.
+    reviewer = inv_view("reviewer")
+    (seen,) = reviewer.get_entities_sharing_address(I03_DESIGNATED)
+    record = next(p for p in seen.peers if p.entity.id == PERSON_AT_KUNAEV).provenance
+    assert analyst.get_source_record(record)["masked"] is True
+    assert reviewer.get_source_record(record)["entity_ref"] == PERSON_AT_KUNAEV
+
+
+def test_an_analyst_s_history_and_paths_name_a_person_by_pseudonym(inv_view):
+    analyst = inv_view("analyst")
+    (step,) = analyst.get_entity_history(DIRECTOR)
+    text = canonical_json(step).decode("utf-8")
+    assert DIRECTOR not in text and "person:" in text
+    assert {(c.domain, c.kind) for c in step.changes} >= {("entity", "ADDED"), ("edge", "ADDED")}
+    (path,) = analyst.find_paths_between(DIRECTOR, I03_TARGET, 2)
+    assert path.node_ids[0].startswith("person:") and path.node_ids[1] == I03_TARGET
+    (step,) = inv_view("reviewer").get_entity_history(DIRECTOR)
+    assert DIRECTOR in canonical_json(step).decode("utf-8")
+
+
+def test_an_analyst_is_shown_no_person_by_any_investigation_query(inv_view, entities):
+    analyst = inv_view("analyst")
+    names = [*person_pii(entities), "Casimir Ondrejka"]
+    shown = [
+        analyst.get_entities_sharing_address(I03_DESIGNATED),
+        analyst.get_entities_sharing_address(PERSON_AT_KUNAEV),
+        analyst.get_common_controllers([I03_TARGET, I03_DESIGNATED]),
+        analyst.get_sibling_entities(I03_TARGET),
+        analyst.get_entity_history(DIRECTOR),
+        analyst.find_paths_between(DIRECTOR, I03_DESIGNATED, 2),
+    ]
+    text = canonical_json(shown).decode("utf-8")
+    assert [value for value in names if value in text] == []
+    assert DIRECTOR not in text and PERSON_AT_KUNAEV not in text
+    with pytest.raises(PermissionError):
+        inv_view("engineer").get_sibling_entities(I03_TARGET)

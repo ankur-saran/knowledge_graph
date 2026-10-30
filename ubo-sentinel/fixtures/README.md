@@ -38,3 +38,23 @@ Every file starts with `source`, `source_record_id`, `as_of`, `confidence`. Then
 - **Bytes matter.** Snapshot ids are computed from file bytes. Keep the files UTF-8 without a BOM, with LF line endings (`.gitattributes` enforces this on checkout).
 - **Aliases.** `uv run ubo ingest --source fixtures` loads `snapshot_t0/`, and the `fixtures` alias points at that set. Loading `snapshot_t1/` (`--path fixtures/snapshot_t1`) makes a new set and moves only `latest`, so `fixtures` always means t0. `snapshot_t2/` likewise.
 - **Row keys are stable.** `source_record_id` identifies a row across snapshots; the snapshot diff (`ubo monitor`) relies on it.
+
+## `snapshot_inv/`: the investigation cases (Step 14)
+
+t0's `entities.csv`, `relationships.csv` and `sanctions.csv` with rows added at the end (none changed), and `addresses.csv`. Load it after t0 (`uv run ubo ingest --source fixtures --path fixtures/snapshot_inv`): it takes `repex` from t0 and makes a new set, so `fixtures` stays on t0 and every t0 scenario reads as before.
+
+| File | Columns |
+|---|---|
+| `addresses.csv` | `entity_ref`, `kind` (`LEGAL`, `HEADQUARTERS`, `OTHER`), `address`, `country` |
+
+`addresses.csv` is optional in every fixture set: it is context an investigation reads (`pipeline/context.py`), never the graph a screen reads. Rows start with `i0N`; one investigation case each:
+
+- `i01` — a clean target at the office of a designated list company, the two written two ways.
+- `i02` — a formation agent's address held by 59 entities (t0's): more than `MASS_ADDRESS_LIMIT`, counted and not listed.
+- `i03` — one director of the target and of a designated company; a designated person (`s03-owner-a`) at that company's address.
+- `i04` — a parent that owns the target (60 %) and a designated company (70 %): a designated sibling.
+- `i05` — two parties joined through an intermediate (10 %, then 30 %): a path between them.
+- `i06` — an owner whose aliases are written to steer a model (the injection case), at the same address as `i03`'s designated company.
+- `i00-addr-nobody` names no entity: counted as unresolved, never placed.
+
+The generator is not kept: the files are the record. Keep each case's names distinct from every other name in the set.

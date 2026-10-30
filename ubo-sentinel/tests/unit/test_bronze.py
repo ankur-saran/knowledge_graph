@@ -25,6 +25,9 @@ from ubo_sentinel.pipeline.db import DB_ENV_VAR, connect, db_path
 from ubo_sentinel.pipeline.loaders import LOADERS
 from ubo_sentinel.pipeline.loaders.fixture_loader import DATASETS, ingest_fixtures
 
+# t0's files: every dataset but the optional addresses (Step 14), which t0 has none of.
+T0_DATASETS = {name: d for name, d in DATASETS.items() if not d.optional}
+
 # Commands are run from the repository root.
 T0 = Path("fixtures/snapshot_t0")
 T1 = Path("fixtures/snapshot_t1")
@@ -66,8 +69,8 @@ def test_every_bronze_table_has_exactly_the_metadata_columns(con):
 
 def test_row_counts_equal_the_files(con):
     summary = ingest_fixtures(con)
-    assert [d.dataset for d in summary.datasets] == [d.name for d in DATASETS.values()]
-    for name, dataset in DATASETS.items():
+    assert [d.dataset for d in summary.datasets] == [d.name for d in T0_DATASETS.values()]
+    for name, dataset in T0_DATASETS.items():
         expected = len(read_rows(T0 / name, dataset.model))
         assert expected > 0
         assert count(con, dataset.table) == expected, dataset.table
@@ -77,7 +80,7 @@ def test_row_counts_equal_the_files(con):
 
 def test_raw_round_trips_to_the_fixture_row_and_carries_its_provenance(con):
     ingest_fixtures(con)
-    for name, dataset in DATASETS.items():
+    for name, dataset in T0_DATASETS.items():
         expected = read_rows(T0 / name, dataset.model)
         stored = bronze_rows(con, dataset.table)
         assert len(stored) == len(expected)
@@ -97,7 +100,7 @@ def test_raw_round_trips_to_the_fixture_row_and_carries_its_provenance(con):
 
 def test_registry_describes_each_snapshot(con):
     summary = ingest_fixtures(con)
-    for name, dataset in DATASETS.items():
+    for name, dataset in T0_DATASETS.items():
         snapshot_id = summary.snapshot_set.snapshot_ids[dataset.name]
         row = con.execute(
             "SELECT dataset, family, table_name, file_name, byte_size, row_count, rows_digest,"
@@ -303,7 +306,7 @@ def test_ingest_command_prints_counts_and_ids_and_is_idempotent(con):
     con.close()
     first = runner.invoke(app, ["ingest", "--source", "fixtures"])
     assert first.exit_code == 0, first.output
-    for dataset in DATASETS.values():
+    for dataset in T0_DATASETS.values():
         assert dataset.table in first.output
     assert "Snapshot set:" in first.output and "latest" in first.output
 

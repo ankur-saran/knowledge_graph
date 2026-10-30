@@ -15,6 +15,7 @@ from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
 from ubo_sentinel.cli.download_cmd import run_download
 from ubo_sentinel.models.ontology import load_ontology
 from ubo_sentinel.pipeline.bronze import ALIAS_LATEST, ALIAS_REAL, IngestError
+from ubo_sentinel.pipeline.context import ContextError, build_context
 from ubo_sentinel.pipeline.db import connect
 from ubo_sentinel.pipeline.gold import GoldError, build_gold
 from ubo_sentinel.pipeline.loaders.base import resolve_alias
@@ -130,12 +131,14 @@ def refresh(
         typer.echo(f"Silver: {silver.status}, digest {silver.silver_digest}")
         gold = build_gold(con, snapshot_set)
         typer.echo(f"Gold: {gold.status}, digest {gold.gold_digest}")
+        context = build_context(con, snapshot_set)
+        typer.echo(f"Context: {context.status}, digest {context.context_digest}")
         result = check(con, snapshot_set, accept_shrink=accept_shrink, reason=reason)
         aliases = {alias: resolve_alias(con, alias) for alias in (ALIAS_LATEST, ALIAS_REAL)}
     except IngestError as exc:
         typer.echo(f"Ingest failed, nothing was written: {exc}", err=True)
         raise typer.Exit(code=1) from exc
-    except (SilverError, GoldError, QualityError) as exc:
+    except (SilverError, GoldError, ContextError, QualityError) as exc:
         typer.echo(f"Refresh failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     finally:

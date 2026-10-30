@@ -129,6 +129,10 @@ REAL_ONLY_COLUMNS = {"successor_lei"}
 
 def test_staging_columns_are_the_fixture_row_fields(con, t0):
     for dataset in DATASETS.values():
+        if dataset.optional:
+            # Context (Step 14's addresses) is never staged into Silver.
+            assert dataset.name not in MAPPERS
+            continue
         table = MAPPERS[dataset.name].stage_table
         columns = [row[0] for row in con.execute(f"DESCRIBE {table}").fetchall()]
         # After the dataset and the provenance come the row's own fields. A `*_raw`

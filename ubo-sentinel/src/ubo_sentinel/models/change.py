@@ -51,6 +51,19 @@ class Change(_Model):
     after: dict[str, Any] | None = None
 
 
+class EntityHistoryStep(_Model):
+    """What changed about one entity from one built set of its family to the next newer one.
+
+    `refused` says why two sets could not be compared (built by other code);
+    the step is then empty, never silently missing.
+    """
+
+    prev_set_id: NonEmptyStr
+    curr_set_id: NonEmptyStr
+    changes: list[Change]
+    refused: str | None = None
+
+
 class SetDiff(_Model):
     prev_set_id: NonEmptyStr
     curr_set_id: NonEmptyStr

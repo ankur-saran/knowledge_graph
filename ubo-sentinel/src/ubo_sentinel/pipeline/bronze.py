@@ -19,7 +19,15 @@ from ubo_sentinel.models.canonical import canonical_json, sha256_hex, short_id
 from ubo_sentinel.models.manifest import FAMILY_REAL as FAMILY_REAL
 from ubo_sentinel.models.manifest import FAMILY_SAMPLE as FAMILY_SAMPLE
 
-BRONZE_TABLES = ("bronze_entities", "bronze_relationships", "bronze_sanctions", "bronze_repex")
+# `bronze_addresses` (schema 3) holds address records: context an investigation
+# reads (Step 14), never the graph a screen reads.
+BRONZE_TABLES = (
+    "bronze_entities",
+    "bronze_relationships",
+    "bronze_sanctions",
+    "bronze_repex",
+    "bronze_addresses",
+)
 
 # Every Bronze table has exactly these columns. `_raw` is the source record as
 # published; `_source`, `_source_record_id`, `_snapshot_id`, `_as_of` and
@@ -97,7 +105,7 @@ CREATE TABLE IF NOT EXISTS snapshot_set_info (
 # Bronze is not derived: it cannot be dropped and built again as Silver and Gold
 # can. A change to its schema is therefore an addition made in place, recorded
 # by raising this number; `create_schema` brings an older database up to it.
-BRONZE_SCHEMA_VERSION = 2
+BRONZE_SCHEMA_VERSION = 3
 
 # Columns added after version 1, in the order they were added. Each is nullable
 # or has a default, so the rows of an older database stay as they were.

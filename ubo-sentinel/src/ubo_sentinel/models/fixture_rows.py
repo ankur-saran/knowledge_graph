@@ -7,7 +7,7 @@ fields. Ids, `repex_reason`, `match_type` and `match_confidence` are derived lat
 import csv
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -115,6 +115,15 @@ class RepexRow(_Row):
     entity_ref: NonEmptyStr
     category: RepexCategory
     reason: NonEmptyStr
+
+
+class AddressRow(_Row):
+    """An address of an entity (Step 14): context for an investigation, never a rule's input."""
+
+    entity_ref: NonEmptyStr
+    kind: Literal["LEGAL", "HEADQUARTERS", "OTHER"]
+    address: NonEmptyStr
+    country: NonEmptyStr | None = None
 
 
 def read_raw_rows[R: _Row](path: Path, model: type[R]) -> list[tuple[dict[str, str | None], R]]:
