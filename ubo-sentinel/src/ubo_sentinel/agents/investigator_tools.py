@@ -22,7 +22,7 @@ A `ToolBox` is one investigation's use of them:
 """
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -68,6 +68,29 @@ _RAW_FIELDS = frozenset({"before", "after", "fields"})
 STRING = {"type": "string"}
 STRINGS = {"type": "array", "items": STRING}
 INTEGER = {"type": "integer"}
+
+
+def _fields(value: Any) -> Iterator[tuple[str, Any]]:
+    """Each field of a projected result, nested ones too, and none of a raw row."""
+    if isinstance(value, list):
+        for item in value:
+            yield from _fields(item)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if key not in _RAW_FIELDS:
+                yield key, item
+                yield from _fields(item)
+
+
+def result_ids(items: Any) -> set[str]:
+    """The entity ids a projected result holds, read from its id fields alone."""
+    ids: set[str] = set()
+    for key, item in _fields(items):
+        if key in _ID_FIELDS and isinstance(item, str):
+            ids.add(item)
+        elif key in _ID_LIST_FIELDS:
+            ids.update(item)
+    return ids
 
 
 class _Refused(Exception):
@@ -254,21 +277,10 @@ class ToolBox:
 
     def _see(self, value: Any) -> None:
         """Note the ids and the refs of what is being sent, and nothing that was cut."""
-        if isinstance(value, list):
-            for item in value:
-                self._see(item)
-        elif isinstance(value, dict):
-            for key, item in value.items():
-                if key in _RAW_FIELDS:
-                    continue
-                if key in _ID_FIELDS and isinstance(item, str):
-                    self.seen_ids.add(item)
-                elif key in _ID_LIST_FIELDS:
-                    self.seen_ids.update(item)
-                elif key == "ref":
-                    self.records[item] = self._cited[item]
-                else:
-                    self._see(item)
+        self.seen_ids |= result_ids(value)
+        for key, item in _fields(value):
+            if key == "ref":
+                self.records[item] = self._cited[item]
 
     # --- projections ---------------------------------------------------------------------
 

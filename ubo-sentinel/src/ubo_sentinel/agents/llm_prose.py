@@ -131,7 +131,7 @@ def check_slotted(output: dict[str, Any], decision: Decision, data: dict[str, An
         return ["no sentences"]
     entity_ids = {entity["id"] for entity in data["entities"]}
     claims = data["claims"]
-    names = _names(decision)
+    names = memo_names(decision)
     covered = set()
     for sentence in sentences:
         if not isinstance(sentence, dict) or not isinstance(sentence.get("text"), str):
@@ -153,22 +153,28 @@ def check_slotted(output: dict[str, Any], decision: Decision, data: dict[str, An
                 faults.add("a recommendation slot with a value")
             elif kind not in ("e", "p", "rec"):
                 faults.add("a slot of an unknown kind")
-        bare = SLOT.sub(" ", text)
-        if "{" in bare or "}" in bare:
-            faults.add("a slot that is not closed")
-        if DIGIT.search(bare):
-            faults.add("a digit outside a slot")
-        if OUTCOME_WORDS.search(bare):
-            faults.add("a word that states an outcome")
-        folded = f" {normalise_name(bare)} "
-        if any(f" {name} " in folded for name in names):
-            faults.add("a name outside a slot")
+        faults |= check_bare(SLOT.sub(" ", text), names)
     must = {i for i, claim in enumerate(claims) if claim["code"] in MUST_COVER}
     if must - covered:
         faults.add("a claim the summary does not explain")
     if len(sentences) > 2 * len(claims) + 2:
         faults.add("more sentences than the claims need")
     return sorted(faults)
+
+
+def check_bare(bare: str, names: set[str]) -> set[str]:
+    """Kinds of fault in the words between a text's slots: they state no fact or outcome."""
+    faults = set()
+    if "{" in bare or "}" in bare:
+        faults.add("a slot that is not closed")
+    if DIGIT.search(bare):
+        faults.add("a digit outside a slot")
+    if OUTCOME_WORDS.search(bare):
+        faults.add("a word that states an outcome")
+    folded = f" {normalise_name(bare)} "
+    if any(f" {name} " in folded for name in names):
+        faults.add("a name outside a slot")
+    return faults
 
 
 def _param_exists(value: str, claims: list[dict[str, Any]]) -> bool:
@@ -178,7 +184,7 @@ def _param_exists(value: str, claims: list[dict[str, Any]]) -> bool:
     return name in claims[int(index)]["params"]
 
 
-def _names(decision: Decision) -> set[str]:
+def memo_names(decision: Decision) -> set[str]:
     """Every name and alias the memo holds, unmasked: none may appear outside a slot."""
     memo = Memo.model_validate(decision.memo_json)
     found = set()

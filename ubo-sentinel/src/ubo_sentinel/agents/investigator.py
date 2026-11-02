@@ -26,6 +26,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from ubo_sentinel.agents.investigator_guardrail import check_actions, check_findings
 from ubo_sentinel.agents.investigator_tools import (
     MAX_IDS,
     SUBMIT_FINDINGS,
@@ -243,6 +244,8 @@ def _linked(box: ToolBox, memo: Memo) -> list[Finding]:
         record = box.run("get_direct_owners", {"entity_id": linked})
         owners = [item["owner"]["id"] for item in record.items]
         if owners:
+            # The result holds the linked record and its owners, not the party it may be.
+            party = box.run("get_entity", {"entity_id": action.subject_id})
             slots = " and ".join(f"{{e:{owner}}}" for owner in owners)
             found.append(
                 Finding(
@@ -250,7 +253,7 @@ def _linked(box: ToolBox, memo: Memo) -> list[Finding]:
                     subjects=[action.subject_id, linked, *owners],
                     text=f"{{e:{linked}}}, which may be the same entity as"
                     f" {{e:{action.subject_id}}}, is held by {slots}.",
-                    cites=[record.call_id],
+                    cites=[record.call_id, party.call_id],
                 )
             )
     return found
@@ -534,15 +537,18 @@ def investigate(
         first, left_out = first_pass(box, memo)
         if memo.target_id is None:
             faults.append(NO_TARGET)
+        stopped = bool(faults)
+        first, dropped = check_findings(first, box.calls, decision)
+        faults += dropped
         run = None
-        if client is not None and budget is not None and not faults:
+        if client is not None and budget is not None and not stopped:
             opening = _user_text(box, memo, question, first, left_out)
             if box.holds_masked(opening):
                 faults.append(OPENING_MASKED)
             else:
                 run = _Run(box, client, budget)
                 run.run(opening)
-                faults += sorted(set(run.faults))
+                faults += run.faults
         coverage = _coverage(box, left_out)
         digest = _context_digest(view)
         calls = list(box.calls)
@@ -550,8 +556,9 @@ def investigate(
         complete = memo.target_id is not None
     else:
         complete = run is not None and run.submitted and not run.spent
-    findings = run.findings if run else []
-    actions = run.actions if run else []
+    findings, dropped = check_findings(run.findings if run else [], calls, decision)
+    actions, refused = check_actions(run.actions if run else [], calls, decision, ontology)
+    faults = sorted({*faults, *dropped, *refused})
     model = budget.model if run is not None and budget is not None else None
     investigation_id = short_id(
         [
