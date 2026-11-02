@@ -221,6 +221,8 @@ class GraphView:
         self._labels: dict[str, str] = {}
         # Pseudonym -> node id, for the pseudonyms this view has handed out.
         self._real_ids: dict[str, str] = {}
+        # Masked node id -> what the role may not see of it (`masked_values_met()`).
+        self._met: dict[str, set[str]] = {}
 
     @classmethod
     @contextmanager
@@ -461,6 +463,25 @@ class GraphView:
         alias = pseudonym_for(entity_id, label)
         self._real_ids[alias] = entity_id
         return alias
+
+    def is_pseudonym(self, entity_id: str) -> bool:
+        return entity_id in self._real_ids
+
+    def masked_values_met(self) -> list[str]:
+        """Every value this role may not see of the masked nodes this view has handed out:
+        the id, the masked properties, the record ids. A check of what leaves the view,
+        for a node that no decision's memo holds (`masked_values()` reads the memo)."""
+        for entity_id in sorted(set(self._real_ids.values()) - set(self._met)):
+            values = {entity_id}
+            entity = queries.get_entity_by_id(self.store, entity_id)
+            if entity is not None:
+                records = [entity.provenance, *entity.supporting_records]
+                values.update(record.source_record_id for record in records)
+                for name in self._masked_fields.get(entity.entity_type, ()):
+                    value = getattr(entity, name)
+                    values.update(value if isinstance(value, list) else [value] if value else [])
+            self._met[entity_id] = values
+        return sorted(set().union(*self._met.values()))
 
     def mask_decision(self, decision: Decision) -> DecisionView:
         return mask_decision(decision, self.role, self._ontology)
