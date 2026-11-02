@@ -1,18 +1,22 @@
-"""One way to ask a model for a JSON object: live, recorded, or replayed.
+"""One way to ask a model for a JSON object, or for one turn of a tool loop: live,
+recorded, or replayed.
 
-A request is data (system prompt, one JSON document, a JSON schema), so it has a
-digest; a recording is keyed by it. Replay never opens a socket, which is how
-the test suite and `ubo eval` run every feature offline.
+A request is data (system prompt, one JSON document, a JSON schema; or the tools
+and the whole history, `llm/tools.py`), so it has a digest; a recording is keyed
+by it. Replay never opens a socket, which is how the test suite and `ubo eval`
+run every feature offline.
 """
 
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
 from ubo_sentinel.llm.config import LLMConfig
+from ubo_sentinel.llm.tools import ToolTurn, ToolTurnRequest
 from ubo_sentinel.models.canonical import canonical_json, sha256_hex
 
 
@@ -55,9 +59,17 @@ class LLMResponse(BaseModel):
 class LLMClient(Protocol):
     def complete(self, request: LLMRequest) -> LLMResponse: ...
 
+    def converse(self, request: ToolTurnRequest) -> ToolTurn: ...
+
+
+# A turn of a tool loop: server-side fallback ("default" form) and a task budget.
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+TASK_BUDGET_BETA = "task-budgets-2026-03-13"
+
 
 class AnthropicClient:
-    """The Messages API with a JSON-schema output format (`output_config.format`)."""
+    """The Messages API: a JSON-schema answer (`complete`) or one turn of a tool loop
+    (`converse`)."""
 
     def __init__(self, timeout_seconds: float, sdk: Any = None) -> None:
         if sdk is None:
@@ -99,6 +111,52 @@ class AnthropicClient:
             seconds=round(time.monotonic() - started, 3),
         )
 
+    def converse(self, request: ToolTurnRequest) -> ToolTurn:
+        """One turn: the model's tool calls, its answer, or a paused turn. Tool choice is
+        left to the model (Claude Opus 5.5 refuses a forced one); thinking is adaptive."""
+        output_config: dict[str, Any] = {"effort": request.effort}
+        betas = []
+        params: dict[str, Any] = {}
+        if request.task_budget is not None:
+            output_config["task_budget"] = {"type": "tokens", "total": request.task_budget}
+            betas.append(TASK_BUDGET_BETA)
+        if request.fallbacks:
+            params["fallbacks"] = "default"
+            betas.append(FALLBACK_BETA)
+        started = time.monotonic()
+        try:
+            response = self._sdk.beta.messages.create(
+                model=request.model,
+                max_tokens=request.max_tokens,
+                system=[{"type": "text", "text": request.system}],
+                tools=[tool.api() for tool in request.tools],
+                tool_choice={"type": "auto"},
+                messages=list(request.messages),
+                thinking={"type": "adaptive"},
+                output_config=output_config,
+                # On the last block: each turn reads the prefix the turn before wrote.
+                cache_control={"type": "ephemeral"},
+                betas=betas,
+                **params,
+            )
+        except Exception as exc:  # the SDK's errors: auth, rate limit, network, 4xx/5xx
+            raise LLMUnavailable(f"The model call failed ({type(exc).__name__}).") from exc
+        if response.stop_reason not in ("tool_use", "end_turn", "pause_turn"):
+            # refusal (after any fallback), max_tokens (a cut tool call is no call), …
+            raise LLMUnavailable(f"The model stopped with '{response.stop_reason}'.")
+        usage = response.usage
+        content = [block.model_dump(mode="json", exclude_none=True) for block in response.content]
+        return ToolTurn(
+            content=content,
+            stop_reason=response.stop_reason,
+            model=response.model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cache_read_tokens=usage.cache_read_input_tokens or 0,
+            cache_write_tokens=usage.cache_creation_input_tokens or 0,
+            seconds=round(time.monotonic() - started, 3),
+        )
+
 
 class RecordedClient:
     """Replays the response recorded for a request's digest; in record mode, makes it."""
@@ -107,17 +165,28 @@ class RecordedClient:
         self.directory = directory
         self.inner = inner
 
-    def path_for(self, request: LLMRequest) -> Path:
+    def path_for(self, request: LLMRequest | ToolTurnRequest) -> Path:
         return self.directory / f"{request.feature}-{request.digest()[:24]}.json"
 
     def complete(self, request: LLMRequest) -> LLMResponse:
+        return self._answer(request, LLMResponse, lambda inner: inner.complete(request))
+
+    def converse(self, request: ToolTurnRequest) -> ToolTurn:
+        return self._answer(request, ToolTurn, lambda inner: inner.converse(request))
+
+    def _answer[R: BaseModel](
+        self,
+        request: LLMRequest | ToolTurnRequest,
+        kind: type[R],
+        ask: Callable[[LLMClient], R],
+    ) -> R:
         path = self.path_for(request)
         if path.is_file():
             recorded = json.loads(path.read_text(encoding="utf-8"))
-            return LLMResponse.model_validate(recorded["response"])
+            return kind.model_validate(recorded["response"])
         if self.inner is None:
             raise LLMUnavailable(f"No recorded response for this request ({path.name}).")
-        response = self.inner.complete(request)
+        response = ask(self.inner)
         self.directory.mkdir(parents=True, exist_ok=True)
         document = {"request": request.model_dump(mode="json"), "response": response.model_dump()}
         path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
