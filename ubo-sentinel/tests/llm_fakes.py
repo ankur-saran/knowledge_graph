@@ -35,13 +35,14 @@ def say(text):
 
 class ScriptedClient:
     """A tool-using model that plays a script, one turn per step: a step is the turn's
-    blocks, or a function of the request that gives them. Keeps every request; a
-    turn with a tool call stops for it, any other ends. `fail_at` (1-based) is a turn
-    the API fails."""
+    blocks, a function of the request that gives them, or a function that gives a
+    `ToolTurn` as it stands. Keeps every request; a turn with a tool call stops for it,
+    any other ends. `fail_at` (1-based) is a turn the API fails; each takes `seconds`."""
 
-    def __init__(self, script, fail_at=None):
+    def __init__(self, script, fail_at=None, seconds=0.0):
         self.script = list(script)
         self.fail_at = fail_at
+        self.seconds = seconds
         self.requests = []
 
     def converse(self, request):
@@ -53,6 +54,8 @@ class ScriptedClient:
             raise AssertionError(f"the script has {len(self.script)} turns; turn {turn} asked")
         step = self.script[turn - 1]
         blocks = step(request) if callable(step) else step
+        if isinstance(blocks, ToolTurn):
+            return blocks
         content = [
             {"id": f"toolu_{turn}_{i}", **block} if block["type"] == "tool_use" else block
             for i, block in enumerate(blocks)
@@ -64,6 +67,7 @@ class ScriptedClient:
             model=request.model,
             input_tokens=100,
             output_tokens=20,
+            seconds=self.seconds,
         )
 
 

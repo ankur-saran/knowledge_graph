@@ -171,6 +171,21 @@ class ToolBox:
         self.calls.append(record)
         return record
 
+    def refuse(self, name: str, arguments: dict[str, Any], fault: ToolFault) -> ToolCallRecord:
+        """A call the caller will not run. It is on the record all the same."""
+        call_id = f"c{len(self.calls) + 1}"
+        record = ToolCallRecord(call_id=call_id, tool=name, arguments=arguments, fault=fault)
+        self.calls.append(record)
+        return record
+
+    def holds_masked(self, data: Any) -> bool:
+        """Whether a document holds a value the analyst may not see."""
+        try:
+            self._scan(data)
+        except EgressRefused:
+            return True
+        return False
+
     def _execute(self, call_id: str, name: str, arguments: dict[str, Any]) -> ToolCallRecord:
         refused = dict(call_id=call_id, tool=name, arguments=arguments)
         tool = TOOLS.get(name)
@@ -225,7 +240,7 @@ class ToolBox:
             items.append(item)
         return items, len(found) - len(items) + sum(i.get("not_listed", 0) for i in items)
 
-    def _scan(self, items: list[dict[str, Any]]) -> None:
+    def _scan(self, items: Any) -> None:
         """Refuse a result that holds a value the analyst may not see. Whole words: a short
         alias is also the inside of many a company's name. An address is not among the
         values: the view masks a person's, and a company at that place states its own."""

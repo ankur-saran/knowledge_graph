@@ -36,6 +36,7 @@ ToolFault = Literal[
     "UNSEEN_RECORD",
     "NO_CONTEXT",
     "EGRESS_REFUSED",
+    "BUDGET_SPENT",
 ]
 
 FINDING_CODES: tuple[str, ...] = get_args(FindingCode)
@@ -83,3 +84,73 @@ class ToolCallRecord(_Model):
         if self.fault:
             return {"call_id": self.call_id, "error": self.fault}
         return {"call_id": self.call_id, "items": self.items, "truncated": self.truncated}
+
+
+class CappedCall(_Model):
+    call_id: NonEmptyStr
+    tool: NonEmptyStr
+    left_out: int
+
+
+class InvestigationCoverage(_Model):
+    """How far an investigation looked, so "nothing found" can be told from "ran out"."""
+
+    tools_called: list[str] = []
+    # The ids the calls that answered asked about, as the analyst's view names them.
+    entities_examined: list[str] = []
+    # Calls a cap or a query's limit shortened, and by how much.
+    capped: list[CappedCall] = []
+    # Calls refused, by kind.
+    refused: dict[str, int] = {}
+    # Subjects of the first pass left out by its cap.
+    subjects_not_examined: int = 0
+
+
+class TurnRecord(_Model):
+    """One model turn: enough to rebuild the next request and to check this one."""
+
+    request_digest: NonEmptyStr
+    # The blocks as they came, thinking included: the history is built from them.
+    content: list[dict[str, Any]]
+    stop_reason: NonEmptyStr
+    # The model that answered: another than the one asked when a fallback ran.
+    model: NonEmptyStr
+    # The investigation's id of each tool call of the turn, in order.
+    call_ids: list[str] = []
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    seconds: float = 0.0
+
+
+class Investigation(_Model):
+    """One question about one recommended decision. Advisory: no field of it reaches a
+    decision. Made from the analyst's view (`egress`), so one record suits every role."""
+
+    investigation_id: NonEmptyStr
+    decision_id: NonEmptyStr
+    snapshot_set_id: NonEmptyStr
+    graph_digest: NonEmptyStr
+    # None when the set has no current context layer.
+    context_digest: str | None
+    # As asked, or masked when it held a value the analyst may not see.
+    question: NonEmptyStr
+    egress: NonEmptyStr
+    # What code found with no model; `findings` is what the model added.
+    first_pass: list[Finding]
+    findings: list[Finding] = []
+    suggested_actions: list[SuggestedAction] = []
+    coverage: InvestigationCoverage
+    calls: list[ToolCallRecord]
+    turns: list[TurnRecord] = []
+    # None when no model was asked.
+    model: str | None = None
+    prompt_version: int
+    prompt_sha256: NonEmptyStr
+    budgets: dict[str, Any] = {}
+    usage: dict[str, Any] = {}
+    # False when a budget ran out or the model did not finish.
+    complete: bool
+    # Kinds of fault, never a value.
+    faults: list[str] = []
