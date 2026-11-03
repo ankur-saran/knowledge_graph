@@ -115,6 +115,8 @@ NO_SUBMISSION = "no submission"
 UNAVAILABLE = "model unavailable"
 BAD_SUBMISSION = "a submission of no known form"
 INTERRUPTED = "interrupted"
+# The guardrail's fault for a finding that states an outcome (the eval reads it).
+OUTCOME_FAULT = "a word that states an outcome"
 
 
 def prompt_digest() -> str:
@@ -541,7 +543,9 @@ def investigate(
         if memo.target_id is None:
             faults.append(NO_TARGET)
         stopped = bool(faults)
+        made = len(first)
         first, dropped = check_findings(first, box.calls, decision)
+        lost = made - len(first)
         faults += dropped
         run = None
         if client is not None and budget is not None and not stopped:
@@ -563,7 +567,9 @@ def investigate(
         complete = memo.target_id is not None
     else:
         complete = run is not None and run.submitted and not run.spent
-    findings, dropped = check_findings(run.findings if run else [], calls, decision)
+    submitted = run.findings if run else []
+    findings, dropped = check_findings(submitted, calls, decision)
+    lost += len(submitted) - len(findings)
     actions, refused = check_actions(run.actions if run else [], calls, decision, ontology)
     faults = sorted({*faults, *dropped, *refused})
     model = budget.model if run is not None and budget is not None else None
@@ -598,6 +604,7 @@ def investigate(
         usage=run.usage() if run else {},
         complete=complete,
         faults=faults,
+        findings_dropped=lost,
     )
 
 

@@ -155,6 +155,8 @@ class Investigation(_Model):
     complete: bool
     # Kinds of fault, never a value.
     faults: list[str] = []
+    # Findings the guardrail dropped, the first pass's and the model's.
+    findings_dropped: int = 0
 
     @property
     def event_id(self) -> str:
