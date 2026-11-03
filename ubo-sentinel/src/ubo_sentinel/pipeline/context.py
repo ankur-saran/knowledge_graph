@@ -161,6 +161,12 @@ def context_digest(con: duckdb.DuckDBPyConnection, set_id: str) -> str:
     return built["context_digest"]
 
 
+def context_rows_digest(con: duckdb.DuckDBPyConnection, set_id: str) -> str:
+    """The digest computed from the rows: a row changed behind `ctx_builds` shows here.
+    For a set with a current layer (`context_digest()`)."""
+    return fold_tables(con, [("ctx_addresses", _KEY)], set_id, _load(con, set_id)["gold_digest"])
+
+
 def _load(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any] | None:
     if not con.execute(
         "SELECT 1 FROM information_schema.tables WHERE table_name = 'ctx_builds'"

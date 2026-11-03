@@ -5,24 +5,48 @@ recorded decision as this code builds it, compares its digest with the one the
 record holds, and runs the guardrail again on the stored output. The checks run
 from the cheapest and stop at the first that fails, so the verdict names what
 moved: the prompt (`NOT_REPLAYABLE`), the input (`INPUT_DIFFERS`) or the check
-(`GUARDRAIL_DIFFERS`). Step 14's investigations are replayed here too.
+(`GUARDRAIL_DIFFERS`).
+
+An investigation is replayed by making it again with its stored turns in the
+model's place: the first pass, each tool call through the analyst's view, each
+request's digest, the budgets' path and the guardrail all run as they ran. Only
+the turns are stored answers, so what moved is named: the data under the
+decision (`GRAPH_CHANGED`), the context layer (`CONTEXT_CHANGED`), a tool's
+result (`TOOL_RESULT_DIFFERS`), a request (`INPUT_DIFFERS`), or the check.
 """
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from ubo_sentinel.agents import llm_prose, match_adjudicator
+from ubo_sentinel.agents import investigator, llm_prose, match_adjudicator
 from ubo_sentinel.audit.log import AuditLog
+from ubo_sentinel.audit.replay import replay_decision
 from ubo_sentinel.llm.annotation import Annotation, prompt_sha256
+from ubo_sentinel.llm.client import LLMRequest, LLMResponse, LLMUnavailable
+from ubo_sentinel.llm.config import InvestigateBudget
 from ubo_sentinel.llm.egress import EgressRefused
-from ubo_sentinel.models.canonical import sha256_hex
+from ubo_sentinel.llm.tools import ToolTurn, ToolTurnRequest
+from ubo_sentinel.models.audit_event import RUN_PREFIX
+from ubo_sentinel.models.canonical import canonical_json, sha256_hex
 from ubo_sentinel.models.decision import Decision
+from ubo_sentinel.models.investigation import Investigation, TurnRecord
 from ubo_sentinel.models.ontology import OntologyConfig
+from ubo_sentinel.pipeline.context import ContextNotBuilt, context_digest, context_rows_digest
+from ubo_sentinel.pipeline.db import connect, db_path
 
-Verdict = Literal["IDENTICAL", "NOT_REPLAYABLE", "INPUT_DIFFERS", "GUARDRAIL_DIFFERS"]
+Verdict = Literal[
+    "IDENTICAL",
+    "NOT_REPLAYABLE",
+    "GRAPH_CHANGED",
+    "CONTEXT_CHANGED",
+    "TOOL_RESULT_DIFFERS",
+    "INPUT_DIFFERS",
+    "GUARDRAIL_DIFFERS",
+]
 
 
 class UnknownRecord(LookupError):
@@ -32,7 +56,7 @@ class UnknownRecord(LookupError):
 class LLMReplayReport(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["annotation"]
+    kind: Literal["annotation", "investigation"]
     record_id: str
     decision_id: str
     feature: str
@@ -92,10 +116,10 @@ def recorded_annotation_event(log: AuditLog, annotation_id: str) -> dict[str, An
 
 def recommended_decision(log: AuditLog, decision_id: str) -> Decision:
     """The decision as it was recommended: what the model's input was built from."""
-    for record in log.events_of(decision_id):
-        if record["event_type"] == "RECOMMENDED":
-            return Decision.model_validate(record["payload"]["decision"])
-    raise UnknownRecord(f"No decision {decision_id} in the audit log.")
+    decision = log.recommended(decision_id)
+    if decision is None:
+        raise UnknownRecord(f"No decision {decision_id} in the audit log.")
+    return decision
 
 
 def replay_annotation(
@@ -149,3 +173,134 @@ def replay_annotation(
                 f" {len(annotation.faults)} were recorded",
             )
     return report("IDENTICAL", "the input and the guardrail's findings are as recorded")
+
+
+class _StoredTurns:
+    """The model, played back: each turn answers only the request it was made for."""
+
+    def __init__(self, turns: list[TurnRecord]) -> None:
+        self.turns = turns
+        self.used = 0
+        # The 1-based turn whose request is not the one recorded.
+        self.differs_at: int | None = None
+
+    def complete(self, request: LLMRequest) -> LLMResponse:
+        raise LLMUnavailable("An investigation has no single-turn request.")
+
+    def converse(self, request: ToolTurnRequest) -> ToolTurn:
+        if self.used == len(self.turns):
+            raise LLMUnavailable("No stored turn is left.")
+        stored = self.turns[self.used]
+        if request.digest() != stored.request_digest:
+            self.differs_at = self.used + 1
+            raise LLMUnavailable("The request is not the one recorded.")
+        self.used += 1
+        return ToolTurn.model_validate(stored.model_dump(exclude={"request_digest", "call_ids"}))
+
+
+def _plain(value: Any) -> Any:
+    """As the log holds it: a stored record and a new one compare field by field."""
+    return json.loads(canonical_json(value))
+
+
+def _check_again(
+    recorded: Investigation, decision: Decision, ontology: OntologyConfig, con: Any
+) -> tuple[Verdict, str]:
+    asked = recorded.model is not None
+    client = _StoredTurns(recorded.turns) if asked else None
+    budget = InvestigateBudget(**recorded.budgets) if asked else None
+    again = investigator.investigate(decision, recorded.question, ontology, con, client, budget)
+
+    for was, now in zip(recorded.calls, again.calls, strict=False):
+        if _plain(was) != _plain(now):
+            return "TOOL_RESULT_DIFFERS", f"call {was.call_id} ({was.tool}) gives another result"
+    # A request that is not the one recorded ends the run there: it explains fewer calls.
+    if client is not None and (client.differs_at or client.used != len(recorded.turns)):
+        turn = client.differs_at or client.used + 1
+        return "INPUT_DIFFERS", f"the request of turn {turn} is not the one the model read"
+    if len(recorded.calls) != len(again.calls):
+        return (
+            "TOOL_RESULT_DIFFERS",
+            f"{len(again.calls)} calls were made where {len(recorded.calls)} were recorded",
+        )
+    # A question that was not sent stopped the run, and is not asked again: it is the mask.
+    stopped = {investigator.QUESTION_MASKED, investigator.OPENING_MASKED}
+    fields = ("first_pass", "findings", "suggested_actions", "coverage")
+    faults = [set(item.faults) - stopped for item in (recorded, again)]
+    if (
+        any(_plain(getattr(recorded, f)) != _plain(getattr(again, f)) for f in fields)
+        or faults[0] != faults[1]
+        or (asked and recorded.complete != again.complete)
+    ):
+        return "GUARDRAIL_DIFFERS", "the findings or their faults are not the ones recorded"
+    return "IDENTICAL", "the data, each tool result, each request and the findings are as recorded"
+
+
+def replay_investigation(
+    log: AuditLog,
+    ontology: OntologyConfig,
+    investigation_id: str,
+    con: Any = None,
+    deep: bool = False,
+) -> LLMReplayReport:
+    """Make a recorded investigation again and compare. Never calls a model; writes nothing.
+
+    `deep` computes every digest from the rows, as `replay_decision()` does.
+
+    Raises `UnknownRecord`, and `AuditChainError` when the log does not verify.
+    """
+    event_id = f"{RUN_PREFIX['INVESTIGATED']}{investigation_id}"
+    record = next(
+        (r for r in log.records() if r["decision_id"] == event_id),
+        None,
+    )
+    if record is None:
+        raise UnknownRecord(f"No investigation {investigation_id} in the audit log.")
+    recorded = Investigation.model_validate(record["payload"])
+    decision = recommended_decision(log, recorded.decision_id)
+
+    def report(verdict: Verdict, detail: str) -> LLMReplayReport:
+        return LLMReplayReport(
+            kind="investigation",
+            record_id=investigation_id,
+            decision_id=recorded.decision_id,
+            feature=investigator.FEATURE,
+            verdict=verdict,
+            detail=detail,
+            recorded_status="COMPLETE" if recorded.complete else "INCOMPLETE",
+        )
+
+    if (
+        recorded.prompt_version != investigator.PROMPT_VERSION
+        or recorded.prompt_sha256 != investigator.prompt_digest()
+    ):
+        return report(
+            "NOT_REPLAYABLE",
+            f"the record was made with prompt version {recorded.prompt_version};"
+            f" this code has version {investigator.PROMPT_VERSION} or another prompt or tools",
+        )
+    if any(fault.startswith(investigator.INTERRUPTED) for fault in recorded.faults):
+        return report("NOT_REPLAYABLE", "the run was interrupted, so it ended at no recorded turn")
+    own = con is None
+    if own:
+        if not db_path().exists():
+            return report("NOT_REPLAYABLE", "There is no database here.")
+        con = connect(read_only=True)
+    try:
+        checked = replay_decision(log, ontology, recorded.decision_id, con, deep)
+        if checked.verdict == "NOT_REPLAYABLE":
+            return report("NOT_REPLAYABLE", checked.detail)
+        if not checked.identical:
+            return report("GRAPH_CHANGED", f"the decision now replays as {checked.verdict}")
+        try:
+            digest = context_digest(con, recorded.snapshot_set_id)
+            if deep:
+                digest = context_rows_digest(con, recorded.snapshot_set_id)
+        except ContextNotBuilt:
+            digest = None
+        if digest != recorded.context_digest:
+            return report("CONTEXT_CHANGED", "the context layer is not the one the tools read")
+        return report(*_check_again(recorded, decision, ontology, con))
+    finally:
+        if own:
+            con.close()

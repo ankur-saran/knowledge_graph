@@ -11,8 +11,7 @@ from pydantic import ValidationError
 from ubo_sentinel.audit.log import AuditChainError, AuditLog
 from ubo_sentinel.audit.replay import UnknownDecision, replay_decision
 from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
-from ubo_sentinel.llm.replay import UnknownRecord, replay_annotation
-from ubo_sentinel.models.audit_event import RUN_EVENTS
+from ubo_sentinel.llm.replay import UnknownRecord, replay_annotation, replay_investigation
 from ubo_sentinel.models.ontology import OntologyConfig, load_ontology
 
 # Exit code when this installation cannot run the replay: neither identical nor different.
@@ -58,7 +57,7 @@ def verify(
             problems.append(f"{report.count} records where at least {expect_count} are expected")
     statuses = Counter(decision.status for decision in log.decisions()) if report.intact else {}
     records = log.records() if report.intact else []
-    runs = sum(record["event_type"] in RUN_EVENTS for record in records)
+    runs = sum(record["event_type"] == "MONITOR_RUN" for record in records)
 
     if as_json:
         typer.echo(
@@ -139,7 +138,7 @@ def replay_annotation_cmd(
 ) -> None:
     """Rebuild what the model read for an annotation and run its guardrail again on the
     stored answer. Never calls the model; writes nothing."""
-    require_role(role, "audit-replay")
+    require_role(role, "audit-replay-annotation")
     try:
         report = replay_annotation(AuditLog(), _ontology(), annotation_id)
     except UnknownRecord as exc:
@@ -155,6 +154,40 @@ def replay_annotation_cmd(
         typer.echo(f"Replay identical: annotation {annotation_id} ({report.feature})")
     else:
         typer.echo(f"Replay {report.verdict}: annotation {annotation_id} ({report.feature})")
+        typer.echo(report.detail)
+    if report.verdict == "NOT_REPLAYABLE":
+        raise typer.Exit(code=EXIT_NOT_REPLAYABLE)
+    if not report.identical:
+        raise typer.Exit(code=1)
+
+
+@audit_app.command("replay-investigation")
+def replay_investigation_cmd(
+    investigation_id: Annotated[str, typer.Argument(help="The investigation to replay.")],
+    role: Annotated[str, typer.Option("--role")] = "auditor",
+    deep: Annotated[
+        bool, typer.Option("--deep", help="Compute every digest from the rows (slow on real data).")
+    ] = False,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Make a recorded investigation again with its stored turns in the model's place, and
+    compare. Never calls the model; writes nothing."""
+    require_role(role, "audit-replay-investigation")
+    try:
+        report = replay_investigation(AuditLog(), _ontology(), investigation_id, deep=deep)
+    except UnknownRecord as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    except AuditChainError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    if as_json:
+        typer.echo(report.model_dump_json(indent=2))
+    elif report.identical:
+        typer.echo(f"Replay identical: investigation {investigation_id}")
+    else:
+        typer.echo(f"Replay {report.verdict}: investigation {investigation_id}")
         typer.echo(report.detail)
     if report.verdict == "NOT_REPLAYABLE":
         raise typer.Exit(code=EXIT_NOT_REPLAYABLE)

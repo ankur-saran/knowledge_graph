@@ -5,7 +5,7 @@ from e2e import cli, person_pii, screen_gold
 from llm_fakes import FakeClient, good_prose
 from real_format import SAMPLES
 
-from ubo_sentinel.agents import llm_prose
+from ubo_sentinel.agents import investigator, llm_prose
 from ubo_sentinel.agents import supervisor as supervisor_module
 from ubo_sentinel.agents.base import ScreenRequest
 from ubo_sentinel.agents.supervisor import Supervisor
@@ -54,6 +54,7 @@ ARGS = {
     "audit-replay": ["audit", "replay", "{decision_id}"],
     # Rebuilds a recorded annotation's input; never calls a model.
     "audit-replay-annotation": ["audit", "replay-annotation", "{annotation_id}"],
+    "audit-replay-investigation": ["audit", "replay-investigation", "{investigation_id}"],
     # Prints the command that starts the UI: no server is started under test.
     "ui": ["ui", "--dry-run"],
     # Files under UBO_VAR; the roles that may read the graph (an analyst's masked).
@@ -75,8 +76,19 @@ def test_each_role_runs_exactly_its_commands(fresh_db, publishers, ontology, com
         found, _ = llm_prose.annotate_prose(decision, ontology, FakeClient(good_prose), "m", 1000)
         annotations.record(log, ontology, found, "someone", "reviewer", decision.created_at)
         annotation_id = found.annotation_id
+    investigation_id = ""
+    if command == "audit-replay-investigation":
+        found, _ = investigator.run_investigation(
+            log, ontology, decision.decision_id, "Who else?", "someone", "reviewer",
+            decision.created_at,
+        )  # fmt: skip
+        investigation_id = found.investigation_id
     args = [
-        arg.format(decision_id=decision.decision_id, annotation_id=annotation_id)
+        arg.format(
+            decision_id=decision.decision_id,
+            annotation_id=annotation_id,
+            investigation_id=investigation_id,
+        )
         for arg in ARGS[command]
     ]
 

@@ -4,6 +4,7 @@ from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict
 
+from ubo_sentinel.models.audit_event import RUN_PREFIX
 from ubo_sentinel.models.memo import ActionCode
 from ubo_sentinel.models.provenance import NonEmptyStr
 
@@ -154,3 +155,7 @@ class Investigation(_Model):
     complete: bool
     # Kinds of fault, never a value.
     faults: list[str] = []
+
+    @property
+    def event_id(self) -> str:
+        return f"{RUN_PREFIX['INVESTIGATED']}{self.investigation_id}"

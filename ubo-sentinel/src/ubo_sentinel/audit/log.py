@@ -295,6 +295,13 @@ class AuditLog:
         """The decision as its events leave it, or None when none was recorded."""
         return decision_of(self.records(), decision_id)
 
+    def recommended(self, decision_id: str) -> Decision | None:
+        """The decision as it was recommended, before any review or annotation."""
+        for record in self.events_of(decision_id):
+            if record["event_type"] == "RECOMMENDED":
+                return Decision.model_validate(record["payload"]["decision"])
+        return None
+
     def history(self, target_id: str) -> list[Decision]:
         """Every recorded decision on one entity, in the order each was recommended.
 

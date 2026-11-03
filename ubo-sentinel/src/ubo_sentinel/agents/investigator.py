@@ -22,6 +22,7 @@ takes the path the recorded run took.
 
 from collections.abc import Iterable
 from dataclasses import asdict
+from datetime import datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -34,6 +35,7 @@ from ubo_sentinel.agents.investigator_tools import (
     ToolBox,
     tool_specs,
 )
+from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.graph.views import MASK, GraphView
 from ubo_sentinel.llm.annotation import prompt_sha256
 from ubo_sentinel.llm.client import LLMClient, LLMUnavailable
@@ -60,7 +62,7 @@ from ubo_sentinel.models.investigation import (
     TurnRecord,
 )
 from ubo_sentinel.models.memo import Memo
-from ubo_sentinel.models.ontology import OntologyConfig
+from ubo_sentinel.models.ontology import OntologyConfig, require_write
 from ubo_sentinel.pipeline.context import ContextNotBuilt, context_digest
 
 FEATURE = "investigate"
@@ -112,6 +114,7 @@ OPENING_MASKED = "model input held a masked value"
 NO_SUBMISSION = "no submission"
 UNAVAILABLE = "model unavailable"
 BAD_SUBMISSION = "a submission of no known form"
+INTERRUPTED = "interrupted"
 
 
 def prompt_digest() -> str:
@@ -547,7 +550,11 @@ def investigate(
                 faults.append(OPENING_MASKED)
             else:
                 run = _Run(box, client, budget)
-                run.run(opening)
+                try:
+                    run.run(opening)
+                except (Exception, KeyboardInterrupt) as exc:
+                    # What was gathered is recorded all the same. The kind, never a message.
+                    faults.append(f"{INTERRUPTED}: {type(exc).__name__}")
                 faults += run.faults
         coverage = _coverage(box, left_out)
         digest = _context_digest(view)
@@ -592,3 +599,63 @@ def investigate(
         complete=complete,
         faults=faults,
     )
+
+
+def record(
+    log: AuditLog,
+    ontology: OntologyConfig,
+    investigation: Investigation,
+    actor: str,
+    role: str,
+    created_at: datetime,
+) -> bool:
+    """Append the one `INVESTIGATED` event. False when the same run is on record."""
+
+    def not_twice(records: list[dict[str, Any]]) -> None:
+        if any(event["decision_id"] == investigation.event_id for event in records):
+            raise _OnRecord
+
+    try:
+        log.append(
+            ontology=ontology,
+            decision_id=investigation.event_id,
+            event_type="INVESTIGATED",
+            actor=actor,
+            role=role,
+            created_at=created_at,
+            payload=investigation.model_dump(mode="json"),
+            guard=not_twice,
+        )
+    except _OnRecord:
+        return False
+    return True
+
+
+class _OnRecord(Exception):
+    pass
+
+
+def run_investigation(
+    log: AuditLog,
+    ontology: OntologyConfig,
+    decision_id: str,
+    question: str,
+    actor: str,
+    role: str,
+    created_at: datetime,
+    con: Any = None,
+    client: LLMClient | None = None,
+    budget: InvestigateBudget | None = None,
+) -> tuple[Investigation, bool]:
+    """(the investigation, whether this call recorded it). A role that cannot write is
+    refused before a model is asked: an investigation that is not recorded is not made.
+
+    Raises `PermissionError`, `LookupError` for a decision that is not on record, and
+    what `investigate()` raises.
+    """
+    require_write(ontology, role)
+    decision = log.recommended(decision_id)
+    if decision is None:
+        raise LookupError(f"No decision {decision_id} in the audit log.")
+    investigation = investigate(decision, question, ontology, con, client, budget)
+    return investigation, record(log, ontology, investigation, actor, role, created_at)
