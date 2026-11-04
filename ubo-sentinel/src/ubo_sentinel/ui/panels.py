@@ -7,6 +7,7 @@ text it shows is a role's view that has passed the render guardrail.
 """
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -17,6 +18,8 @@ from ubo_sentinel.agents import change_monitor
 from ubo_sentinel.agents.audit import DeterminismViolation
 from ubo_sentinel.agents.base import ScreenRequest, ScreenUsageError
 from ubo_sentinel.agents.guardrail import check_render
+from ubo_sentinel.agents.investigator import investigate
+from ubo_sentinel.agents.investigator import record as record_investigation
 from ubo_sentinel.agents.supervisor import NeedsDisambiguation, ScreenFailed, Supervisor
 from ubo_sentinel.audit.log import AuditChainError, AuditLog, ChainReport
 from ubo_sentinel.audit.replay import ReplayReport, replay_decision
@@ -30,7 +33,7 @@ from ubo_sentinel.audit.review import (
     same_actor,
     settle,
 )
-from ubo_sentinel.graph.store import GraphNotBuilt
+from ubo_sentinel.graph.store import GraphNotBuilt, GraphStore
 from ubo_sentinel.graph.views import (
     MASK,
     GraphView,
@@ -38,16 +41,23 @@ from ubo_sentinel.graph.views import (
     mask_decision,
     pseudonym_for,
 )
+from ubo_sentinel.llm.client import client_for
+from ubo_sentinel.llm.config import load_config
+from ubo_sentinel.llm.replay import LLMReplayReport
+from ubo_sentinel.llm.replay import replay_investigation as llm_replay_investigation
 from ubo_sentinel.models.change import MonitorRun
 from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.graph import EntityMatch
+from ubo_sentinel.models.investigation import Investigation
 from ubo_sentinel.models.memo import DecisionView, Memo
-from ubo_sentinel.models.ontology import OntologyConfig, require_command
+from ubo_sentinel.models.ontology import OntologyConfig, require_command, require_write
 from ubo_sentinel.models.provenance import Provenance
 from ubo_sentinel.pipeline.bronze import UnknownSnapshotSet
 from ubo_sentinel.pipeline.db import connect, db_path
-from ubo_sentinel.present import advisory_lines
+from ubo_sentinel.present import InvestigationShown, advisory_lines, investigation_lines
 from ubo_sentinel.rules.pack import UnknownRulePack
+from ubo_sentinel.ui import graph_viz
+from ubo_sentinel.ui.graph_viz import GraphSpec
 
 WITHHELD = "Withheld by the render guardrail: it held a value that is masked for this role."
 LICENCE_NOTICE = (
@@ -285,6 +295,7 @@ def do_review(
     reason: str | None = None,
     matches: MatchRuling | None = None,
     accept_stale: bool = False,
+    considered: list[str] | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> Decision:
     """Review as `ubo review` does. Raises `ReviewError`, `PermissionError`, `AuditChainError`."""
@@ -301,6 +312,7 @@ def do_review(
         matches=matches,
         superseded=is_superseded(decision),
         accept_stale=accept_stale,
+        considered_investigations=considered,
     )
 
 
@@ -637,3 +649,97 @@ def glossary(memo: Memo) -> dict[str, str]:
         "DEPTH_LIMIT_REACHED": "The owners go on above the depth the screen walked.",
         "POSSIBLE_DUPLICATE": "A linked record of this entity has owners the screen did not see.",
     }
+
+
+# --- investigations (Step 14) ---------------------------------------------------------------
+
+
+def investigations_of(
+    records: list[dict[str, Any]], decision_id: str | None = None
+) -> list[Investigation]:
+    """The investigations on record, of one decision or of all; the newest first."""
+    found = [
+        Investigation.model_validate(record["payload"])
+        for record in records
+        if record["event_type"] == "INVESTIGATED"
+        and (decision_id is None or record["payload"].get("decision_id") == decision_id)
+    ]
+    return found[::-1]
+
+
+def investigation_rows(investigations: list[Investigation]) -> list[dict[str, Any]]:
+    """The auditor's list: no finding's text, no question; what was asked of what, and how."""
+    return [
+        {
+            "investigation": item.investigation_id,
+            "decision": item.decision_id,
+            "complete": item.complete,
+            "model": item.model or "first pass only",
+            "first pass": len(item.first_pass),
+            "model's findings": len(item.findings),
+            "faults": "; ".join(item.faults),
+        }
+        for item in investigations
+    ]
+
+
+def investigation_view(
+    investigation: Investigation,
+    decision: Decision,
+    role: str,
+    ontology: OntologyConfig,
+    con: duckdb.DuckDBPyConnection | None = None,
+) -> tuple[str, GraphSpec] | None:
+    """The investigation's text and its findings drawn on the decision's graph, as the role
+    may see them; None when the render guardrail finds a masked value in either."""
+    with GraphStore.open(investigation.snapshot_set_id, con) as store:
+        shown = InvestigationShown(store, role, ontology)
+        text = "\n".join(investigation_lines(investigation, shown))
+        findings = [(f.code, f.subjects) for f in [*investigation.first_pass,
+                                                   *investigation.findings]]  # fmt: skip
+        spec = graph_viz.with_investigation(
+            graph_viz.evidence_graph(mask_decision(decision, role, ontology), scope="checked"),
+            findings,
+            lambda subject: (shown.id(subject), shown.entity(subject)),
+        )
+    everything = text + spec.text()
+    if check_render(everything, decision, role, ontology) or shown.masker.withheld(
+        everything, words=True
+    ):
+        return None
+    return text, spec
+
+
+def run_investigation(
+    log: AuditLog,
+    ontology: OntologyConfig,
+    decision: Decision,
+    question: str,
+    role: str,
+    actor: str,
+    lock: AbstractContextManager[Any],
+) -> Investigation:
+    """`ubo investigate`. The model is asked outside `lock`; only the append is inside it.
+
+    Raises `PermissionError`, `ValueError` (the configuration), `LLMUnavailable`,
+    `AuditChainError`, and what opening the decision's set raises.
+    """
+    require_command(ontology, role, "investigate")
+    require_write(ontology, role)
+    config = load_config()
+    client = budget = None
+    if config.enabled("investigate"):
+        client, budget = client_for(config), config.investigate
+    found = investigate(decision, question, ontology, client=client, budget=budget)
+    with lock:
+        record_investigation(log, ontology, found, actor, role, datetime.now(UTC))
+    return found
+
+
+def replay_investigation(
+    log: AuditLog, ontology: OntologyConfig, role: str, investigation_id: str, deep: bool = False
+) -> LLMReplayReport:
+    """`ubo audit replay-investigation`. Raises `PermissionError`, `UnknownRecord`,
+    `AuditChainError`."""
+    require_command(ontology, role, "audit-replay-investigation")
+    return llm_replay_investigation(log, ontology, investigation_id, deep=deep)

@@ -86,6 +86,14 @@ def _assist_lines(
     return lines
 
 
+def _check_investigation(log: AuditLog, investigation_id: str) -> None:
+    """A screen an investigation suggested names one on record. The person screens: the
+    investigation is noted beside the request and is no part of the decision."""
+    event_id = f"investigation:{investigation_id}"
+    if not any(r["decision_id"] == event_id for r in log.records()):
+        raise ScreenUsageError(f"No investigation {investigation_id} is on record.")
+
+
 def _check_assist_run(log: AuditLog, run_id: str, target_id: str | None) -> None:
     """A target screened from an assist run must be one that run found."""
     event_id = f"intake:{run_id}"
@@ -128,6 +136,10 @@ def screen(
         str | None,
         typer.Option("--assist-run", help="The intake assist run --target-id came from."),
     ] = None,
+    investigation: Annotated[
+        str | None,
+        typer.Option("--investigation-id", help="The investigation that suggested this screen."),
+    ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Print the decision as JSON.")] = False,
 ) -> None:
     """Screen an entity: resolve it, walk its owners, apply the rule pack, write the memo."""
@@ -152,8 +164,11 @@ def screen(
             role=role,
             actor=actor or role,
             assist_run_id=assist_run,
+            investigation_id=investigation,
         )
         log = AuditLog()
+        if investigation is not None:
+            _check_investigation(log, investigation)
         if assist_run is not None:
             if target_id is None:
                 raise ScreenUsageError("--assist-run needs --target-id.")

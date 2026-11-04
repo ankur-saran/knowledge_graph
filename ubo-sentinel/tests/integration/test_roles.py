@@ -55,6 +55,7 @@ ARGS = {
     # Rebuilds a recorded annotation's input; never calls a model.
     "audit-replay-annotation": ["audit", "replay-annotation", "{annotation_id}"],
     "audit-replay-investigation": ["audit", "replay-investigation", "{investigation_id}"],
+    "investigate": ["investigate", "{decision_id}", "Who else?", "--no-llm"],
     # Prints the command that starts the UI: no server is started under test.
     "ui": ["ui", "--dry-run"],
     # Files under UBO_VAR; the roles that may read the graph (an analyst's masked).

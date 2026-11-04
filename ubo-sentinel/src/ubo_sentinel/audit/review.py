@@ -15,6 +15,7 @@ from typing import Any, Literal
 import duckdb
 
 from ubo_sentinel.audit.log import REVIEW_EVENTS, AuditLog
+from ubo_sentinel.models.audit_event import RUN_PREFIX
 from ubo_sentinel.models.canonical import sha256_hex
 from ubo_sentinel.models.decision import (
     Decision,
@@ -179,8 +180,12 @@ def review_decision(
     matches: MatchRuling | None = None,
     superseded: bool | None = None,
     accept_stale: bool = False,
+    considered_investigations: list[str] | None = None,
 ) -> Decision:
     """Review a recommended decision and return it as reviewed.
+
+    `considered_investigations` names the investigations of this decision the
+    reviewer read (Step 14). Recorded in the review; it decides nothing.
 
     `superseded` says whether a newer snapshot set of the same family existed
     when the review was made; None when that is not known. A superseded
@@ -205,6 +210,16 @@ def review_decision(
                 f" (by {reviewed['actor']})."
             )
         screened_by = next(e["actor"] for e in events if e["event_type"] == "RECOMMENDED")
+        investigations = {
+            r["decision_id"].removeprefix(RUN_PREFIX["INVESTIGATED"])
+            for r in records
+            if r["event_type"] == "INVESTIGATED" and r["payload"].get("decision_id") == decision_id
+        }
+        unknown = sorted(set(considered_investigations or []) - investigations)
+        if unknown:
+            raise ReviewError(
+                f"No investigation {', '.join(unknown)} of decision {decision_id} is on record."
+            )
         if same_actor(screened_by, actor):
             raise ReviewError(
                 f"'{actor}' screened decision {decision_id} and cannot also review it."
@@ -227,7 +242,13 @@ def review_decision(
             "superseded": superseded,
             # True when the reviewer cleared in the knowledge that newer data existed.
             "accepted_stale": bool(superseded and accept_stale and outcome == "CLEAR"),
-        },
+        }
+        # Only when given: a review that names none is written as it always was.
+        | (
+            {"considered_investigations": sorted(set(considered_investigations))}
+            if considered_investigations
+            else {}
+        ),
         guard=guard,
     )
     return log.decision(decision_id)

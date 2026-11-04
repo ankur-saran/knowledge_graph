@@ -1,5 +1,6 @@
 """What a role is shown of a decision, in the CLI and the review UI: masked, then checked."""
 
+import re
 from collections import Counter
 from typing import Any
 
@@ -8,10 +9,14 @@ import duckdb
 from ubo_sentinel.agents import llm_prose, match_adjudicator
 from ubo_sentinel.agents.explainer import render_memo
 from ubo_sentinel.agents.guardrail import check_render
+from ubo_sentinel.agents.investigator_guardrail import resolve_value
 from ubo_sentinel.audit.log import AuditLog
-from ubo_sentinel.graph.views import mask_decision, pseudonym_for
+from ubo_sentinel.graph.store import GraphStore
+from ubo_sentinel.graph.views import GraphView, mask_decision, pseudonym_for
+from ubo_sentinel.llm.egress import EGRESS_ROLE
 from ubo_sentinel.models.change import MonitorRun, SetDiff
 from ubo_sentinel.models.decision import Decision
+from ubo_sentinel.models.investigation import Finding, Investigation
 from ubo_sentinel.models.memo import DecisionView
 from ubo_sentinel.models.ontology import OntologyConfig
 
@@ -112,14 +117,21 @@ class Masker:
     def id(self, entity_id: str | None) -> str:
         return self._alias.get(entity_id or "", entity_id or "")
 
+    def real(self, shown_id: str) -> str:
+        """The node id behind a pseudonym of this role's; any other id as it is."""
+        return {alias: real for real, alias in self._alias.items()}.get(shown_id, shown_id)
+
     def text(self, text: str) -> str:
         """Every masked id in the text replaced by its pseudonym, longest first."""
         for entity_id in sorted(self._alias, key=len, reverse=True):
             text = text.replace(entity_id, self._alias[entity_id])
         return text
 
-    def withheld(self, text: str) -> bool:
-        return any(value in text for value in self._values)
+    def withheld(self, text: str, words: bool = False) -> bool:
+        """Whether the text holds a masked value; with `words`, only as a whole word."""
+        if not words:
+            return any(value in text for value in self._values)
+        return any(re.search(rf"(?<!\w){re.escape(value)}(?!\w)", text) for value in self._values)
 
 
 def guarded(text: str, masker: Masker, what: str, role: str) -> str:
@@ -234,3 +246,170 @@ def advisory_lines(decision: Decision, role: str, ontology: OntologyConfig) -> l
         found = decision.llm_annotations[feature]
         lines += [f"LLM annotation ({feature}):", *advisory_text(found, decision, role, ontology)]
     return lines
+
+
+# --- an investigation (Step 14) ------------------------------------------------------------
+
+INVESTIGATION_LABEL = (
+    "LLM-assisted, advisory: not part of the decision, checked against what it cites by code."
+)
+
+
+class InvestigationShown:
+    """An investigation's entities as one role may see them.
+
+    An investigation is made from the analyst's view: a person is a pseudonym,
+    and who it is is not stored. The pseudonym is a hash of the id, so it is
+    found again among the set's own nodes, and the entity is then shown through
+    this role's view: a reviewer sees the name, an analyst the pseudonym. Text,
+    never markup: the names come from public data.
+    """
+
+    def __init__(self, store: GraphStore, role: str, ontology: OntologyConfig) -> None:
+        self._analyst = Masker(store.con, [store.set_id], EGRESS_ROLE, ontology)
+        self.masker = Masker(store.con, [store.set_id], role, ontology)
+        self._view = GraphView(store, role, ontology)
+
+    def id(self, analyst_id: str) -> str:
+        """The id this role knows the entity by."""
+        return self.masker.id(self._analyst.real(analyst_id))
+
+    def entity(self, analyst_id: str) -> str:
+        found = self._view.get_entity_by_id(self._analyst.real(analyst_id))
+        if found is None:
+            return f"[{self.id(analyst_id)}]"
+        return f"{found.legal_name} [{found.id}]"
+
+    def screenable(self, analyst_id: str) -> str | None:
+        """The id to screen, or None for a party this role sees masked."""
+        shown = self.id(analyst_id)
+        return None if shown != self._analyst.real(analyst_id) else shown
+
+    def fill(self, text: str, calls: dict[str, Any]) -> str:
+        """A finding's slots, filled: an entity as this role sees it, a value as it was read."""
+
+        def slot(match: re.Match[str]) -> str:
+            kind, value = match.group(1), match.group(2) or ""
+            if kind == "e":
+                return self.entity(value)
+            call_id, _, pointer = value.partition(".")
+            record = calls.get(call_id)
+            found = resolve_value(pointer, record.result()) if record else None
+            return str(found)
+
+        return llm_prose.SLOT.sub(slot, text)
+
+
+def _arguments(arguments: dict[str, Any], shown: InvestigationShown) -> str:
+    parts = []
+    for name, value in arguments.items():
+        if isinstance(value, list):
+            value = "[" + ", ".join(shown.id(str(item)) for item in value) + "]"
+        elif isinstance(value, str):
+            value = shown.id(value)
+        parts.append(f"{name}={value}")
+    return ", ".join(parts)
+
+
+def investigation_lines(
+    investigation: Investigation, shown: InvestigationShown, *, trace: bool = True
+) -> list[str]:
+    """An investigation as `shown`'s role may see it: pass the text through `guarded()`."""
+    calls = {call.call_id: call for call in investigation.calls}
+    state = "complete" if investigation.complete else "incomplete"
+    model = (
+        f"model {investigation.model}, prompt v{investigation.prompt_version}"
+        if investigation.model
+        else "first pass only: no model was asked"
+    )
+    lines = [
+        f"Investigation {investigation.investigation_id} of decision"
+        f" {investigation.decision_id}: {state} ({model})",
+        f"Question: {investigation.question}",
+        "First pass (code, no model):",
+    ]
+
+    def findings(items: list[Finding]) -> list[str]:
+        return [
+            f"  [{item.code}] {shown.fill(item.text, calls)}  (cites {', '.join(item.cites)})"
+            for item in items
+        ]
+
+    lines += findings(investigation.first_pass) or ["  Nothing."]
+    if investigation.model:
+        lines.append(INVESTIGATION_LABEL)
+        lines += findings(investigation.findings) or ["  The model added no finding."]
+    if investigation.suggested_actions:
+        lines.append("Suggested (a person decides):")
+    for action in investigation.suggested_actions:
+        target = shown.screenable(action.entity_id) if action.entity_id else None
+        if action.code == "SCREEN_RELATED_ENTITY" and target:
+            lines.append(
+                f"  Screen {shown.entity(action.entity_id or '')}: ubo screen --target-id {target}"
+                f" --snapshot {investigation.snapshot_set_id}"
+                f" --investigation-id {investigation.investigation_id}"
+            )
+        elif action.code == "SCREEN_RELATED_ENTITY":
+            lines.append(
+                f"  Screen {shown.entity(action.entity_id or '')}: a party masked for this role"
+            )
+        else:
+            about = f" for {shown.entity(action.entity_id)}" if action.entity_id else ""
+            document = f" ({action.document})" if action.document else ""
+            lines.append(f"  {action.code}{document}{about}")
+    coverage = investigation.coverage
+    lines.append(
+        f"Looked at: {len(coverage.entities_examined)} entities with"
+        f" {', '.join(coverage.tools_called) or 'no tool'}"
+    )
+    for capped in coverage.capped:
+        lines.append(f"  {capped.call_id} {capped.tool}: {capped.left_out} left out by a cap")
+    if coverage.refused:
+        lines.append("  Refused: " + ", ".join(f"{k} {n}" for k, n in coverage.refused.items()))
+    if coverage.subjects_not_examined:
+        lines.append(f"  {coverage.subjects_not_examined} parties not looked around (a cap)")
+    if investigation.faults:
+        lines.append(f"Faults: {'; '.join(investigation.faults)}")
+    if investigation.findings_dropped:
+        lines.append(f"Findings the guardrail dropped: {investigation.findings_dropped}")
+    if investigation.usage:
+        usage = investigation.usage
+        lines.append(
+            f"Usage: {usage.get('steps', 0)} steps, {usage.get('turns', 0)} turns,"
+            f" {usage.get('input_tokens', 0)} tokens in, {usage.get('output_tokens', 0)} out"
+        )
+    if trace:
+        lines.append("Trace:")
+        for call in investigation.calls:
+            left_out = f", {call.truncated} left out" if call.truncated else ""
+            what = (
+                f"refused: {call.fault}" if call.fault else f"{len(call.items)} item(s){left_out}"
+            )
+            again = f" (repeats {call.repeat_of})" if call.repeat_of else ""
+            asked = _arguments(call.arguments, shown)
+            lines.append(f"  {call.call_id} {call.tool}({asked}) -> {what}{again}")
+    return lines
+
+
+def investigation_text(
+    investigation: Investigation,
+    decision: Decision,
+    role: str,
+    ontology: OntologyConfig,
+    con: duckdb.DuckDBPyConnection | None = None,
+    *,
+    trace: bool = True,
+) -> str:
+    """The investigation as the role may see it. Raises `RenderWithheld` when the render
+    guardrail trips, on the decision's masked values or on any masked node of the set.
+    Raises what opening the set raises."""
+    with GraphStore.open(investigation.snapshot_set_id, con) as store:
+        shown = InvestigationShown(store, role, ontology)
+        text = "\n".join(investigation_lines(investigation, shown, trace=trace))
+    # Whole words for the set's nodes: a short alias is the inside of many a company's name.
+    if check_render(text, decision, role, ontology) or shown.masker.withheld(text, words=True):
+        raise RenderWithheld(
+            f"Investigation {investigation.investigation_id} is recorded, but it is not shown:"
+            f" the output held a value that is masked for role '{role}'."
+        )
+    return text

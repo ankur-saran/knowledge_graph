@@ -13,6 +13,7 @@ that cannot close the script element, and the popups show it as text.
 """
 
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from decimal import Decimal
 from importlib import resources
@@ -38,6 +39,9 @@ EDGE_DASHES = {"OWNS": False, "CONSOLIDATED_BY": [10, 6], "CONTROLS": [2, 4]}
 EDGE_COLOUR = "#555555"
 ULTIMATE_COLOUR = "#AAAAAA"
 LINK_COLOUR = "#0072B2"
+# An investigation's findings (Step 14): its own layer, never an edge of the graph.
+INVESTIGATION_COLOUR = "#56B4E9"
+INVESTIGATION_DASHES = [8, 4]
 DEFAULT_CAP = 300
 MAX_LABEL = 40
 
@@ -312,6 +316,48 @@ def evidence_graph(view: DecisionView, scope: Scope = "paths", cap: int = DEFAUL
     return GraphSpec(nodes, edges, not_drawn=not_drawn, scope=scope, notes=notes)
 
 
+def with_investigation(
+    spec: GraphSpec,
+    findings: list[tuple[str, list[str]]],
+    shown: Callable[[str], tuple[str, str]],
+) -> GraphSpec:
+    """The graph with an investigation's findings drawn as their own layer.
+
+    `findings` are (code, subjects) as the investigation names them; `shown` gives an
+    analyst's id as this role sees it: (its id, its label). Each finding joins its
+    first subject to the others, labelled with its code; a subject outside the drawing
+    is added as a box, as an entity outside the screened graph is.
+    """
+    nodes = {node.id: node for node in spec.nodes}
+    level = max((node.level for node in spec.nodes), default=0) + 1
+    edges = list(spec.edges)
+    for number, (code, subjects) in enumerate(findings, 1):
+        ends = [shown(subject) for subject in subjects]
+        for node_id, label in ends:
+            if node_id not in nodes:
+                nodes[node_id] = GraphNode(
+                    id=node_id,
+                    label=f"{_short(label)}\nINVESTIGATION",
+                    title=f"{label}\nid: {node_id}\nfound by an investigation",
+                    state="outside",
+                    level=level,
+                )
+        first = ends[0][0]
+        for node_id, _ in ends[1:]:
+            edges.append(
+                GraphEdge(
+                    id=f"investigation:{number}:{first}:{node_id}",
+                    upper_id=first,
+                    lower_id=node_id,
+                    kind="INVESTIGATION",
+                    label=f"investigation: {code}",
+                    title=f"Finding {number} of the investigation: {code} (advisory)",
+                )
+            )
+    notes = [*spec.notes, "Light blue long dashes: an investigation's findings (advisory)."]
+    return GraphSpec(list(nodes.values()), edges, spec.not_drawn, spec.scope, notes)
+
+
 # --- writing it out -------------------------------------------------------------------------
 
 
@@ -334,7 +380,9 @@ def _vis_data(spec: GraphSpec) -> dict[str, list[dict]]:
         )
     edges = []
     for edge in spec.edges:
-        if edge.kind in ("MATCH", "LINKED_RECORD"):
+        if edge.kind == "INVESTIGATION":
+            colour, dashes = INVESTIGATION_COLOUR, INVESTIGATION_DASHES
+        elif edge.kind in ("MATCH", "LINKED_RECORD"):
             colour, dashes = LINK_COLOUR, [4, 4]
         else:
             colour = ULTIMATE_COLOUR if edge.is_ultimate else EDGE_COLOUR
@@ -444,4 +492,5 @@ LEGEND = [
     ("solid / long dash / dotted line", "OWNS / CONSOLIDATED_BY / CONTROLS"),
     ("thick line", "on an evidence path; thin grey: an ultimate-parent record"),
     ("blue dashed line", "a designation that crossed a link, or a linked record"),
+    ("light blue long dash", "an investigation's finding: advisory, not an edge of the graph"),
 ]

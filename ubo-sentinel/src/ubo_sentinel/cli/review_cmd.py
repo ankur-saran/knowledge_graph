@@ -102,6 +102,10 @@ def review(
         bool,
         typer.Option("--accept-stale", help="Clear although newer data exists. Needs --reason."),
     ] = False,
+    considered: Annotated[
+        list[str] | None,
+        typer.Option("--considered", help="An investigation of this decision you read (repeat)."),
+    ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Print the decision as JSON.")] = False,
 ) -> None:
     """Show a recommended decision and record the reviewer's decision on it."""
@@ -169,6 +173,7 @@ def review(
             matches=matches,
             superseded=is_superseded(decision),
             accept_stale=accept_stale,
+            considered_investigations=considered,
         )
     except ValueError as exc:
         typer.echo(str(exc), err=True)

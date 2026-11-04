@@ -40,14 +40,14 @@ provenance:
 # registers it. Only `reviewer` may hold decision rights.
 roles:
   analyst:
-    commands: [screen, monitor, ui, export-neo4j, annotate]
+    commands: [screen, monitor, ui, export-neo4j, annotate, investigate]
     masked_fields:
       Person: [legal_name, aliases, registration_number, lei]
     read_only: false
     decision_rights: []
   reviewer:
     commands: [screen, review, monitor, audit-verify, audit-replay, audit-replay-annotation,
-               audit-replay-investigation, ui,
+               audit-replay-investigation, investigate, ui,
                export-neo4j, annotate]
     masked_fields: {}
     read_only: false

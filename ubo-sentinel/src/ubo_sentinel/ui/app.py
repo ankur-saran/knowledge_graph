@@ -27,6 +27,8 @@ from ubo_sentinel.audit.review import (
 )
 from ubo_sentinel.graph.store import GraphNotBuilt
 from ubo_sentinel.graph.views import GraphView, mask_decision
+from ubo_sentinel.llm.client import LLMUnavailable
+from ubo_sentinel.llm.replay import UnknownRecord
 from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.ontology import OntologyConfig, load_ontology, ontology_path
 from ubo_sentinel.pipeline.bronze import UnknownSnapshotSet
@@ -93,8 +95,11 @@ def show_decision(
     context: str,
     recorded: str = "",
     resolved_by: str = "",
+    log: AuditLog | None = None,
+    actor: str = "",
 ) -> bool:
-    """Show a decision as the role may see it. False when the render guardrail withheld it."""
+    """Show a decision as the role may see it. False when the render guardrail withheld it.
+    With `log`, a role that may investigate can ask about it."""
     view = mask_decision(decision, role, ontology)
     summary = "\n".join(summary_lines(view, recorded, resolved_by))
     memo_text = render_memo(view.memo)
@@ -166,7 +171,82 @@ def show_decision(
     if history and panels.guarded(repr(history), decision, role, ontology) is not None:
         with st.expander(f"Other decisions on this entity ({len(history)})"):
             st.dataframe(history, hide_index=True)
+    investigation_section(decision, role, actor, ontology, records, log, context)
     return True
+
+
+def show_investigation(
+    investigation: Any, decision: Decision, role: str, ontology: OntologyConfig
+) -> None:
+    """One investigation: its findings on the graph, and its text. Never as markup."""
+    try:
+        shown = panels.investigation_view(investigation, decision, role, ontology)
+    except (UnknownSnapshotSet, GraphNotBuilt) as exc:
+        st.error(str(exc))
+        return
+    if shown is None:
+        st.error(panels.WITHHELD)
+        return
+    text, spec = shown
+    if spec.nodes:
+        st.iframe(graph_viz.to_html(spec), height=640)
+    st.text(text)
+
+
+def investigation_section(
+    decision: Decision,
+    role: str,
+    actor: str,
+    ontology: OntologyConfig,
+    records: list[dict[str, Any]],
+    log: AuditLog | None,
+    context: str,
+) -> None:
+    """Investigations of the decision (Step 14), and, for a role that may, a new one: run
+    on its button only."""
+    found = panels.investigations_of(records, decision.decision_id)
+    can_run = log is not None and panels.may(ontology, role, "investigate")
+    if not found and not can_run:
+        return
+    with st.expander(f"Investigations ({len(found)}): advisory, beside the decision"):
+        if can_run and log is not None:
+            question = st.text_input("What should be looked for?", key=f"{context}-question")
+            ready = bool(actor.strip() and question.strip())
+            if st.button("Investigate", disabled=not ready, key=f"{context}-investigate"):
+                try:
+                    with st.spinner("Investigating"):
+                        made = panels.run_investigation(
+                            log, ontology, decision, question, role, actor.strip(), _write_lock()
+                        )
+                except (
+                    PermissionError,
+                    ValueError,
+                    LLMUnavailable,
+                    AuditChainError,
+                    UnknownSnapshotSet,
+                    GraphNotBuilt,
+                ) as exc:
+                    st.error(str(exc))
+                    return
+                st.session_state[f"{context}-investigation"] = made.investigation_id
+                st.rerun()
+        if not found:
+            st.caption("No investigation of this decision yet.")
+            return
+        by_id = {item.investigation_id: item for item in found}
+        ids = list(by_id)
+        latest = st.session_state.get(f"{context}-investigation")
+        chosen = st.selectbox(
+            "Investigation",
+            ids,
+            index=ids.index(latest) if latest in by_id else 0,
+            format_func=lambda i: (
+                f"{i}  {'complete' if by_id[i].complete else 'incomplete'}"
+                f"  {by_id[i].model or 'first pass only'}"
+            ),
+            key=f"{context}-investigation-pick",
+        )
+        show_investigation(by_id[chosen], decision, role, ontology)
 
 
 def evidence_drilldown(
@@ -294,6 +374,8 @@ def screen_panel(role, actor, snapshot, rule_pack, log, ontology, records, decis
         context="screen",
         recorded=recorded,
         resolved_by=result.resolved_by,
+        log=log,
+        actor=actor,
     )
     follow = panels.follow_ups(decision, role, ontology) if shown else []
     if follow:
@@ -370,7 +452,10 @@ def review_panel(role, actor, log, ontology, records, decisions, waiting, failed
         key="review-decision",
     )
     decision = by_id[chosen]
-    if not show_decision(decision, role, ontology, records, decisions, context="review"):
+    shown = show_decision(
+        decision, role, ontology, records, decisions, context="review", log=log, actor=actor
+    )
+    if not shown:
         return  # Nothing is decided on a memo that could not be shown.
     if decision.status != "RECOMMENDED":
         st.info(f"Reviewed: {decision.status}, outcome {decision.final_outcome}.")
@@ -405,6 +490,11 @@ def review_panel(role, actor, log, ontology, records, decisions, waiting, failed
         options = ["ESCALATE", "CLEAR"] if panels.clearable(decision) else ["ESCALATE"]
         outcome = st.radio("Outcome", options, horizontal=True, key="outcome")
     reason = st.text_area("Reason", key="reason")
+    # Which investigations the reviewer read: recorded with the review, it decides nothing.
+    offered = [item.investigation_id for item in panels.investigations_of(records, chosen)]
+    considered = (
+        st.multiselect("Investigations you read", offered, key="considered") if offered else []
+    )
     accept_stale = (
         st.checkbox("Clear on the older data all the same", key="stale") if superseded else False
     )
@@ -435,6 +525,7 @@ def review_panel(role, actor, log, ontology, records, decisions, waiting, failed
                     reason=reason,
                     matches=matches,
                     accept_stale=accept_stale,
+                    considered=considered or None,
                 )
         except ReviewError as exc:
             st.warning(str(exc))
@@ -488,6 +579,33 @@ def audit_panel(role, log, ontology, records, decisions) -> None:
             st.caption(f"Evidence read from the {report.evidence_source}.")
     with st.expander("The decision (read-only)"):
         show_decision(by_id[chosen], role, ontology, records, decisions, context="audit")
+    investigations_audit(role, log, ontology, records, by_id)
+
+
+def investigations_audit(role, log, ontology, records, by_id) -> None:
+    """Every investigation on record, read-only, each replayable (`audit replay-investigation`)."""
+    found = panels.investigations_of(records)
+    if not found or not panels.may(ontology, role, "audit-replay-investigation"):
+        return
+    st.markdown(f"#### Investigations ({len(found)})")
+    st.dataframe(panels.investigation_rows(found), hide_index=True)
+    items = {item.investigation_id: item for item in found}
+    chosen = st.selectbox("Investigation", list(items), key="audit-investigation")
+    deep = st.checkbox("Recompute every digest from the rows (--deep)", key="investigation-deep")
+    if st.button("Replay", key="replay-investigation"):
+        try:
+            report = panels.replay_investigation(log, ontology, role, chosen, deep=deep)
+        except (UnknownRecord, AuditChainError, PermissionError) as exc:
+            st.error(str(exc))
+        else:
+            if report.identical:
+                st.success("Replay identical")
+            else:
+                st.error(f"{report.verdict}: {report.detail}")
+    decision = by_id.get(items[chosen].decision_id)
+    if decision is not None:
+        with st.expander("The investigation (read-only)"):
+            show_investigation(items[chosen], decision, role, ontology)
 
 
 def build_panel(role, snapshot, ontology) -> None:

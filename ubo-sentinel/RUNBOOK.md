@@ -141,6 +141,22 @@ UBO_LLM=on UBO_LLM_INTAKE=on uv run ubo screen "Halcyon Ridge"
 
 The model reads the analyst's view only. A summary names parties through slots that code fills, so a reviewer reads names where an analyst reads pseudonyms. The intake assist lists the candidates its search variants found by id: screen one with the `--target-id … --assist-run …` it prints.
 
+### Investigate a decision
+
+`ubo investigate` looks beyond the graph a screen walked: shared addresses, common controllers, designated siblings, paths between two parties, a record's history. It needs no key: a first pass in code always runs, and a model joins only with the flag. The investigation cases are a set of their own, loaded after t0:
+
+```
+uv run ubo ingest --source fixtures --path fixtures/snapshot_inv
+uv run ubo normalize --snapshot latest && uv run ubo build-graph --snapshot latest
+uv run ubo screen --target-id lei:FXI03DESIG0000000000 --snapshot latest
+uv run ubo investigate <decision id> "Who else is at this office?"                    # first pass only
+UBO_LLM=on UBO_LLM_INVESTIGATE=on uv run ubo investigate <decision id> "Who else is at this office?"
+uv run ubo audit replay-investigation <investigation id>                             # auditor
+uv run ubo eval --suite investigator --snapshot latest
+```
+
+Each investigation is recorded once and changes no decision. An analyst reads a person as a pseudonym, a reviewer reads the name. A screen it suggests is printed as a command for a person to run (`--investigation-id …` notes where it came from), and `ubo review … --considered <investigation id>` records which investigations the reviewer read. A question that holds the name of someone the analyst may not see is not sent to the model and not kept, but only a name the decision or the investigation has met can be recognised: do not type names into a question.
+
 ## Troubleshooting
 
 | Message | Do |

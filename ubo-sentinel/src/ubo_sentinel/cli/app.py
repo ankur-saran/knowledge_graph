@@ -80,6 +80,7 @@ from ubo_sentinel.cli import (  # noqa: E402, F401
     eval_cmd,
     export_cmd,
     ingest_cmd,
+    investigate_cmd,
     monitor_cmd,
     normalize_cmd,
     refresh_cmd,
