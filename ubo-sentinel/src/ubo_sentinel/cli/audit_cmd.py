@@ -8,10 +8,15 @@ import typer
 import yaml
 from pydantic import ValidationError
 
-from ubo_sentinel.audit.log import AuditChainError, AuditLog
+from ubo_sentinel.audit.log import AuditChainError, AuditLog, var_dir
 from ubo_sentinel.audit.replay import UnknownDecision, replay_decision
 from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
-from ubo_sentinel.llm.replay import UnknownRecord, replay_annotation, replay_investigation
+from ubo_sentinel.llm.replay import (
+    UnknownRecord,
+    replay_annotation,
+    replay_extraction,
+    replay_investigation,
+)
 from ubo_sentinel.models.ontology import OntologyConfig, load_ontology
 
 # Exit code when this installation cannot run the replay: neither identical nor different.
@@ -188,6 +193,37 @@ def replay_investigation_cmd(
         typer.echo(f"Replay identical: investigation {investigation_id}")
     else:
         typer.echo(f"Replay {report.verdict}: investigation {investigation_id}")
+        typer.echo(report.detail)
+    if report.verdict == "NOT_REPLAYABLE":
+        raise typer.Exit(code=EXIT_NOT_REPLAYABLE)
+    if not report.identical:
+        raise typer.Exit(code=1)
+
+
+@audit_app.command("replay-extraction")
+def replay_extraction_cmd(
+    extraction_id: Annotated[str, typer.Argument(help="The extraction to replay.")],
+    role: Annotated[str, typer.Option("--role")] = "auditor",
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Make a recorded extraction again from the stored text, with its stored answers in the
+    model's place, and compare. Never calls the model; writes nothing."""
+    require_role(role, "audit-replay-extraction")
+    try:
+        report = replay_extraction(AuditLog(), extraction_id, var_dir())
+    except UnknownRecord as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    except AuditChainError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    if as_json:
+        typer.echo(report.model_dump_json(indent=2))
+    elif report.identical:
+        typer.echo(f"Replay identical: extraction {extraction_id}")
+    else:
+        typer.echo(f"Replay {report.verdict}: extraction {extraction_id}")
         typer.echo(report.detail)
     if report.verdict == "NOT_REPLAYABLE":
         raise typer.Exit(code=EXIT_NOT_REPLAYABLE)

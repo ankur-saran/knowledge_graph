@@ -25,6 +25,8 @@ from pydantic import ValidationError
 
 from ubo_sentinel.models.audit_event import (
     ANNOTATION_KEY,
+    EXTRACTOR_KEY,
+    PROPOSAL_PREFIX,
     RUN_EVENTS,
     RUN_PREFIX,
     AuditEvent,
@@ -42,6 +44,12 @@ VAR_ENV_VAR = "UBO_VAR"
 GENESIS_HASH = hashlib.sha256(b"genesis").hexdigest()
 
 REVIEW_EVENTS = frozenset(get_args(DecisionStatus)) - {"RECOMMENDED"}
+DECISION_STATUSES = frozenset(get_args(DecisionStatus))
+# What a proposed holding can be, and what a review may do to it (Step 15).
+PROPOSAL_ACTIONS = ("ACCEPTED", "REJECTED", "REVOKED")
+_OPEN_PROPOSAL = "PROPOSED"
+# A holding shown as information only (indirect, or not equity): never accepted.
+_INFORMATION = "INFORMATION"
 
 # Called inside the lock with the log as it stands; raises to refuse the append.
 Guard = Callable[[list[dict[str, Any]]], None]
@@ -144,11 +152,15 @@ class _Ledger:
             if event_type == "INVESTIGATED":
                 # A run about one decision, as an annotation is.
                 about = self.status.get(payload.get("decision_id") or "")
-                if about is None or about in RUN_EVENTS:
+                if about not in DECISION_STATUSES:
                     return "an investigation of a decision that was not recommended"
+            if event_type == "EXTRACTED":
+                self._take_proposals(record)
+        elif event_type == "EXTRACTION_REVIEWED":
+            return self._proposal_review(record, status)
         elif event_type == "ANNOTATED":
             # Advisory text beside a decision: it changes no status.
-            if status is None or status in RUN_EVENTS:
+            if status not in DECISION_STATUSES:
                 return "an annotation of a decision that was not recommended"
             key = f"{ANNOTATION_KEY}{payload.get('annotation_id') or ''}"
             if key == ANNOTATION_KEY:
@@ -161,6 +173,47 @@ class _Ledger:
             return None
         self.status[decision_id] = event_type
         return None
+
+    def _take_proposals(self, record: dict[str, Any]) -> None:
+        """The proposals of an extraction become reviewable. A holding proposed again
+        by a later run of the same document keeps its state and its first extractor."""
+        extraction = record["payload"].get("extraction") or {}
+        for proposal in extraction.get("proposals") or []:
+            key = f"{PROPOSAL_PREFIX}{proposal['proposal_id']}"
+            if key not in self.status:
+                information = proposal.get("label") in ("INDIRECT_INFO", "INTEREST_INFO")
+                self.status[key] = _INFORMATION if information else _OPEN_PROPOSAL
+                self.status[f"{EXTRACTOR_KEY}{proposal['proposal_id']}"] = _who(record["actor"])
+
+    def _proposal_review(self, record: dict[str, Any], status: str | None) -> str | None:
+        decision_id, action = record["decision_id"], record["payload"].get("action")
+        if not decision_id.startswith(PROPOSAL_PREFIX):
+            return "a proposal review whose id does not name its proposal"
+        if status is None:
+            return "a review of a proposal that was not extracted"
+        if action not in PROPOSAL_ACTIONS:
+            return "a proposal review without an action"
+        extractor = self.status.get(f"{EXTRACTOR_KEY}{decision_id.removeprefix(PROPOSAL_PREFIX)}")
+        if extractor == _who(record["actor"]):
+            # Maker and checker (8.1): who read the document out does not confirm it.
+            return "a proposal reviewed by the actor who extracted it"
+        if action == "REVOKED":
+            if status != "ACCEPTED":
+                return "a revocation of a proposal that is not accepted"
+        elif status not in (_OPEN_PROPOSAL, _INFORMATION):
+            return f"a review of a proposal that is already {status}"
+        elif action == "ACCEPTED" and status == _INFORMATION:
+            return "an acceptance of a holding shown as information only"
+        if action != "ACCEPTED" and not (record["note"] or "").strip():
+            return "a rejection or revocation without a reason"
+        if action == "ACCEPTED" and not isinstance(record["payload"].get("acceptance"), dict):
+            return "an acceptance that states no edge"
+        self.status[decision_id] = action
+        return None
+
+
+def _who(actor: str) -> str:
+    return actor.strip().casefold()
 
 
 @dataclass(frozen=True)

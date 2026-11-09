@@ -28,6 +28,7 @@ from ubo_sentinel.pipeline.bronze import (
     transaction,
 )
 from ubo_sentinel.pipeline.loaders.base import DatasetSummary, IngestSummary, resolve_alias
+from ubo_sentinel.pipeline.sources import DOCUMENT_DATASETS
 
 # Commands are run from the repository root.
 DEFAULT_PATH = Path("fixtures/snapshot_t0")
@@ -120,7 +121,7 @@ def ingest_fixtures(
             supplied,
             required=[d.name for d in DATASETS.values() if not d.optional],
             base=base,
-            optional=[d.name for d in DATASETS.values() if d.optional],
+            optional=[*(d.name for d in DATASETS.values() if d.optional), *DOCUMENT_DATASETS],
         )
 
     row_counts = dict(con.execute("SELECT snapshot_id, row_count FROM bronze_snapshots").fetchall())
@@ -134,6 +135,19 @@ def ingest_fixtures(
         )
         for dataset in DATASETS.values()
         if dataset.name in snapshot_set.snapshot_ids
+    ]
+    datasets += [
+        DatasetSummary(
+            dataset=name,
+            table=table,
+            snapshot_id=snapshot_set.snapshot_ids[name],
+            row_count=row_counts[snapshot_set.snapshot_ids[name]],
+            status="inherited",
+        )
+        for name, table in zip(
+            DOCUMENT_DATASETS, ("bronze_entities", "bronze_relationships"), strict=True
+        )
+        if name in snapshot_set.snapshot_ids
     ]
     return IngestSummary(
         source=FAMILY_FIXTURES,

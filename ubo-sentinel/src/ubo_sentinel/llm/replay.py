@@ -7,6 +7,11 @@ from the cheapest and stop at the first that fails, so the verdict names what
 moved: the prompt (`NOT_REPLAYABLE`), the input (`INPUT_DIFFERS`) or the check
 (`GUARDRAIL_DIFFERS`).
 
+An extraction (Step 15) is made again from the stored document text with its
+stored answers in the model's place: a text that is not the one read is
+`DOCUMENT_CHANGED`, a graph built otherwise `GRAPH_CHANGED`, a request that is not
+the one recorded `INPUT_DIFFERS`, other proposals or faults `GUARDRAIL_DIFFERS`.
+
 An investigation is replayed by making it again with its stored turns in the
 model's place: the first pass, each tool call through the analyst's view, each
 request's digest, the budgets' path and the guardrail all run as they ran. Only
@@ -27,12 +32,13 @@ from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.audit.replay import replay_decision
 from ubo_sentinel.llm.annotation import Annotation, prompt_sha256
 from ubo_sentinel.llm.client import LLMRequest, LLMResponse, LLMUnavailable
-from ubo_sentinel.llm.config import InvestigateBudget
+from ubo_sentinel.llm.config import ExtractBudget, InvestigateBudget
 from ubo_sentinel.llm.egress import EgressRefused
 from ubo_sentinel.llm.tools import ToolTurn, ToolTurnRequest
 from ubo_sentinel.models.audit_event import RUN_PREFIX
 from ubo_sentinel.models.canonical import canonical_json, sha256_hex
 from ubo_sentinel.models.decision import Decision
+from ubo_sentinel.models.extraction import Extraction, ModelCall
 from ubo_sentinel.models.investigation import Investigation, TurnRecord
 from ubo_sentinel.models.ontology import OntologyConfig
 from ubo_sentinel.pipeline.context import ContextNotBuilt, context_digest, context_rows_digest
@@ -46,6 +52,7 @@ Verdict = Literal[
     "TOOL_RESULT_DIFFERS",
     "INPUT_DIFFERS",
     "GUARDRAIL_DIFFERS",
+    "DOCUMENT_CHANGED",
 ]
 
 
@@ -56,7 +63,7 @@ class UnknownRecord(LookupError):
 class LLMReplayReport(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["annotation", "investigation"]
+    kind: Literal["annotation", "investigation", "extraction"]
     record_id: str
     decision_id: str
     feature: str
@@ -304,3 +311,120 @@ def replay_investigation(
     finally:
         if own:
             con.close()
+
+
+# --- extractions (Step 15) ------------------------------------------------------------------
+
+
+class _StoredCalls:
+    """The model, played back for an extraction: each call answers only its own request."""
+
+    def __init__(self, calls: list[ModelCall]) -> None:
+        self.calls = calls
+        self.used = 0
+        self.differs_at: int | None = None
+
+    def complete(self, request: LLMRequest) -> LLMResponse:
+        if self.used == len(self.calls):
+            raise LLMUnavailable("No stored call is left.")
+        stored = self.calls[self.used]
+        if request.digest() != stored.request_digest:
+            self.differs_at = self.differs_at or self.used + 1
+        self.used += 1
+        if stored.output is None:
+            raise LLMUnavailable("The recorded call had no answer.")
+        return LLMResponse(
+            output=stored.output,
+            model=request.model,
+            input_tokens=stored.input_tokens,
+            output_tokens=stored.output_tokens,
+        )
+
+    def converse(self, request: ToolTurnRequest) -> ToolTurn:
+        raise LLMUnavailable("An extraction has no tool turns.")
+
+
+def replay_extraction(
+    log: AuditLog, extraction_id: str, root: Any, con: Any = None
+) -> LLMReplayReport:
+    """Make a recorded extraction again from the stored text. Never calls a model; writes
+    nothing. `root` is where documents are kept (`UBO_VAR`).
+
+    Raises `UnknownRecord`, and `AuditChainError` when the log does not verify.
+    """
+    from ubo_sentinel.graph.store import GraphNotBuilt, GraphStore
+    from ubo_sentinel.pipeline.bronze import UnknownSnapshotSet
+    from ubo_sentinel.pipeline.extraction import llm_extract
+    from ubo_sentinel.pipeline.extraction.document import load_document
+    from ubo_sentinel.pipeline.extraction.run import extract
+
+    event_id = f"{RUN_PREFIX['EXTRACTED']}{extraction_id}"
+    record = next((r for r in log.records() if r["decision_id"] == event_id), None)
+    if record is None:
+        raise UnknownRecord(f"No extraction {extraction_id} in the audit log.")
+    recorded = Extraction.model_validate(record["payload"]["extraction"])
+
+    def report(verdict: Verdict, detail: str) -> LLMReplayReport:
+        return LLMReplayReport(
+            kind="extraction",
+            record_id=extraction_id,
+            decision_id=recorded.subject_id,
+            feature=llm_extract.FEATURE,
+            verdict=verdict,
+            detail=detail,
+            recorded_status="COMPLETE" if recorded.complete else "INCOMPLETE",
+        )
+
+    if (
+        recorded.prompt_version != llm_extract.PROMPT_VERSION
+        or recorded.prompt_sha256 != llm_extract.prompt_digest()
+    ):
+        return report(
+            "NOT_REPLAYABLE",
+            f"the record was made with prompt version {recorded.prompt_version};"
+            f" this code has version {llm_extract.PROMPT_VERSION} or another prompt",
+        )
+    document = load_document(recorded.document_sha256, root)
+    if document is None or document.text_digest != recorded.text_digest:
+        return report("DOCUMENT_CHANGED", "the document's text is not kept here as it was read")
+    own = con is None
+    if own:
+        if not db_path().exists():
+            return report("NOT_REPLAYABLE", "There is no database here.")
+        con = connect(read_only=True)
+    try:
+        try:
+            with GraphStore.open(recorded.snapshot_set_id, con) as store:
+                if store.gold_digest != recorded.graph_digest:
+                    return report(
+                        "GRAPH_CHANGED", "the graph is not the one the labels were read from"
+                    )
+                asked = recorded.model is not None
+                client = _StoredCalls(recorded.calls) if asked else None
+                budgets = dict(recorded.budgets)
+                limit = budgets.pop("request_max_tokens", 4000)
+                budget = ExtractBudget(**budgets) if asked else None
+                again = extract(
+                    store,
+                    document,
+                    recorded.subject_id,
+                    client,
+                    budget,
+                    consent=asked,
+                    max_tokens=limit,
+                    investigation_id=recorded.investigation_id,
+                )
+        except (UnknownSnapshotSet, GraphNotBuilt) as exc:
+            return report("NOT_REPLAYABLE", f"the set is not here ({type(exc).__name__})")
+    finally:
+        if own:
+            con.close()
+    if client is not None and (client.differs_at or client.used != len(recorded.calls)):
+        call = client.differs_at or client.used + 1
+        return report("INPUT_DIFFERS", f"the request of call {call} is not the one the model read")
+    fields = ("proposals", "faults", "dropped", "pages_not_read", "complete")
+    if any(_plain(getattr(recorded, f)) != _plain(getattr(again, f)) for f in fields):
+        return report(
+            "GUARDRAIL_DIFFERS", "the proposals or their faults are not the ones recorded"
+        )
+    return report("IDENTICAL", "the text, each request and the proposals are as recorded")

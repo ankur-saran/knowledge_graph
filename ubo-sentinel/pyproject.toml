@@ -30,6 +30,9 @@ optional = [
     "anthropic>=1.11.0",
     "neo4j>=6.3.1",
 ]
+docs = [
+    "pypdf>=6.21.4",
+]
 
 [build-system]
 requires = ["uv_build>=0.11.21,<0.12.0"]

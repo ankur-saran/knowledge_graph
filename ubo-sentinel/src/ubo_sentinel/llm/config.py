@@ -12,14 +12,18 @@ FEATURE_FLAGS = {
     "match": "UBO_LLM_MATCH",
     "intake": "UBO_LLM_INTAKE",
     "investigate": "UBO_LLM_INVESTIGATE",
+    "extract": "UBO_LLM_EXTRACT",
 }
-Feature = Literal["prose", "match", "intake", "investigate"]
+Feature = Literal["prose", "match", "intake", "investigate", "extract"]
 
 # Claude Haiku 5.5: short, structured, high-volume calls. `UBO_LLM_MODEL` names another.
 DEFAULT_MODEL = "claude-haiku-5-5"
 # The investigator (Step 14) chooses its own tool calls over many turns: Claude
 # Opus 5.5. `UBO_LLM_INVESTIGATE_MODEL` names another.
 DEFAULT_INVESTIGATE_MODEL = "claude-opus-5-5"
+# Document extraction (Step 15) reads long pages and must quote them exactly: Claude
+# Sonnet 5.5. `UBO_LLM_EXTRACT_MODEL` names another.
+DEFAULT_EXTRACT_MODEL = "claude-sonnet-5-5"
 # live: call the API. record: call it and keep each response under `recordings`.
 # replay: answer only from recordings, never the network (tests and `ubo eval`).
 Mode = Literal["live", "record", "replay"]
@@ -37,6 +41,16 @@ class InvestigateBudget:
 
 
 @dataclass(frozen=True)
+class ExtractBudget:
+    """What one document's extraction may spend. Enforced in code, from what each call
+    recorded; pages past it are named as not read."""
+
+    model: str
+    max_pages: int
+    max_tokens: int
+
+
+@dataclass(frozen=True)
 class LLMConfig:
     features: frozenset[str]
     model: str
@@ -45,6 +59,7 @@ class LLMConfig:
     timeout_seconds: float
     max_tokens: int
     investigate: InvestigateBudget
+    extract: ExtractBudget
 
     def enabled(self, feature: Feature) -> bool:
         return feature in self.features
@@ -85,5 +100,10 @@ def load_config() -> LLMConfig:
             max_steps=int(_positive("UBO_LLM_INVESTIGATE_MAX_STEPS", "12", int)),
             max_tokens=int(_positive("UBO_LLM_INVESTIGATE_MAX_TOKENS", "200000", int)),
             max_seconds=float(_positive("UBO_LLM_INVESTIGATE_MAX_SECONDS", "90", float)),
+        ),
+        extract=ExtractBudget(
+            model=os.environ.get("UBO_LLM_EXTRACT_MODEL", "").strip() or DEFAULT_EXTRACT_MODEL,
+            max_pages=int(_positive("UBO_LLM_EXTRACT_MAX_PAGES", "40", int)),
+            max_tokens=int(_positive("UBO_LLM_EXTRACT_MAX_TOKENS", "200000", int)),
         ),
     )

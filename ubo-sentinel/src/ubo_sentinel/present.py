@@ -16,6 +16,7 @@ from ubo_sentinel.graph.views import GraphView, mask_decision, pseudonym_for
 from ubo_sentinel.llm.egress import EGRESS_ROLE
 from ubo_sentinel.models.change import MonitorRun, SetDiff
 from ubo_sentinel.models.decision import Decision
+from ubo_sentinel.models.extraction import Extraction, Proposal
 from ubo_sentinel.models.investigation import Finding, Investigation
 from ubo_sentinel.models.memo import DecisionView
 from ubo_sentinel.models.ontology import OntologyConfig
@@ -413,3 +414,60 @@ def investigation_text(
             f" the output held a value that is masked for role '{role}'."
         )
     return text
+
+
+# --- document extraction (Step 15) ----------------------------------------------------------
+
+
+def proposal_lines(proposal: Proposal, masker: Masker, role: str, status: str = "") -> list[str]:
+    """One proposal as a role may read it. Names come from an analyst's document and
+    may be a person's the role sees masked: such a proposal is withheld, by kind."""
+    edge = proposal.edge
+    stake = "" if edge.pct is None else f" {edge.pct} %"
+    held = "" if edge.holding == "direct" else f", {edge.holding}"
+    interest = "" if edge.interest == "equity" else f", {edge.interest} interest"
+    existing = "" if proposal.existing_pct is None else f" (on record: {proposal.existing_pct} %)"
+
+    def candidates(found: list[Any]) -> str:
+        return ", ".join(f"{masker.id(c.entity_id)} ({c.confidence:.2f})" for c in found) or "none"
+
+    lines = [
+        f"[{proposal.label}] {proposal.proposal_id}{f' {status}' if status else ''}"
+        f"  page {proposal.span.page}  ({proposal.origin})",
+        f"  {edge.owner_name} {edge.rel_type}{stake} {edge.asset_name}{held}{interest}{existing}",
+        f'  "{edge.quote}"',
+        f"  owner candidates: {candidates(proposal.owner_candidates)}",
+        f"  asset candidates: {candidates(proposal.asset_candidates)}",
+    ]
+    text = masker.text("\n".join(lines))
+    if masker.withheld(text, words=True):
+        return [
+            f"[{proposal.label}] {proposal.proposal_id}  page {proposal.span.page}:"
+            f" withheld, it names a party masked for role '{role}'."
+        ]
+    return text.split("\n")
+
+
+def extraction_text(extraction: Extraction, masker: Masker, role: str) -> str:
+    """An extraction as a role may read it: what was read, what was proposed, what failed."""
+    model = extraction.model or "none (first pass only)"
+    lines = [
+        f"Extraction {extraction.extraction_id}: {extraction.file_name}"
+        f" ({extraction.page_count} page(s), {extraction.extractor})",
+        f"  subject {masker.id(extraction.subject_id)} on set {extraction.snapshot_set_id};"
+        f" model {model}; egress {extraction.egress}",
+    ]
+    if extraction.pages_not_read:
+        pages = ", ".join(str(n) for n in extraction.pages_not_read)
+        lines.append(f"  Not read by the model (budget or failure): page(s) {pages}")
+    if extraction.faults:
+        counted = Counter(extraction.faults)
+        lines.append(
+            "  Dropped or failed: " + ", ".join(f"{k} x{v}" for k, v in sorted(counted.items()))
+        )
+    lines.append(f"Proposals: {len(extraction.proposals)}")
+    for proposal in extraction.proposals:
+        lines += proposal_lines(proposal, masker, role)
+    if not extraction.proposals:
+        lines.append("  None: no holding the guardrail could check was found on the pages read.")
+    return "\n".join(lines)

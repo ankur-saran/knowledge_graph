@@ -280,7 +280,9 @@ def test_every_recommendation_reason_and_gap_is_covered(gold):
     reasons = {reason for s in gold for reason in s.expected_reasons}
     assert reasons == set(get_args(ReasonCode)) - PIPELINE_FAILURE_REASONS
     gaps = [gap for s in gold for gap in s.expected_gaps]
-    assert {gap.code for gap in gaps} == set(get_args(GapCode))
+    # A second source of stakes arrives with documents (Step 15): rows for it in t0
+    # would move every decision id, so its tests build their own (test_document_extraction).
+    assert {gap.code for gap in gaps} == set(get_args(GapCode)) - {"CONFLICTING_PCT"}
     assert {gap.decision_relevant for gap in gaps} == {True, False}
     assert {s.suite for s in gold} == {"rules", "pipeline"}
 

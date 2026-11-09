@@ -648,6 +648,7 @@ def glossary(memo: Memo) -> dict[str, str]:
         "PCT_SUM_OVER_100": "The reported stakes in an entity add up to more than 100 %.",
         "DEPTH_LIMIT_REACHED": "The owners go on above the depth the screen walked.",
         "POSSIBLE_DUPLICATE": "A linked record of this entity has owners the screen did not see.",
+        "CONFLICTING_PCT": "Two sources state different stakes for one ownership link.",
     }
 
 

@@ -18,6 +18,8 @@ class Source(StrEnum):
     REAL = "real"
     GLEIF = "gleif"
     OPENSANCTIONS = "opensanctions"
+    # Holdings reviewers accepted from documents, from the audit log (Step 15).
+    DOCUMENTS = "documents"
 
 
 def _print_summary(summary: IngestSummary) -> None:
@@ -42,7 +44,8 @@ def ingest(
         Path | None,
         typer.Option(
             "--path",
-            help="Directory to load (fixtures: fixtures/snapshot_t0; real: a refresh directory).",
+            help="Directory to load (fixtures: fixtures/snapshot_t0; real: a refresh directory;"
+            " documents: where the published files are written).",
         ),
     ] = None,
     base: Annotated[

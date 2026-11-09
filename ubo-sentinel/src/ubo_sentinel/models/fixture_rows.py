@@ -126,6 +126,29 @@ class AddressRow(_Row):
     country: NonEmptyStr | None = None
 
 
+class DocEntityRow(EntityRow):
+    """A holder a reviewer created from a document (Step 15), with where it is written."""
+
+    document_sha256: NonEmptyStr
+    page: int
+    proposal_id: NonEmptyStr
+    review_event: NonEmptyStr
+
+
+class DocRelationshipRow(RelationshipRow):
+    """A holding a reviewer accepted from a document (Step 15): the edge in the fixture
+    shape, and the evidence a citation of it leads to."""
+
+    document_sha256: NonEmptyStr
+    page: int
+    span_start: int
+    span_end: int
+    quote: NonEmptyStr
+    proposal_id: NonEmptyStr
+    reviewed_by: NonEmptyStr
+    review_event: NonEmptyStr
+
+
 def read_raw_rows[R: _Row](path: Path, model: type[R]) -> list[tuple[dict[str, str | None], R]]:
     """Read a fixture CSV as (cells as written, validated row) pairs.
 

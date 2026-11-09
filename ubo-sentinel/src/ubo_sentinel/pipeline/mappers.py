@@ -424,6 +424,14 @@ MAPPERS |= {
 }
 
 
+# Holdings and holders confirmed from documents (Step 15) are written in the
+# fixture shape, with the document's evidence beside it in `_raw`.
+MAPPERS |= {
+    "doc_entities": MAPPERS["entities"],
+    "doc_relationships": MAPPERS["relationships"],
+}
+
+
 def create_stage_tables(con: duckdb.DuckDBPyConnection) -> None:
     """Empty staging tables, so a set without some dataset still normalises."""
     for table, columns in STAGE_TABLES.items():

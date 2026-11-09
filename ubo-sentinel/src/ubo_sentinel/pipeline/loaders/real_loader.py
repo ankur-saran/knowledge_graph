@@ -16,6 +16,7 @@ from ubo_sentinel.pipeline.loaders.base import IngestSummary
 from ubo_sentinel.pipeline.loaders.gleif_loader import GLEIF_CONTEXT_DATASETS, GLEIF_DATASETS
 from ubo_sentinel.pipeline.loaders.opensanctions_loader import OS_CONTEXT_DATASETS, OS_DATASETS
 from ubo_sentinel.pipeline.loaders.real_base import RealDataset, ingest_real
+from ubo_sentinel.pipeline.sources import DOCUMENT_DATASETS
 
 REAL_DATASETS = tuple(d.name for d in (*GLEIF_DATASETS, *OS_DATASETS))
 # Addresses (Step 14): a member of a set when ingested, never needed for one.
@@ -33,7 +34,7 @@ def _ingest(
         raise IngestError(f"A {source} ingest reads a refresh directory: pass --path.")
     return ingest_real(
         con, path, datasets, REAL_DATASETS, base=base, source=source,
-        optional=REAL_OPTIONAL_DATASETS,
+        optional=(*REAL_OPTIONAL_DATASETS, *DOCUMENT_DATASETS),
     )  # fmt: skip
 
 

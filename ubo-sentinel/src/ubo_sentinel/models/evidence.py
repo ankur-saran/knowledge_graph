@@ -19,6 +19,9 @@ GapCode = Literal[
     # A node is linked by name to another record that has owners or controllers
     # of its own; the screened graph does not show them.
     "POSSIBLE_DUPLICATE",
+    # Records of one ownership edge state different stakes (Step 15: a document and a
+    # registry or list); the newest decides the edge, and this says they disagree.
+    "CONFLICTING_PCT",
 ]
 
 # Why a recommendation was made. The last four come from the agent pipeline, not the rules.

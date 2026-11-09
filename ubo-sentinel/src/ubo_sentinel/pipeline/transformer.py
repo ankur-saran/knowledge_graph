@@ -41,8 +41,8 @@ from ubo_sentinel.pipeline.silver import (
 from ubo_sentinel.pipeline.sources import CONTEXT_DATASETS, SOURCE_RANK
 
 # Raise this when a change here alters the rows Silver holds for the same Bronze
-# rows. A set built by another version is not reused.
-TRANSFORM_VERSION = 4
+# rows. A set built by another version is not reused. 5: `CONFLICTING_PCT` (Step 15).
+TRANSFORM_VERSION = 5
 
 REJECT_UNRESOLVED_REF = "UNRESOLVED_REF"
 REJECT_SELF_LOOP = "SELF_LOOP_AFTER_MERGE"
@@ -689,6 +689,35 @@ def _write_gaps(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
         ) t JOIN stg_silver_entities e ON e.snapshot_set_id = ? AND e.id = t.object_id
         """,
         [set_id, set_id, set_id],
+    )
+    # Records of one edge that state different stakes: the newest decides the edge
+    # (`_write_relationships`), and the disagreement is a gap on the asset, so it
+    # is never settled silently. One row per asset, naming each edge.
+    con.execute(
+        f"""
+        INSERT INTO stg_silver_gaps
+        WITH conflicts AS (
+            SELECT subject_id, object_id, rel_type, is_ultimate,
+                list_sort(list(DISTINCT CAST(pct AS VARCHAR))) AS pcts
+            FROM stg_edges WHERE reject IS NULL AND pct IS NOT NULL
+            GROUP BY subject_id, object_id, rel_type, is_ultimate
+            HAVING count(DISTINCT pct) > 1
+        ), edges AS (
+            SELECT r.*,
+                row_number() OVER (PARTITION BY r.object_id ORDER BY r.id) AS rn,
+                list({{'edge_id': r.id, 'pcts': c.pcts}}) OVER (
+                    PARTITION BY r.object_id ORDER BY r.id
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) AS found
+            FROM conflicts c JOIN stg_silver_relationships r
+                ON r.snapshot_set_id = ? AND r.subject_id = c.subject_id
+                AND r.object_id = c.object_id AND r.rel_type = c.rel_type
+                AND r.is_ultimate = c.is_ultimate
+        )
+        SELECT ?, 'CONFLICTING_PCT', object_id, to_json({{'edges': found}}), {_PROV}
+        FROM edges WHERE rn = 1
+        """,
+        [set_id, set_id],
     )
 
 

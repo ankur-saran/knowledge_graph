@@ -21,6 +21,8 @@ EventType = Literal[
     "ANNOTATED",
     "INTAKE_ASSISTED",
     "INVESTIGATED",
+    "EXTRACTED",
+    "EXTRACTION_REVIEWED",
 ]
 
 # Events that record a run, not a decision: their `decision_id` is `<kind>:<run id>`
@@ -28,14 +30,20 @@ EventType = Literal[
 # recorded once. `INTAKE_ASSISTED` records the search variants a model proposed
 # for a query (Step 13.5). `INVESTIGATED` records one investigation of a
 # recommended decision, named in `payload.decision_id` (Step 14).
-RUN_EVENTS = frozenset({"MONITOR_RUN", "INTAKE_ASSISTED", "INVESTIGATED"})
+# `EXTRACTED` records one reading of a document and the holdings proposed from it (Step 15).
+RUN_EVENTS = frozenset({"MONITOR_RUN", "INTAKE_ASSISTED", "INVESTIGATED", "EXTRACTED"})
 RUN_PREFIX = {
     "MONITOR_RUN": "monitor:",
     "INTAKE_ASSISTED": "intake:",
     "INVESTIGATED": "investigation:",
+    "EXTRACTED": "extraction:",
 }
 # An annotation is recorded once: the ledger keeps its id under this prefix.
 ANNOTATION_KEY = "annotation:"
+# A proposed holding is reviewed by an `EXTRACTION_REVIEWED` event whose id is
+# `proposal:<proposal id>`; the ledger keeps who extracted it under `EXTRACTOR_KEY`.
+PROPOSAL_PREFIX = "proposal:"
+EXTRACTOR_KEY = "extractor:"
 
 
 class AuditEvent(BaseModel):
