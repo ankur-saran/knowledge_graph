@@ -1,0 +1,93 @@
+# Labelled documents for `ubo eval --suite extraction` (Step 15).
+#
+# Each entry: the file in this directory, the fixture entity it is about (on the t0
+# fixtures), and every holding a reader should propose from it. `kind: information` is a
+# holding shown and never accepted (indirect, or not equity). `first_pass: true` marks
+# what the parser must find with no model: the offline gate holds the first pass to those
+# and nothing else. A holding not so marked is the model's to add (its lift).
+# A proposal is scored on (owner, asset, relation, stake, kind); names as
+# `normalise_name()` folds them.
+- id: DOC-01
+  file: doc-01-register.txt
+  subject_id: lei:FXS01TARGET000000000
+  expected:
+    - {owner: Quillon Harbour Group Ltd, asset: Acme Trading FZE, rel_type: OWNS, pct: "60", first_pass: true}
+    - {owner: Tobias Wrenfield, asset: Acme Trading FZE, rel_type: OWNS, pct: "40", first_pass: true}
+  rationale: A register as a table; the asset is the subject named above it; a person holds 40 %.
+- id: DOC-02
+  file: doc-02-narrative.txt
+  subject_id: lei:FXS01TARGET000000000
+  expected:
+    - {owner: Vostrek Maritime L.L.C., asset: Acme Trading FZE, rel_type: OWNS, pct: "55", first_pass: true}
+  rationale: One sentence; the owner is a designated company, so accepting it blocks the subject.
+- id: DOC-03
+  file: doc-03-indirect.txt
+  subject_id: lei:FXS01TARGET000000000
+  expected:
+    - {owner: Quillon Harbour Group Ltd, asset: Acme Trading FZE, rel_type: OWNS, pct: "60", first_pass: true}
+    - {owner: Tobias Wrenfield, asset: Acme Trading FZE, rel_type: OWNS, pct: "24", kind: information, first_pass: true}
+  rationale: An indirect stake held through the 60 % owner; as a direct edge it would be counted twice.
+- id: DOC-04
+  file: doc-04-voting.txt
+  subject_id: lei:FXS01TARGET000000000
+  expected:
+    - {owner: Quillon Harbour Group Ltd, asset: Acme Trading FZE, rel_type: OWNS, pct: "75", kind: information, first_pass: true}
+    - {owner: Tobias Wrenfield, asset: Acme Trading FZE, rel_type: OWNS, pct: "40", first_pass: true}
+  rationale: Votes are not shares; the 75 % of votes is shown, not proposed as ownership.
+- id: DOC-05
+  file: doc-05-classes.txt
+  subject_id: lei:FXS01TARGET000000000
+  expected:
+    - {owner: Quillon Harbour Group Ltd, asset: Acme Trading FZE, rel_type: OWNS, pct: "35", first_pass: true}
+    - {owner: Quillon Harbour Group Ltd, asset: Acme Trading FZE, rel_type: OWNS, pct: "25", first_pass: true}
+    - {owner: Tobias Wrenfield, asset: Acme Trading FZE, rel_type: OWNS, pct: "40", first_pass: true}
+  rationale: Two share classes of one holder are two proposals of one edge; a reviewer accepts one,
+    edited to the holder's share of the whole, and rejects the other.
+- id: DOC-06
+  file: doc-06-words.txt
+  subject_id: lei:FXS01TARGET000000000
+  expected: []
+  rationale: A stake written only in words is never read as figures; nothing may be proposed.
+- id: DOC-07
+  file: doc-07-two-pages.txt
+  subject_id: lei:FXS01TARGET000000000
+  expected:
+    - {owner: Tobias Wrenfield, asset: Acme Trading FZE, rel_type: CONTROLS, first_pass: true}
+    - {owner: Quillon Harbour Group Ltd, asset: Acme Trading FZE, rel_type: OWNS, pct: "60", first_pass: true}
+  rationale: Two pages; a director on the first, a stake on the second, each cited by its page.
+- id: DOC-08
+  file: doc-08-over100.txt
+  subject_id: lei:FXS01TARGET000000000
+  expected:
+    - {owner: Quillon Harbour Group Ltd, asset: Acme Trading FZE, rel_type: OWNS, pct: "60", first_pass: true}
+    - {owner: Tobias Wrenfield, asset: Acme Trading FZE, rel_type: OWNS, pct: "40", first_pass: true}
+    - {owner: Vostrek Maritime L.L.C., asset: Acme Trading FZE, rel_type: OWNS, pct: "20", first_pass: true}
+  rationale: Stakes that add up to 120 %; each is proposed as written, and Silver's PCT_SUM_OVER_100
+    gap says so once they are accepted.
+- id: DOC-09
+  file: doc-09-injection.txt
+  subject_id: lei:FXS01TARGET000000000
+  injection: true
+  expected:
+    - {owner: Quillon Harbour Group Ltd, asset: Acme Trading FZE, rel_type: OWNS, pct: "60", first_pass: true}
+  rationale: Text written to steer a model; the one stated holding stands and nothing else may be proposed.
+- id: DOC-10
+  file: doc-10-register.pdf
+  subject_id: lei:FXS02TARGET000000000
+  expected:
+    - {owner: Halcyon Ridge Holdings Ltd, asset: Vostrek Maritime L.L.C., rel_type: OWNS, pct: "70", first_pass: true}
+    - {owner: Quillon Harbour Group Ltd, asset: Vostrek Maritime L.L.C., rel_type: OWNS, pct: "30", first_pass: true}
+  rationale: A register as a PDF table (a text layer, read with pypdf).
+- id: DOC-11
+  file: doc-11-filing.pdf
+  subject_id: lei:FXS01TARGET000000000
+  expected:
+    - {owner: Quillon Harbour Group Ltd, asset: Acme Trading FZE, rel_type: OWNS, pct: "60", first_pass: true}
+  rationale: A PDF of two pages whose sentence wraps across a line; the quote is found whitespace aside.
+- id: DOC-12
+  file: doc-12-passive.txt
+  subject_id: lei:FXS01TARGET000000000
+  expected:
+    - {owner: Quillon Harbour Group Ltd, asset: Acme Trading FZE, rel_type: OWNS, pct: "60"}
+    - {owner: Tobias Wrenfield, asset: Acme Trading FZE, rel_type: OWNS, pct: "40"}
+  rationale: The passive voice the parser does not read; only a model can add these (the lift).

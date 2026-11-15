@@ -1,5 +1,7 @@
 """Who may run what, and what each role is shown."""
 
+from pathlib import Path
+
 import pytest
 from e2e import cli, person_pii, screen_gold
 from llm_fakes import FakeClient, good_prose
@@ -9,13 +11,14 @@ from ubo_sentinel.agents import investigator, llm_prose
 from ubo_sentinel.agents import supervisor as supervisor_module
 from ubo_sentinel.agents.base import ScreenRequest
 from ubo_sentinel.agents.supervisor import Supervisor
-from ubo_sentinel.audit.log import AuditLog
+from ubo_sentinel.audit.log import AuditLog, var_dir
 from ubo_sentinel.audit.review import review_decision
 from ubo_sentinel.cli.app import app
 from ubo_sentinel.cli.show import decision_text
 from ubo_sentinel.llm import annotation as annotations
 from ubo_sentinel.models.canonical import canonical_json
 from ubo_sentinel.models.memo import Memo
+from ubo_sentinel.pipeline.extraction.run import run_extraction
 
 pytestmark = pytest.mark.integration
 
@@ -62,7 +65,15 @@ ARGS = {
     "export-neo4j": ["export", "neo4j", "--snapshot", "fixtures"],
     # The match cards are code and need no flag; a model is asked only with UBO_LLM on.
     "annotate": ["annotate", "{decision_id}", "--feature", "match"],
-}
+    # The parser only: no model is asked unless UBO_LLM_EXTRACT is on.
+    "extract": [
+        "extract", "eval/extraction/doc-02-narrative.txt",
+        "--subject", "lei:FXS01TARGET000000000", "--actor", "someone",
+    ],
+    # With no proposal id, the queue.
+    "extract-review": ["extract-review"],
+    "audit-replay-extraction": ["audit", "replay-extraction", "{extraction_id}"],
+}  # fmt: skip
 
 
 @pytest.mark.parametrize("role", ROLES)
@@ -84,11 +95,20 @@ def test_each_role_runs_exactly_its_commands(fresh_db, publishers, ontology, com
             decision.created_at,
         )  # fmt: skip
         investigation_id = found.investigation_id
+    extraction_id = ""
+    if command == "audit-replay-extraction":
+        extraction, _ = run_extraction(
+            log, ontology, Path("eval/extraction/doc-02-narrative.txt"),
+            "lei:FXS01TARGET000000000", "fixtures", "someone", "reviewer", decision.created_at,
+            var_dir(),
+        )  # fmt: skip
+        extraction_id = extraction.extraction_id
     args = [
         arg.format(
             decision_id=decision.decision_id,
             annotation_id=annotation_id,
             investigation_id=investigation_id,
+            extraction_id=extraction_id,
         )
         for arg in ARGS[command]
     ]

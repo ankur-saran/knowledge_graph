@@ -2,6 +2,8 @@
 # files must have the same bytes on every platform.
 fixtures/** text eol=lf
 eval/** text eol=lf
+# The extraction set's PDFs are binary: their bytes are the document's hash.
+eval/extraction/*.pdf -text
 rules/** text eol=lf
 ontology/** text eol=lf
 

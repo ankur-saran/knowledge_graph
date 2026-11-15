@@ -172,7 +172,8 @@ def extract(
     if subject is None:
         raise LookupError(f"No entity {subject_id} in snapshot set {store.set_id}.")
     found: list[tuple[Origin, ProposedEdge]] = [
-        ("first_pass", edge) for edge in first_pass(document.pages, subject.legal_name)
+        ("first_pass", edge)
+        for edge in first_pass(document.pages, [subject.legal_name, *subject.aliases])
     ]
     calls: list[ModelCall] = []
     faults: list[str] = []

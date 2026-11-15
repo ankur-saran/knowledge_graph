@@ -1,0 +1,6 @@
+Register of shareholders of Acme Trading FZE
+
+Shareholder | Class | Holding
+Quillon Harbour Group Ltd | Ordinary | 60 %
+Tobias Wrenfield | Ordinary | 40 %
+Vostrek Maritime L.L.C. | Ordinary | 20 %

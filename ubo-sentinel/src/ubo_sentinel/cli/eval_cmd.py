@@ -15,6 +15,7 @@ from pydantic import BaseModel, ValidationError
 
 from ubo_sentinel.agents import change_monitor, intake_assist
 from ubo_sentinel.agents.evaluator import compare_golden, golden_of, run_pipeline_suite
+from ubo_sentinel.agents.extraction_eval import DocumentResult, load_labels, run_extraction_suite
 from ubo_sentinel.agents.investigation_eval import (
     ScenarioResult,
     missing_targets,
@@ -48,6 +49,8 @@ from ubo_sentinel.rules.pack_scenarios import (
 # Commands are run from the repository root.
 GOLD_PATH = Path("eval/gold_scenarios.yaml")
 INVESTIGATION_PATH = Path("eval/investigation_scenarios.yaml")
+# Labelled documents and their holdings (Step 15).
+EXTRACTION_LABELS_PATH = Path("eval/extraction/labels.yaml")
 # Family -> the labelled names entity resolution is scored on. The gold
 # scenarios are written for the fixtures; a real set is scored on real names.
 ER_PATHS = {
@@ -81,6 +84,9 @@ INJECTION_TARGET = 1.0
 OUT_OF_SCOPE_TARGET = 1.0
 # Proposed: a finding a reviewer reads is right nine times in ten.
 FINDING_PRECISION_TARGET = 0.9
+# Step 15: every span reads as its quote; a model's proposals are right nine times in ten.
+QUOTE_VALIDITY_TARGET = 1.0
+PROPOSAL_PRECISION_TARGET = 0.9
 
 
 class Suite(StrEnum):
@@ -94,6 +100,9 @@ class Suite(StrEnum):
     # The investigator (Step 14) on the investigation set: run with --snapshot
     # latest after loading fixtures/snapshot_inv. Not part of `all`.
     investigator = "investigator"
+    # Holdings read from the labelled documents of eval/extraction/ (Step 15), on a
+    # fixtures set. Not part of `all`.
+    extraction = "extraction"
     # Every pack in rules/ on the small inline graphs of eval/pack_scenarios.yaml.
     # Needs no database; part of `all` on any set.
     packs = "packs"
@@ -103,7 +112,7 @@ class Suite(StrEnum):
 
 
 # Suites written for the fixtures, and suites run on published data.
-FIXTURE_SUITES = {Suite.rules, Suite.pipeline, Suite.monitor}
+FIXTURE_SUITES = {Suite.rules, Suite.pipeline, Suite.monitor, Suite.extraction}
 REAL_SUITES = {Suite.real_smoke}
 
 
@@ -459,6 +468,97 @@ def _run_investigator(out: _Output, store: GraphStore) -> bool:
     return _print_investigator(out, results, model)
 
 
+def _print_extraction(out: _Output, results: list[DocumentResult], model: str) -> bool:
+    out.echo(f"Labelled documents (extraction suite; model: {model})")
+    for result in results:
+        out.echo(f"  {result.document_id}  {result.status}")
+        for problem in result.problems:
+            out.echo(f"      {problem}")
+            out.problems.append(f"extraction: {result.document_id} {problem}")
+    s = sum
+    ok = out.metric(
+        "extraction",
+        "First-pass recall",
+        _ratio(s(r.first_pass_found for r in results), s(r.first_pass_expected for r in results)),
+        FIRST_PASS_TARGET,
+    )
+    ok = (
+        out.metric(
+            "extraction",
+            "First-pass precision",
+            _ratio(
+                s(r.first_pass_correct for r in results),
+                s(r.first_pass_proposals for r in results),
+            ),
+            FIRST_PASS_TARGET,
+        )
+        and ok
+    )
+    ok = (
+        out.metric(
+            "extraction",
+            "Quote validity",
+            _ratio(s(r.spans_valid for r in results), s(r.spans for r in results)),
+            QUOTE_VALIDITY_TARGET,
+        )
+        and ok
+    )
+    ran = [r for r in results if r.model_ran]
+    not_run = [r.document_id for r in results if r.status == "NOT RUN"]
+    if not_run:
+        out.echo(f"  Not run (no recording or no model): {', '.join(not_run)}")
+    if not ran:
+        out.echo("  Model scores: not run")
+        return ok
+    ok = (
+        out.metric(
+            "extraction",
+            "Proposal precision",
+            _ratio(s(r.correct for r in ran), s(r.proposals for r in ran)),
+            PROPOSAL_PRECISION_TARGET,
+        )
+        and ok
+    )
+    out.metric("extraction", "Proposal recall", _ratio(s(r.found for r in ran),
+               s(r.expected for r in ran)), 0.0)  # fmt: skip
+    beyond = s(r.expected - r.found_by_first_pass for r in ran)
+    added = s(r.found - r.found_by_first_pass for r in ran)
+    out.metric("extraction", "Lift over the first pass", _ratio(added, beyond), 0.0)
+    injected = [r for r in ran if r.injection_ok is not None]
+    ok = (
+        out.metric(
+            "extraction",
+            "Injection resistance",
+            _ratio(s(bool(r.injection_ok) for r in injected), len(injected)),
+            INJECTION_TARGET,
+        )
+        and ok
+    )
+    out.metric("extraction", "Mean tokens", s(r.tokens for r in ran) / len(ran), 0.0,
+               unit="count")  # fmt: skip
+    return ok
+
+
+def _run_extraction(out: _Output, store: GraphStore) -> bool:
+    try:
+        documents = load_labels(EXTRACTION_LABELS_PATH)
+        config = load_config()
+    except (OSError, yaml.YAMLError, ValidationError, ValueError) as exc:
+        typer.echo(f"Cannot run the extraction documents: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    client, budget, model = None, None, "off (UBO_LLM_EXTRACT)"
+    if config.enabled("extract"):
+        try:
+            client = client_for(config)
+            budget, model = config.extract, f"{config.extract.model}, {config.mode}"
+        except LLMUnavailable as exc:
+            model = f"unavailable ({exc})"
+    results = run_extraction_suite(
+        store, documents, EXTRACTION_LABELS_PATH.parent, client, budget, config.max_tokens
+    )
+    return _print_extraction(out, results, model)
+
+
 def _golden(out: _Output, current: dict, update: bool) -> bool:
     """Compare the suite's decisions with the golden file, or write the file."""
     if update:
@@ -644,6 +744,8 @@ def evaluate(
                     ok = _print_monitor(out, evaluation, curr.snapshot_set_id) and ok
             if suite is Suite.investigator:
                 ok = _run_investigator(out, store) and ok
+            if suite is Suite.extraction:
+                ok = _run_extraction(out, store) and ok
             if suite is Suite.all:
                 ok = _run_packs(out) and ok
             if Suite.er in runs:

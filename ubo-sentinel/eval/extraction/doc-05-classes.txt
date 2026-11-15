@@ -1,0 +1,6 @@
+Register of shareholders of Acme Trading FZE
+
+Shareholder | Class | Holding
+Quillon Harbour Group Ltd | Class A | 35 %
+Quillon Harbour Group Ltd | Class B | 25 %
+Tobias Wrenfield | Class A | 40 %

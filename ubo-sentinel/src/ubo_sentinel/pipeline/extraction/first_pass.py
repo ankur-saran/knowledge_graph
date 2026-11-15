@@ -9,17 +9,20 @@ import re
 from decimal import Decimal
 
 from ubo_sentinel.models.extraction import Holding, Interest, ProposedEdge
-from ubo_sentinel.pipeline.extraction.document import _flat
+from ubo_sentinel.pipeline.extraction.document import on_page
 
-_NAME = r"[A-Z][^.;:|\n]*?"
+# A name may hold dots ("L.L.C."), but a dot before a capital or the end ends a sentence.
+_DOT = r"\.(?!\s+[A-Z(]|\s*$)"
+_NAME = rf"[A-Z](?:[^.;:|\n]|{_DOT})*?"
+_REST = rf"(?:[^.;]|{_DOT})+"
 _PCT = r"(?P<pct>\d{1,3}(?:\.\d{1,6})?)\s*(?:%|per\s?cent|percent)"
 # "<owner> holds 51 % of <asset>", with what lies between kept to read the kind of holding.
 _HOLDS = re.compile(
-    rf"(?P<owner>{_NAME})\s+(?:holds|owns|held|owned)\s+(?P<middle>[^.;%]*?){_PCT}"
-    r"\s+(?:of|in)\s+(?P<tail>[^.;]+)"
+    rf"(?P<owner>{_NAME})\s+(?:holds|owns|held|owned)\s+(?P<middle>[^;%]*?){_PCT}"
+    rf"\s+(?:of|in)\s+(?P<tail>{_REST})"
 )
 _DIRECTOR = re.compile(
-    rf"(?P<owner>{_NAME})\s+is\s+(?:a\s+|the\s+)?(?:sole\s+)?director\s+of\s+(?P<asset>[^.;]+)"
+    rf"(?P<owner>{_NAME})\s+is\s+(?:a\s+|the\s+)?(?:sole\s+)?director\s+of\s+(?P<asset>{_REST})"
 )
 _TAIL_PREFIX = re.compile(
     r"^(?:the\s+)?(?:issued\s+)?(?:ordinary\s+)?(?P<kind>share capital|shares|capital|voting rights"
@@ -46,21 +49,24 @@ def _holding(text: str) -> Holding:
     return "indirect" if "indirect" in lowered or " through " in lowered else "direct"
 
 
+def _one_line(text: str) -> str:
+    return " ".join(text.split()).strip(" ,")
+
+
 def _sentences(page: str, number: int) -> list[ProposedEdge]:
-    flat = _flat(page)[0]
     found: list[ProposedEdge] = []
-    for match in _HOLDS.finditer(flat):
+    for match in _HOLDS.finditer(page):
         tail = match.group("tail")
         through = _THROUGH.search(tail)
         prefix = _TAIL_PREFIX.match(tail)
         kind = (prefix.group("kind") if prefix else None) or ""
-        asset = _THROUGH.sub("", tail[prefix.end() if prefix else 0 :]).strip(" ,")
+        asset = _one_line(_THROUGH.sub("", _one_line(tail[prefix.end() if prefix else 0 :])))
         context = f"{match.group('middle')} {kind} {through.group(0) if through else ''}"
         if not asset:
             continue
         found.append(
             ProposedEdge(
-                owner_name=match.group("owner").strip(" ,"),
+                owner_name=_one_line(match.group("owner")),
                 asset_name=asset,
                 rel_type="OWNS",
                 basis="shareholding",
@@ -71,11 +77,11 @@ def _sentences(page: str, number: int) -> list[ProposedEdge]:
                 page=number,
             )
         )
-    for match in _DIRECTOR.finditer(flat):
+    for match in _DIRECTOR.finditer(page):
         found.append(
             ProposedEdge(
-                owner_name=match.group("owner").strip(" ,"),
-                asset_name=match.group("asset").strip(" ,"),
+                owner_name=_one_line(match.group("owner")),
+                asset_name=_one_line(match.group("asset")),
                 rel_type="CONTROLS",
                 basis="directorship",
                 quote=match.group(0),
@@ -85,10 +91,13 @@ def _sentences(page: str, number: int) -> list[ProposedEdge]:
     return found
 
 
-def _table(page: str, number: int, subject_name: str) -> list[ProposedEdge]:
-    """Rows of a shareholder table: the holder and the stake in the subject."""
+def _table(page: str, number: int, subject_names: list[str]) -> list[ProposedEdge]:
+    """Rows of a shareholder table: the holder and the stake in the subject, named as the
+    page names it (the legal name or an alias; the longest that is on the page)."""
     if not _TABLE_HEADING.search(page):
         return []
+    named = [name for name in subject_names if on_page([page], 1, name)]
+    subject_name = max(named, key=len) if named else subject_names[0]
     found: list[ProposedEdge] = []
     for line in page.split("\n"):
         cells = [cell.strip() for cell in line.split("|")] if "|" in line else None
@@ -117,10 +126,11 @@ def _table(page: str, number: int, subject_name: str) -> list[ProposedEdge]:
     return found
 
 
-def first_pass(pages: list[str], subject_name: str) -> list[ProposedEdge]:
-    """Every holding the patterns find, page by page, in the order they are written."""
+def first_pass(pages: list[str], subject_names: list[str]) -> list[ProposedEdge]:
+    """Every holding the patterns find, page by page, in the order they are written.
+    `subject_names`: the document's subject, its legal name first, then its aliases."""
     found: list[ProposedEdge] = []
     for number, page in enumerate(pages, start=1):
         found += _sentences(page, number)
-        found += _table(page, number, subject_name)
+        found += _table(page, number, subject_names)
     return found

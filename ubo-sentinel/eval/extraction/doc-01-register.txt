@@ -1,0 +1,7 @@
+Register of shareholders of Acme Trading FZE
+as at 30 September 2026
+
+Shareholder | Class | Holding
+Quillon Harbour Group Ltd | Ordinary | 60 %
+Tobias Wrenfield | Ordinary | 40 %
+Total | | 100 %
