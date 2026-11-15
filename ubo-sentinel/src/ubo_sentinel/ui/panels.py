@@ -21,7 +21,14 @@ from ubo_sentinel.agents.guardrail import check_render
 from ubo_sentinel.agents.investigator import investigate
 from ubo_sentinel.agents.investigator import record as record_investigation
 from ubo_sentinel.agents.supervisor import NeedsDisambiguation, ScreenFailed, Supervisor
-from ubo_sentinel.audit.log import AuditChainError, AuditLog, ChainReport
+from ubo_sentinel.audit.extraction_review import (
+    ProposalState,
+    parse_new_entity,
+    proposal_states,
+    queue,
+    review_proposal,
+)
+from ubo_sentinel.audit.log import AuditChainError, AuditLog, ChainReport, var_dir
 from ubo_sentinel.audit.replay import ReplayReport, replay_decision
 from ubo_sentinel.audit.review import (
     NOT_CLEARABLE,
@@ -45,6 +52,7 @@ from ubo_sentinel.llm.client import client_for
 from ubo_sentinel.llm.config import load_config
 from ubo_sentinel.llm.replay import LLMReplayReport
 from ubo_sentinel.llm.replay import replay_investigation as llm_replay_investigation
+from ubo_sentinel.models.audit_event import AuditEvent
 from ubo_sentinel.models.change import MonitorRun
 from ubo_sentinel.models.decision import Decision
 from ubo_sentinel.models.graph import EntityMatch
@@ -54,7 +62,14 @@ from ubo_sentinel.models.ontology import OntologyConfig, require_command, requir
 from ubo_sentinel.models.provenance import Provenance
 from ubo_sentinel.pipeline.bronze import UnknownSnapshotSet
 from ubo_sentinel.pipeline.db import connect, db_path
-from ubo_sentinel.present import InvestigationShown, advisory_lines, investigation_lines
+from ubo_sentinel.pipeline.extraction.document import load_document
+from ubo_sentinel.present import (
+    InvestigationShown,
+    Masker,
+    advisory_lines,
+    investigation_lines,
+    proposal_lines,
+)
 from ubo_sentinel.rules.pack import UnknownRulePack
 from ubo_sentinel.ui import graph_viz
 from ubo_sentinel.ui.graph_viz import GraphSpec
@@ -64,13 +79,15 @@ LICENCE_NOTICE = (
     "This screen read OpenSanctions data, licensed CC BY-NC 4.0: for non-commercial use only."
 )
 
-Panel = Literal["screen", "review", "audit", "build"]
+Panel = Literal["screen", "review", "extraction", "audit", "build"]
 
 # Each panel stands for a command of the permission matrix; a role sees the
 # panels whose command it may run. `audit` is shown for either audit command.
 PANEL_COMMANDS: dict[Panel, tuple[str, ...]] = {
     "screen": ("screen",),
     "review": ("review",),
+    # Holdings proposed from documents (Step 15), for the role that rules on them.
+    "extraction": ("extract-review",),
     "audit": ("audit-verify", "audit-replay"),
     "build": ("build-graph",),
 }
@@ -744,3 +761,83 @@ def replay_investigation(
     `AuditChainError`."""
     require_command(ontology, role, "audit-replay-investigation")
     return llm_replay_investigation(log, ontology, investigation_id, deep=deep)
+
+
+# --- document extraction (Step 15) ----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ProposalShown:
+    """One proposal as a role may read it, with its page and the quote marked in it."""
+
+    proposal_id: str
+    status: str
+    label: str
+    lines: list[str]
+    # The page's text with the quote between « and », or None when not kept or withheld.
+    page: str | None
+    owner_candidates: list[str]
+    subject_id: str
+
+
+def _marked(state: ProposalState, masker: Masker) -> str | None:
+    document = load_document(state.extraction.document_sha256, var_dir())
+    text = document.page(state.proposal.span.page) if document else None
+    if text is None:
+        return None
+    span = state.proposal.span
+    marked = f"{text[: span.start]}«{text[span.start : span.end]}»{text[span.end :]}"
+    return None if masker.withheld(marked, words=True) else marked
+
+
+def extraction_items(
+    records: list[dict[str, Any]], role: str, ontology: OntologyConfig
+) -> list[ProposalShown]:
+    """The proposals waiting for a ruling, then those accepted (which may be revoked)."""
+    require_command(ontology, role, "extract-review")
+    accepted = [s for s in proposal_states(records).values() if s.status == "ACCEPTED"]
+    states = [*queue(records), *sorted(accepted, key=lambda s: s.proposal.proposal_id)]
+    if not states or not db_path().exists():
+        return []
+    con = connect(read_only=True)
+    try:
+        masker = Masker(con, sorted({s.extraction.snapshot_set_id for s in states}), role, ontology)
+    finally:
+        con.close()
+    return [
+        ProposalShown(
+            proposal_id=state.proposal.proposal_id,
+            status=state.status,
+            label=state.proposal.label,
+            lines=proposal_lines(state.proposal, masker, role, status=state.status),
+            page=_marked(state, masker),
+            owner_candidates=[masker.id(c.entity_id) for c in state.proposal.owner_candidates],
+            subject_id=masker.id(state.extraction.subject_id),
+        )
+        for state in states
+    ]
+
+
+def rule_on_proposal(
+    log: AuditLog,
+    ontology: OntologyConfig,
+    role: str,
+    actor: str,
+    proposal_id: str,
+    action: str,
+    lock: AbstractContextManager[Any],
+    reason: str | None = None,
+    as_of: Any = None,
+    owner_id: str | None = None,
+    owner_new: str | None = None,
+) -> AuditEvent:
+    """`ubo extract-review <id> --action ...`, the append inside `lock`.
+
+    Raises `PermissionError`, `LookupError`, `ExtractionReviewError` and `ValueError`.
+    """
+    with lock:
+        return review_proposal(
+            log, ontology, proposal_id, action, actor, role, datetime.now(UTC), var_dir(),
+            reason=reason, as_of=as_of, owner_id=owner_id or None,
+            owner_new=parse_new_entity(owner_new) if owner_new else None,
+        )  # fmt: skip

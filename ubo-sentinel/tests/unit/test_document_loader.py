@@ -3,6 +3,7 @@ the same rulings giving the same bytes, and from there it is graph data like any
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -12,10 +13,10 @@ from ubo_sentinel.graph import queries
 from ubo_sentinel.graph.store import GraphStore
 from ubo_sentinel.models.extraction import NewEntity
 from ubo_sentinel.pipeline.bronze import IngestError, resolve_set
+from ubo_sentinel.pipeline.extraction.run import run_extraction
 from ubo_sentinel.pipeline.gold import build_gold
 from ubo_sentinel.pipeline.loaders import document_loader
 from ubo_sentinel.pipeline.loaders.fixture_loader import ingest_fixtures
-from ubo_sentinel.pipeline.extraction.run import run_extraction
 from ubo_sentinel.pipeline.transformer import build_silver
 
 AT = datetime(2026, 10, 1, tzinfo=UTC)
@@ -75,7 +76,9 @@ def test_the_same_rulings_give_the_same_files_and_the_same_set(world, tmp_path):
     accept_both(rule)
     first = document_loader.write_files(document_loader.rows_from_log(log), tmp_path / "a")
     second = document_loader.write_files(document_loader.rows_from_log(log), tmp_path / "b")
-    assert {d: p.read_bytes() for d, p in first.items()} == {d: p.read_bytes() for d, p in second.items()}
+    assert {d: p.read_bytes() for d, p in first.items()} == {
+        d: p.read_bytes() for d, p in second.items()
+    }
     assert b"\r" not in first["doc_relationships"].read_bytes()
     published = document_loader.ingest_documents(con)
     again = document_loader.ingest_documents(con, tmp_path / "elsewhere")
@@ -83,7 +86,10 @@ def test_the_same_rulings_give_the_same_files_and_the_same_set(world, tmp_path):
     assert again.snapshot_set.snapshot_set_id == published.snapshot_set.snapshot_set_id
     # A publish takes every other dataset from its base, and moves `latest` only.
     members = published.snapshot_set.snapshot_ids
-    assert set(members) - set(resolve_set(con, t0).snapshot_ids) == {"doc_entities", "doc_relationships"}
+    assert set(members) - set(resolve_set(con, t0).snapshot_ids) == {
+        "doc_entities",
+        "doc_relationships",
+    }
     assert published.aliases == {"fixtures": t0, "latest": published.snapshot_set.snapshot_set_id}
     assert [(d.dataset, d.row_count) for d in published.datasets] == [
         ("doc_entities", 1), ("doc_relationships", 2),
@@ -120,7 +126,7 @@ def test_a_later_ingest_on_a_published_set_keeps_its_documents(world, ontology):
     con, *_, rule = world
     accept_both(rule)
     published = document_loader.ingest_documents(con).snapshot_set
-    later = ingest_fixtures(con, __import__("pathlib").Path(T1), base=published.snapshot_set_id)
+    later = ingest_fixtures(con, Path(T1), base=published.snapshot_set_id)
     kept = {d: later.snapshot_set.snapshot_ids[d] for d in ("doc_entities", "doc_relationships")}
     assert kept == {d: published.snapshot_ids[d] for d in kept}
     assert {d.dataset for d in later.datasets} >= {"doc_entities", "doc_relationships"}
@@ -145,11 +151,13 @@ def test_a_revoked_holding_leaves_the_next_publish(world, ontology):
 
 
 def test_a_real_publish_is_built_and_put_to_the_quality_check(world, monkeypatch):
-    con, t0, *_ , rule = world
+    con, t0, *_, rule = world
     accept_both(rule)
     checked = []
     monkeypatch.setattr(document_loader, "FAMILY_REAL", "fixtures")
-    monkeypatch.setattr(document_loader, "_accept_real", lambda con, summary: checked.append(summary))
+    monkeypatch.setattr(
+        document_loader, "_accept_real", lambda con, summary: checked.append(summary)
+    )
     document_loader.ingest_documents(con)
     assert len(checked) == 1
     required, optional = document_loader._family_datasets("real")

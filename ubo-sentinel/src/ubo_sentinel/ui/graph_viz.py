@@ -42,6 +42,9 @@ LINK_COLOUR = "#0072B2"
 # An investigation's findings (Step 14): its own layer, never an edge of the graph.
 INVESTIGATION_COLOUR = "#56B4E9"
 INVESTIGATION_DASHES = [8, 4]
+# A holding a reviewer confirmed from a document (Step 15): graph data, drawn apart.
+DOCUMENT_COLOUR = "#CC79A7"
+DOCUMENT_SOURCE = "document"
 DEFAULT_CAP = 300
 MAX_LABEL = 40
 
@@ -70,6 +73,7 @@ class GraphEdge:
     on_path: bool = False
     is_ultimate: bool = False
     gaps: tuple[str, ...] = ()
+    from_document: bool = False
 
 
 @dataclass(frozen=True)
@@ -288,6 +292,9 @@ def evidence_graph(view: DecisionView, scope: Scope = "paths", cap: int = DEFAUL
         )
         if edge.is_ultimate:
             label += " (ultimate)"
+        from_document = edge.provenance.source == DOCUMENT_SOURCE
+        if from_document:
+            label += " (document)"
         if edge_gaps[edge.id]:
             label += " ⚠"
         title = [label, f"id: {edge.id}", f"source: {edge.provenance.source}"]
@@ -303,6 +310,7 @@ def evidence_graph(view: DecisionView, scope: Scope = "paths", cap: int = DEFAUL
                 on_path=edge.id in path_edges,
                 is_ultimate=edge.is_ultimate,
                 gaps=edge_gaps[edge.id],
+                from_document=from_document,
             )
         )
     edges += [e for e in extra if e.upper_id in drawn and e.lower_id in drawn]
@@ -386,6 +394,7 @@ def _vis_data(spec: GraphSpec) -> dict[str, list[dict]]:
             colour, dashes = LINK_COLOUR, [4, 4]
         else:
             colour = ULTIMATE_COLOUR if edge.is_ultimate else EDGE_COLOUR
+            colour = DOCUMENT_COLOUR if edge.from_document else colour
             dashes = EDGE_DASHES[edge.kind]
         edges.append(
             {
@@ -493,4 +502,5 @@ LEGEND = [
     ("thick line", "on an evidence path; thin grey: an ultimate-parent record"),
     ("blue dashed line", "a designation that crossed a link, or a linked record"),
     ("light blue long dash", "an investigation's finding: advisory, not an edge of the graph"),
+    ("purple line, (document)", "a holding a reviewer confirmed from an analyst's document"),
 ]

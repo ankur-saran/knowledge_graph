@@ -70,7 +70,7 @@ def screened(t0, ontology, scenarios):
 def test_each_role_sees_the_panels_of_its_commands(ontology):
     expected = {
         "analyst": ["screen"],
-        "reviewer": ["screen", "review", "audit"],
+        "reviewer": ["screen", "review", "extraction", "audit"],
         "auditor": ["audit"],
         "engineer": ["audit", "build"],
     }
@@ -317,7 +317,7 @@ def test_the_analyst_picks_a_candidate_and_a_rerun_records_nothing(t0):
 def test_the_reviewer_is_held_to_maker_checker_then_reviews(screened):
     decision = screened("SCEN-02")
     app = page("reviewer", "a.analyst")
-    assert [tab.label for tab in app.tabs] == ["Screen", "Review", "Audit"]
+    assert [tab.label for tab in app.tabs] == ["Screen", "Review", "Extraction review", "Audit"]
     assert app.selectbox(key="review-decision").value == decision.decision_id
     assert any("cannot also review" in w.value for w in app.warning)
     assert app.button(key="review-submit").disabled

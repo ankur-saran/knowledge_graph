@@ -16,6 +16,7 @@ import streamlit as st
 from ubo_sentinel.agents.audit import DeterminismViolation
 from ubo_sentinel.agents.base import ScreenRequest
 from ubo_sentinel.agents.explainer import render_memo
+from ubo_sentinel.audit.extraction_review import ExtractionReviewError
 from ubo_sentinel.audit.log import GENESIS_HASH, AuditChainError, AuditLog
 from ubo_sentinel.audit.replay import UnknownDecision
 from ubo_sentinel.audit.review import (
@@ -36,7 +37,13 @@ from ubo_sentinel.present import summary_lines
 from ubo_sentinel.rules.pack import DEFAULT_PACK
 from ubo_sentinel.ui import graph_viz, panels
 
-PANEL_TITLES = {"screen": "Screen", "review": "Review", "audit": "Audit", "build": "Build info"}
+PANEL_TITLES = {
+    "screen": "Screen",
+    "review": "Review",
+    "extraction": "Extraction review",
+    "audit": "Audit",
+    "build": "Build info",
+}
 
 
 @st.cache_resource
@@ -541,6 +548,68 @@ def review_panel(role, actor, log, ontology, records, decisions, waiting, failed
         st.rerun()
 
 
+def extraction_panel(role, actor, log, ontology, records) -> None:
+    """Holdings proposed from documents (Step 15): rule on each against its page."""
+    flash = st.session_state.pop("extraction_flash", None)
+    if flash:
+        st.success(flash)
+    items = panels.extraction_items(records, role, ontology)
+    if not items:
+        st.caption("No proposal waits for a ruling. Run `ubo extract <file> --subject <id>`.")
+        return
+    st.caption(
+        "A ruling is recorded in the audit log; nothing reaches the graph until an engineer"
+        " publishes with `ubo ingest --source documents`. You may not rule on what you extracted."
+    )
+    chosen = st.selectbox(
+        "Proposal",
+        range(len(items)),
+        format_func=lambda i: f"{items[i].label}  {items[i].proposal_id}  {items[i].status}",
+        key="extraction-proposal",
+    )
+    item = items[chosen]
+    st.text("\n".join(item.lines))
+    if item.page is not None:
+        with st.expander("The page, the quote between « »", expanded=True):
+            st.text(item.page)
+    else:
+        st.warning("The page is not kept here, or it names a party masked for this role.")
+    if item.status == "ACCEPTED":
+        reason = st.text_input("Why revoke", key="extraction-revoke-reason")
+        if st.button("Revoke", key="extraction-revoke"):
+            _rule(log, ontology, role, actor, item, "REVOKED", reason=reason)
+        return
+    if item.label in ("INDIRECT_INFO", "INTEREST_INFO"):
+        st.info("Shown as information: an indirect stake, or votes or economic rights.")
+        return
+    choices = [*item.owner_candidates, "(a new entity)"]
+    owner = st.selectbox("Owner", choices, key="extraction-owner")
+    new = None
+    if owner == "(a new entity)":
+        new = st.text_input("New entity: name;LegalEntity|Person[;country]", key="extraction-new")
+    as_of = st.date_input("The document's effective date", value=None, key="extraction-as-of")
+    reason = st.text_input("Why reject", key="extraction-reject-reason")
+    accept, reject = st.columns(2)
+    if accept.button("Accept", key="extraction-accept"):
+        owner_id = None if owner == "(a new entity)" else owner
+        _rule(log, ontology, role, actor, item, "ACCEPTED", as_of=as_of, owner_id=owner_id,
+              owner_new=new)  # fmt: skip
+    if reject.button("Reject", key="extraction-reject"):
+        _rule(log, ontology, role, actor, item, "REJECTED", reason=reason)
+
+
+def _rule(log, ontology, role, actor, item, action, **options) -> None:
+    try:
+        panels.rule_on_proposal(
+            log, ontology, role, actor, item.proposal_id, action, _write_lock(), **options
+        )
+    except (PermissionError, LookupError, ExtractionReviewError, ValueError) as exc:
+        st.error(f"Refused: {exc}")
+        return
+    st.session_state["extraction_flash"] = f"Proposal {item.proposal_id}: {action}."
+    st.rerun()
+
+
 def audit_panel(role, log, ontology, records, decisions) -> None:
     if panels.may(ontology, role, "audit-verify"):
         st.markdown("#### Verify the log")
@@ -661,6 +730,8 @@ def main() -> None:
                 screen_panel(role, actor, snapshot, rule_pack, log, ontology, records, decisions)
             elif panel == "review":
                 review_panel(role, actor, log, ontology, records, decisions, waiting, failed)
+            elif panel == "extraction":
+                extraction_panel(role, actor, log, ontology, records)
             elif panel == "audit":
                 audit_panel(role, log, ontology, records, decisions)
             else:

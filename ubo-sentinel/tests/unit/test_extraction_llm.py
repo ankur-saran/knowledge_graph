@@ -75,8 +75,7 @@ def test_the_model_reads_no_person_of_the_set_and_its_answer_is_restored(store, 
         tobias = page[page.index("[person:") : page.index("]") + 1]
         return {
             "holdings": [
-                holding("Quillon Harbour Group Ltd", "60",
-                        "60 % of the issued shares of Acme Trading FZE are held by Quillon Harbour Group Ltd"),
+                holding("Quillon Harbour Group Ltd", "60", PASSIVE.split("\n")[1].split(",")[0]),
                 holding(tobias, "40 %", f"the remaining 40 % by {tobias}"),
             ]
         }  # fmt: skip

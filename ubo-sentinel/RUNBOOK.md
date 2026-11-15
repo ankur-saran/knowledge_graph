@@ -157,6 +157,26 @@ uv run ubo eval --suite investigator --snapshot latest
 
 Each investigation is recorded once and changes no decision. An analyst reads a person as a pseudonym, a reviewer reads the name. A screen it suggests is printed as a command for a person to run (`--investigation-id …` notes where it came from), and `ubo review … --considered <investigation id>` records which investigations the reviewer read. A question that holds the name of someone the analyst may not see is not sent to the model and not kept, but only a name the decision or the investigation has met can be recognised: do not type names into a question.
 
+### Read ownership from a document (Step 15)
+
+GLEIF states no percentages; a shareholder register or an annual report does. `ubo extract` keeps the file by its hash, reads its text page by page and proposes the holdings it states. A parser runs with no key; a model joins only with the flags and `--allow-egress` for that document (persons the set knows are sent as pseudonyms; a name it has never met is sent as written). Every proposal's quote must be on its page and its stake in the quote. Nothing reaches the graph until another person accepts it and an engineer publishes:
+
+```
+uv run ubo screen "Acme Trading FZE" --snapshot fixtures                               # CLEAR
+uv run ubo extract eval/extraction/doc-02-narrative.txt --subject lei:FXS01TARGET000000000 --actor a.analyst
+uv run ubo extract-review --role reviewer                                              # the queue
+uv run ubo extract-review <proposal id> --role reviewer --actor r.reviewer --action accept \
+    --owner lei:FXS02TARGET000000000 --as-of 2026-09-30
+uv run ubo ingest --source documents                                                   # engineer
+uv run ubo normalize && uv run ubo build-graph
+uv run ubo screen "Acme Trading FZE" --snapshot latest                                 # ESCALATE
+uv run ubo monitor --dry-run                                                           # queues the CLEAR
+uv run ubo audit replay-extraction <extraction id>                                     # auditor
+uv run ubo eval --suite extraction --snapshot fixtures
+```
+
+A holder the graph does not have is created by the reviewer (`--owner-new "Name;Person;IT"`). An indirect stake or a stake of votes is shown and never accepted. `--action revoke --reason …` and the next publish take a holding out again; nothing is deleted from the log. The UI's Extraction review tab shows each proposal on its page, the quote between « ».
+
 ## Troubleshooting
 
 | Message | Do |

@@ -146,26 +146,26 @@ def test_the_log_refuses_a_ruling_that_cannot_follow(setup, ontology):
 
 
 def test_the_ledger_refuses_a_hand_made_ruling(setup, ontology):
-    log, *_ = setup
+    log, _, found, _, by_owner, _, _ = setup
+
+    def append(decision_id, payload, event_type="EXTRACTION_REVIEWED", note="x"):
+        log.append(
+            ontology=ontology, decision_id=decision_id, event_type=event_type, actor="rita",
+            role="reviewer", created_at=AT, payload=payload, note=note,
+        )  # fmt: skip
+
+    target = f"proposal:{by_owner['Ivo Marchetti']}"
     for decision_id, payload, problem in (
         ("proposal:nosuch", {"action": "REJECTED"}, "not extracted"),
         ("nosuch", {"action": "REJECTED"}, "does not name its proposal"),
+        (target, {}, "without an action"),
+        (target, {"action": "ACCEPTED"}, "states no edge"),
     ):
         with pytest.raises(ValueError, match=problem):
-            log.append(ontology=ontology, decision_id=decision_id, event_type="EXTRACTION_REVIEWED",
-                       actor="rita", role="reviewer", created_at=AT, payload=payload, note="x")  # fmt: skip
-    _, _, found, _, by_owner, _, _ = setup
-    target = f"proposal:{by_owner['Ivo Marchetti']}"
-    with pytest.raises(ValueError, match="without an action"):
-        log.append(ontology=ontology, decision_id=target, event_type="EXTRACTION_REVIEWED",
-                   actor="rita", role="reviewer", created_at=AT, payload={}, note="x")  # fmt: skip
-    with pytest.raises(ValueError, match="states no edge"):
-        log.append(ontology=ontology, decision_id=target, event_type="EXTRACTION_REVIEWED",
-                   actor="rita", role="reviewer", created_at=AT, payload={"action": "ACCEPTED"})  # fmt: skip
+            append(decision_id, payload)
     # An annotation or an investigation is of a decision, never of a proposal or a run.
     with pytest.raises(ValueError, match="not recommended"):
-        log.append(ontology=ontology, decision_id=found.event_id, event_type="ANNOTATED",
-                   actor="rita", role="reviewer", created_at=AT, payload={"annotation_id": "a"})  # fmt: skip
+        append(found.event_id, {"annotation_id": "a"}, "ANNOTATED")
 
 
 def test_a_new_entity_is_written_name_type_and_country():

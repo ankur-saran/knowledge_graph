@@ -48,7 +48,8 @@ def test_a_director_is_a_control_without_a_stake():
 
 
 def test_a_table_needs_a_heading_and_names_the_subject_as_the_page_does():
-    table = "Shareholder | Class | Holding\nHalcyon Ridge Holdings Ltd | Ordinary | 70 %\nTotal | | 100 %"
+    rows = ["Shareholder | Class | Holding", "Halcyon Ridge Holdings Ltd | Ordinary | 70 %"]
+    table = "\n".join([*rows, "Total | | 100 %"])
     edges, pages = read(
         f"Register of shareholders\nVostrek Maritime L.L.C.\n{table}", "Vostrek Maritime LLC"
     )
