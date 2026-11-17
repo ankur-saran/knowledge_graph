@@ -38,7 +38,8 @@ review_exposure_pct: 25
 near_miss_pct: 40
 
 # A control link from a blocked party. upstream: anywhere above the target.
-# target: only a link into the target itself.
+# target: only a link into the target itself, or a chain of control links
+# alone (more than one hop) from a blocked party down to the target.
 control_link_review: true
 control_link_scope: upstream
 

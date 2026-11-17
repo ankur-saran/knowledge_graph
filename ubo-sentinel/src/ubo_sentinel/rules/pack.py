@@ -21,7 +21,7 @@ DEFAULT_PACK = "ofac"
 
 # Raise when a change to `rules/engine.py` alters what a pack concludes. It is
 # part of `rule_pack_hash`, and so of every `decision_id`.
-RULES_VERSION = 2
+RULES_VERSION = 3
 
 ThresholdPct = Annotated[Decimal, Field(gt=0, le=100)]
 

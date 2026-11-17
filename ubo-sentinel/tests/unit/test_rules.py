@@ -460,6 +460,37 @@ def test_a_control_link_counts_anywhere_upstream_unless_the_pack_says_target():
     ]
 
 
+def test_a_chain_of_control_links_alone_is_reviewed_even_when_the_pack_says_target():
+    chain = [edge("D", "M", rel="CONTROLS"), edge("M", "T", rel="CONTROLS")]
+    result = evaluate(graph("T", chain), [designated("D")], control_link_scope="target")
+    assert (result.recommendation, result.reasons) == ("REVIEW", ["CONTROL_LINK"])
+    finding = result.findings[0]
+    assert finding.subject_id == "D"
+    assert finding.edge_ids == sorted(e.id for e in chain)
+    # A link into the target is reported once, by the hop that makes it.
+    both = [*chain, edge("D", "T", rel="CONTROLS")]
+    assert evaluate(graph("T", both), [designated("D")], control_link_scope="target").reasons == [
+        "CONTROL_LINK"
+    ]
+    assert evaluate(graph("T", chain), [designated("D")], control_link_review=False).reasons == []
+
+
+def test_a_stronger_match_on_a_controller_never_clears_what_a_weaker_one_reviews():
+    """The counterexample Hypothesis found: N2 was a review-band match, then 50 % blocked."""
+    edges = [
+        edge("N3", "N2", 50),
+        edge("N2", "N5", rel="CONTROLS"),
+        edge("N5", "N0", rel="CONTROLS"),
+    ]
+    subgraph = graph("N0", edges)
+    near = designated("N2", by="L", confidence=0.95, jurisdictions_agree=False)
+    weaker = evaluate(subgraph, [near], control_link_scope="target")
+    stronger = evaluate(subgraph, [near, designated("N3")], control_link_scope="target")
+    assert weaker.recommendation == "REVIEW"
+    assert stronger.recommendation == "REVIEW"
+    assert "N2" in stronger.blocked_set
+
+
 # --- gaps -------------------------------------------------------------------------------
 
 

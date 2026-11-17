@@ -602,6 +602,24 @@ class _Evaluation:
                             and (pack.control_link_scope == "upstream" or hop.lower == target)
                         ):
                             found("CONTROL_LINK", subject_id=hop.upper, edges=hop.control_edges)
+                if pack.control_link_scope == "target":
+                    # A blocked party that reaches the target by control links alone,
+                    # more than one hop up, is reviewed too: a weaker match on the same
+                    # party already is (a review-band gap on its path), so a stronger
+                    # one must never clear the target.
+                    reported = {f.subject_id for f in findings if f.code == "CONTROL_LINK"}
+                    chains: dict[str, dict[str, Relationship]] = defaultdict(dict)
+                    for path in paths:
+                        if (
+                            path.start in in_b | in_p
+                            and len(path.hops) > 1
+                            and not any(hop.ownership for hop in path.hops)
+                        ):
+                            for hop in path.hops:
+                                chains[path.start].update((e.id, e) for e in hop.control_edges)
+                    for start in sorted(chains.keys() - reported):
+                        edges = [chains[start][i] for i in sorted(chains[start])]
+                        found("CONTROL_LINK", subject_id=start, edges=edges)
             recommendation = "REVIEW" if findings else "CLEAR"
 
         seeds = set(blocked_seeds) | set(review_seeds)
