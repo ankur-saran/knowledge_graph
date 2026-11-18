@@ -445,14 +445,19 @@ def test_too_many_paths_stop_the_screen():
 # --- control links ----------------------------------------------------------------------
 
 
-def test_a_control_link_counts_anywhere_upstream_unless_the_pack_says_target():
-    subgraph = graph("T", [edge("D", "M", rel="CONTROLS"), edge("M", "T", 100)])
+def test_a_control_link_counts_anywhere_upstream_and_a_target_pack_cites_the_route():
+    control, stake = edge("D", "M", rel="CONTROLS"), edge("M", "T", 100)
+    subgraph = graph("T", [control, stake])
     upstream = evaluate(subgraph, [designated("D")])
     assert (upstream.recommendation, upstream.reasons) == ("REVIEW", ["CONTROL_LINK"])
     finding = upstream.findings[0]
-    assert (finding.subject_id, finding.edge_ids) == ("D", [edge("D", "M", rel="CONTROLS").id])
+    assert (finding.subject_id, finding.edge_ids) == ("D", [control.id])
 
-    assert evaluate(subgraph, [designated("D")], control_link_scope="target").reasons == []
+    # A route that crosses a control link is reviewed at either scope; a target
+    # pack, which reads no link above the target alone, cites the whole route.
+    target = evaluate(subgraph, [designated("D")], control_link_scope="target")
+    assert (target.recommendation, target.reasons) == ("REVIEW", ["CONTROL_LINK"])
+    assert target.findings[0].edge_ids == sorted([control.id, stake.id])
     assert evaluate(subgraph, [designated("D")], control_link_review=False).reasons == []
     direct = graph("T", [edge("D", "T", rel="CONTROLS")])
     assert evaluate(direct, [designated("D")], control_link_scope="target").reasons == [
@@ -473,6 +478,22 @@ def test_a_chain_of_control_links_alone_is_reviewed_even_when_the_pack_says_targ
         "CONTROL_LINK"
     ]
     assert evaluate(graph("T", chain), [designated("D")], control_link_review=False).reasons == []
+
+
+@pytest.mark.parametrize("scope", ["upstream", "target"])
+def test_an_owner_of_a_controller_is_reviewed(scope):
+    """A blocked party owns 30 % of the target's controller: below the test, but a control link."""
+    stake, control = edge("B", "X", 30), edge("X", "T", rel="CONTROLS")
+    near = designated("B", by="L", confidence=0.95, jurisdictions_agree=False)
+    for matches in ([near], [designated("B")]):
+        result = evaluate(graph("T", [stake, control]), matches, control_link_scope=scope)
+        assert result.recommendation == "REVIEW"
+    confirmed = evaluate(graph("T", [stake, control]), [designated("B")], control_link_scope=scope)
+    assert confirmed.reasons == ["CONTROL_LINK"]
+    assert (confirmed.findings[0].subject_id, confirmed.findings[0].edge_ids) == (
+        "B",
+        sorted([stake.id, control.id]),
+    )
 
 
 def test_a_stronger_match_on_a_controller_never_clears_what_a_weaker_one_reviews():
