@@ -686,7 +686,7 @@ def test_every_value_and_some_value_of_an_interval_against_each_operator(
         (["[25, 50]", "(25, 50]"], "(50, 100]", "[25, 50]"),
         (["[25, 50)", "[10, 50]"], "[35, 100)", "[25, 50]"),
         (["(0, 10)", "[60, 60]"], "(60, 70)", "[60, 60]"),
-        (["[40, 60)", "(40, 60]"], "(80, 120]", "[40, 60]"),
+        (["[40, 60)", "(40, 60]"], "(80, 120)", "[40, 60]"),
     ],
 )
 def test_intervals_add_end_by_end_and_the_largest_takes_each_end(stakes, total, largest):
@@ -742,16 +742,23 @@ def test_a_point_finding_dumps_as_it_did_before_ranges():
     assert result.stake_coverage.model_dump() == {"exact": 1, "range": 0, "none": 0}
 
 
+def own(node, pack):
+    """A designation on the pack's own list."""
+    return designated(node, list_source=pack.designation_lists[0])
+
+
 def test_votes_are_a_second_test_never_added_to_shares():
     packs = _packs()
     # 30 % of the shares and 30 % of the votes: neither measure meets any test.
     split = graph("T", [edge("A", "T", 30), edge("A", "T", 30, interest="voting")])
     for name in ("uk_ofsi", "eu"):
-        assert "T" not in RuleEngine(packs[name]).evaluate(split, [designated("A")]).blocked_set
+        assert (
+            "T" not in RuleEngine(packs[name]).evaluate(split, [own("A", packs[name])]).blocked_set
+        )
     # A voting majority meets the UK and EU tests; under OFAC it is a control link.
     majority = graph("T", [edge("A", "T", 10), edge("A", "T", 60, interest="voting")])
     for name in ("uk_ofsi", "eu"):
-        result = RuleEngine(packs[name]).evaluate(majority, [designated("A")])
+        result = RuleEngine(packs[name]).evaluate(majority, [own("A", packs[name])])
         assert result.recommendation == "ESCALATE"
         (derived,) = [f for f in result.findings if f.code == "DERIVED_50PCT"]
         assert str(derived.pct) == "60.0000"

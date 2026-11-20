@@ -10,12 +10,13 @@ from test_agents import HALCYON, NOW
 from test_rules_hypothesis import PACKS, cases
 
 from ubo_sentinel.agents.base import ScreenRequest
-from ubo_sentinel.agents.explainer import build_memo, format_pct, render_memo
+from ubo_sentinel.agents.explainer import build_memo, format_pct, format_stake, render_memo
 from ubo_sentinel.agents.guardrail import check_prose
 from ubo_sentinel.agents.supervisor import Supervisor
 from ubo_sentinel.models import Entity
 from ubo_sentinel.models.memo import DISCLAIMER, Citation, Claim, DatasetRef, Memo
 from ubo_sentinel.rules.engine import RuleEngine
+from ubo_sentinel.rules.pack import load_rule_pack, pack_path
 
 DATASETS = [
     DatasetRef(
@@ -264,3 +265,61 @@ def test_a_claim_without_a_citation_is_counted():
     memo, _ = memo_of(graph("T", [edge("A", "T", 60)]), [designated("A")])
     bare = Claim(code="DATA_GAP", subject_id="A", params={"gap": "LAPSED_LEI"})
     assert memo.model_copy(update={"claims": [*memo.claims, bare]}).uncited() == ["DATA_GAP A"]
+
+
+# --- Step 16: ranges in words, and how many stakes the decision rests on ---------------
+
+
+@pytest.mark.parametrize(
+    ("low", "high", "bounds", "words"),
+    [
+        ("50.0000", None, None, "50 %"),
+        ("25.0000", "50.0000", "(]", "more than 25 % and at most 50 %"),
+        ("25.0000", "50.0000", "[]", "at least 25 % and at most 50 %"),
+        ("40.0000", "60.0000", "[)", "at least 40 % and less than 60 %"),
+        ("40.0000", "60.0000", "()", "more than 40 % and less than 60 %"),
+        ("0.0000", "10.0000", "()", "less than 10 %"),
+        ("0.0000", "10.0000", "(]", "at most 10 %"),
+        ("50.0000", "100.0000", "(]", "more than 50 %"),
+        ("75.0000", "100.0000", "[]", "at least 75 %"),
+    ],
+)
+def test_a_stake_is_written_from_its_bounds(low, high, bounds, words):
+    assert format_stake(low, high, bounds) == words
+
+
+def test_a_range_is_stated_in_the_memo_and_every_figure_is_the_memos():
+    subgraph = graph("T", [edge("A", "T", stake=("(]", 25, 50)), edge("B", "T", 5)])
+    memo, result = memo_of(subgraph, [designated("A"), designated("B")])
+    text = render_memo(memo)
+    assert "holds of it" not in text
+    assert (
+        "possibly-blocked owners hold more than 30 % and at most 55 % of it, a stated range" in text
+    )
+    assert "`OWNS` more than 25 % and at most 50 % → **T**" in text
+    assert "Stakes stated on 2 of 2 ownership links on the paths (1 as ranges)." in text
+    (coverage,) = claims(memo, "STAKE_COVERAGE")
+    assert coverage.params == {"stated": 2, "total": 2, "ranges": 1}
+    (why,) = claims(memo, "POSSIBLY_BLOCKED_BY_RANGE")
+    assert why.params["pct_bounds"] == "(]"
+    assert coverage.citations
+    (edge_row,) = [item for item in memo.edges if item.pct_high is not None]
+    assert (edge_row.pct, str(edge_row.pct_low), edge_row.pct_bounds) == (None, "25.0000", "(]")
+    assert check_prose(text, memo) == []
+    # Both ends are figures the memo holds: a high end it does not hold is a fault.
+    assert check_prose(text.replace("at most 50 %", "at most 57 %"), memo) == [
+        "the memo text has a number that the memo does not hold"
+    ]
+
+
+def test_a_vote_is_named_and_a_point_memo_dumps_no_range_fields():
+    uk = load_rule_pack(pack_path("uk_ofsi"))
+    subgraph = graph("T", [edge("A", "T", 10), edge("A", "T", 60, interest="voting")])
+    memo, _ = memo_of(subgraph, [designated("A", list_source=uk.designation_lists[0])], pack=uk)
+    text = render_memo(memo)
+    # The evidence path cites the stake that meets the test: the votes.
+    assert "`OWNS` 60 % of the votes → **T**" in text
+    assert "Stakes stated on 1 of 1 ownership links on the paths (0 as ranges)." in text
+    dumped = [item.model_dump() for item in memo.edges]
+    assert all("pct_low" not in item and "pct_bounds" not in item for item in dumped)
+    assert sorted(item.get("interest", "equity") for item in dumped) == ["equity", "voting"]

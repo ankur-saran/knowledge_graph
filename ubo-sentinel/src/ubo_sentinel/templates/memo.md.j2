@@ -26,7 +26,7 @@
 {% elif claim.code == "EFFECTIVE_EXPOSURE" %}
 - Effective exposure of {{ name(claim.subject_id) }} (a risk signal, not the legal test): {% if p.sum_pct is not none %}{{ p.sum_pct | pct }}{% if p.sum_pct_high is defined %} % to {{ p.sum_pct_high | pct }}{% endif %} % over all paths, {{ p.max_pct | pct }}{% if p.max_pct_high is defined %} % to {{ p.max_pct_high | pct }}{% endif %} % on the largest{% else %}not known{% endif %}{% if p.has_unknown %}; a path has a stake of unknown size, so this is a lower bound{% endif %}.{{ cites(claim.citations) }}
 {% elif claim.code == "STAKE_COVERAGE" %}
-- Stakes stated on {{ p.stated }} of {{ p.total }} ownership links on the paths ({{ p.ranges }} as ranges); the others are presumed.{{ cites(claim.citations) }}
+- Stakes stated on {{ p.stated }} of {{ p.total }} ownership links on the paths ({{ p.ranges }} as ranges){% if p.stated < p.total %}; the others are presumed{% endif %}.{{ cites(claim.citations) }}
 {% elif claim.code == "NO_DESIGNATION_FOUND" %}
 - No active designation reaches any of the {{ p.nodes_checked }} entities checked.{{ cites(claim.citations) }}
 {% elif claim.code == "COVERAGE" %}
