@@ -100,6 +100,11 @@ def _relationship_row(state: ProposalState) -> dict[str, str | None]:
         "pct": None if acceptance.pct is None else str(acceptance.pct),
         "basis": acceptance.basis,
         "is_ultimate": "false",
+        "pct_low": None,
+        "pct_high": None,
+        "pct_bounds": None,
+        # Empty is shares, as in a fixture file.
+        "interest": None if acceptance.interest == "equity" else acceptance.interest,
         "document_sha256": state.extraction.document_sha256,
         "page": str(proposal.span.page),
         "span_start": str(proposal.span.start),

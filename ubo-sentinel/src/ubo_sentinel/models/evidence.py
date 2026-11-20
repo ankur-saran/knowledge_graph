@@ -22,6 +22,9 @@ GapCode = Literal[
     # Records of one ownership edge state different stakes (Step 15: a document and a
     # registry or list); the newest decides the edge, and this says they disagree.
     "CONFLICTING_PCT",
+    # An ownership edge states its stake as a range, not one figure (Step 16). It
+    # decides where the range alone makes the node it leads into possibly blocked.
+    "PCT_RANGE",
 ]
 
 # Why a recommendation was made. The last four come from the agent pipeline, not the rules.
@@ -86,3 +89,8 @@ class EffectiveExposure(BaseModel):
     sum_pct: Exposure | None = None
     # True when a path contains a null-% edge, so the figures are a lower bound.
     has_unknown: bool = False
+    # With a counted path that holds a range (Step 16): the figures above are taken
+    # over the ranges' low ends, these over their high ends. Left out of the dump
+    # otherwise, so an exposure over points is written as it was before.
+    max_pct_high: Exposure | None = Field(default=None, exclude_if=lambda value: value is None)
+    sum_pct_high: Exposure | None = Field(default=None, exclude_if=lambda value: value is None)

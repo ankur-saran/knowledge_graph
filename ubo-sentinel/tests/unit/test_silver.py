@@ -9,7 +9,7 @@ from conftest import PACK
 from typer.testing import CliRunner
 
 from ubo_sentinel.cli.app import app
-from ubo_sentinel.models import canonical_json
+from ubo_sentinel.models import canonical_json, relationship_id
 from ubo_sentinel.pipeline import transformer
 from ubo_sentinel.pipeline.bronze import BRONZE_TABLES, resolve_set
 from ubo_sentinel.pipeline.db import DB_ENV_VAR, connect
@@ -398,6 +398,71 @@ def test_the_newest_record_with_a_percentage_decides_an_edge(con, ontology, t0_c
     assert str(stake.pct) == "55.0000"
     assert stake.provenance.source_record_id == "s01-rel-8"
     assert len(stake.supporting_records) == 3
+
+
+def _with_range_columns(path):
+    """Rewrite relationships.csv with the optional range columns, every one empty."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    rows = [
+        lines[0] + ",pct_low,pct_high,pct_bounds,interest",
+        *(line + ",,,," for line in lines[1:]),
+    ]
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8", newline="")
+
+
+def test_a_file_without_the_range_columns_reads_as_points_of_equity(con, t0):
+    # The t0 files predate the columns: every stated stake is a closed point of shares.
+    edges = read_relationships(con, t0)
+    stated = [e for e in edges if e.pct is not None]
+    assert stated and all(
+        (e.pct_low, e.pct_high, e.pct_bounds, e.interest) == (e.pct, e.pct, "[]", "equity")
+        for e in stated
+    )
+    assert all(
+        (e.pct_low, e.pct_high, e.pct_bounds) == (None, None, None) for e in edges if e.pct is None
+    )
+    assert {e.interest for e in edges} == {"equity"}
+
+
+def test_ranges_and_votes_are_kept_and_disagreeing_ranges_are_a_gap(con, ontology, t0_copy):
+    relationships = t0_copy / "relationships.csv"
+    _with_range_columns(relationships)
+    edge = "fx_registry:s01-parent,fx_registry:s01-target,OWNS"
+    append(
+        relationships,
+        # A range, then a later record of the same edge with another range.
+        f"fx_list,s01-rel-8,2026-09-18,1.0,{edge},,shareholding,false,25,50,(],",
+        f"fx_list,s01-rel-9,2026-09-20,1.0,{edge},,shareholding,false,50,75,[),",
+        # A stake of votes: another edge than the equity stake of the same pair.
+        f"fx_list,s01-rel-10,2026-09-20,1.0,{edge},60,shareholding,false,,,,voting",
+    )
+    set_id = build(con, ontology, t0_copy)
+    pair = ("lei:FXS01PARENT000000000", "lei:FXS01TARGET000000000")
+    found = {
+        e.interest: e
+        for e in read_relationships(con, set_id)
+        if (e.subject_id, e.object_id) == pair
+    }
+    equity, voting = found["equity"], found["voting"]
+    # The newest record that states a stake decides the edge: the later range.
+    assert (equity.pct, str(equity.pct_low), str(equity.pct_high), equity.pct_bounds) == (
+        None,
+        "50.0000",
+        "75.0000",
+        "[)",
+    )
+    assert equity.id == relationship_id(*pair, "OWNS", False)
+    assert voting.id == relationship_id(*pair, "OWNS", False, "voting") != equity.id
+    assert (str(voting.pct), voting.pct_bounds) == ("60.0000", "[]")
+    (conflict,) = [
+        row
+        for row in read_rows(con, "silver_gaps", set_id)
+        if row["code"] == "CONFLICTING_PCT" and row["subject_id"] == pair[1]
+    ]
+    (listed,) = json.loads(conflict["detail"])["edges"]
+    assert listed["edge_id"] == equity.id
+    # The t0 point (60) and the two ranges, each as its record states it.
+    assert sorted(listed["pcts"]) == ["(25.0000,50.0000]", "60.0000", "[50.0000,75.0000)"]
 
 
 def test_edges_that_cannot_be_loaded_are_rejected_with_a_reason(con, ontology, t0_copy):

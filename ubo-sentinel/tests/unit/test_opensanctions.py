@@ -25,8 +25,8 @@ def built(con, ontology):
     return snapshot_set.snapshot_set.snapshot_set_id, summary.counts
 
 
-def rows(con, sql, set_id):
-    return con.execute(sql, [set_id]).fetchall()
+def rows(con, sql, set_id, *more):
+    return con.execute(sql, [set_id, *more]).fetchall()
 
 
 def test_every_opensanctions_dataset_has_a_mapper_and_a_loader():
@@ -137,7 +137,16 @@ def test_links(con, built):
         Decimal("60"),
         "shareholding",
     )
-    assert edges[(f"{OS}Sarvanta", f"{OS}SarvRefining")][1] == Decimal("50")
+    # "25-50" is a range, never its upper bound (Step 16).
+    assert edges[(f"{OS}Sarvanta", f"{OS}SarvRefining")][1] is None
+    assert rows(
+        con,
+        "SELECT pct_low, pct_high, pct_bounds, interest FROM silver_relationships"
+        " WHERE snapshot_set_id = ? AND subject_id = ? AND object_id = ?",
+        set_id,
+        f"{OS}Sarvanta",
+        f"{OS}SarvRefining",
+    ) == [(Decimal("25"), Decimal("50"), "[]", "equity")]
     assert edges[(f"{OS}Mirovane", f"{OS}MiroTrading")][1] is None
     assert edges[(f"{OS}Sarvanta", f"{OS}SarvLogistics")][1] is None
     assert edges[(f"{OS}Lomanov", f"{OS}Sarvanta")] == ("CONTROLS", None, "directorship")
@@ -149,27 +158,43 @@ def test_links(con, built):
 @pytest.mark.parametrize(
     ("written", "read"),
     [
-        ("50", "50.0000"),
-        ("50%", "50.0000"),
-        ("50.0", "50.0000"),
-        ("12,5 %", "12.5000"),
-        ("25-50", "50.0000"),
-        ("25 – 50%", "50.0000"),
-        (">50", "50.0000"),
-        ("<10%", "10.0000"),
-        ("100", "100.0000"),
+        # (pct, pct_low, pct_high, pct_bounds)
+        ("50", ("50", "50", "50", "[]")),
+        ("50%", ("50", "50", "50", "[]")),
+        ("50.0", ("50", "50", "50", "[]")),
+        ("12,5 %", ("12.5", "12.5", "12.5", "[]")),
+        ("100", ("100", "100", "100", "[]")),
+        ("25-50", (None, "25", "50", "[]")),
+        ("25 – 50%", (None, "25", "50", "[]")),
+        ("<10%", (None, "0", "10", "()")),
+        ("≤10", (None, "0", "10", "(]")),
+        (">50", (None, "50", "100", "(]")),
+        ("≥50", (None, "50", "100", "[]")),
+        ("≥100", ("100", "100", "100", "[]")),
         ("majority", None),
         ("0", None),
         ("150", None),
         ("50-", None),
+        ("60-40", None),
+        (">100", None),
+        ("<0", None),
         ("", None),
         (None, None),
     ],
 )
-def test_percentages_are_read_on_the_cautious_side(written, read):
+def test_percentages_are_read_as_points_or_ranges(written, read):
+    """A range is kept as one (Step 16): never rounded to a bound."""
     value = (
         duckdb.connect()
-        .execute(f"SELECT {os_percentage('v')} FROM (SELECT CAST(? AS VARCHAR) AS v)", [written])
-        .fetchone()[0]
+        .execute(
+            f"SELECT {', '.join(os_percentage('v'))} FROM (SELECT CAST(? AS VARCHAR) AS v)",
+            [written],
+        )
+        .fetchone()
     )
-    assert value == (None if read is None else Decimal(read))
+    if read is None:
+        assert value == (None, None, None, None)
+    else:
+        *figures, bounds = read
+        expected = tuple(None if f is None else Decimal(f) for f in figures)
+        assert value == (*expected, bounds)

@@ -194,6 +194,8 @@ def _acceptance(
         rel_type=changed.rel_type,
         basis=changed.basis,
         pct=changed.pct,
+        # Only shares and votes are ever accepted: an economic interest is information.
+        interest="voting" if changed.interest == "voting" else "equity",
         edits={
             field: [str(v) if isinstance(v, Decimal) else v for v in pair]
             for field, pair in edits.items()

@@ -24,7 +24,8 @@ Interest = Literal["equity", "voting", "economic"]
 Origin = Literal["first_pass", "model"]
 # What a proposal would do to the current graph, in the order a reviewer is shown them.
 # `INDIRECT_INFO` and `INTEREST_INFO` are shown and never accepted: an indirect holding
-# is already counted through the chain, and a voting or economic interest is not equity.
+# is already counted through the chain, and an economic interest is neither shares nor
+# votes. A direct holding of votes is a holding, with `interest: voting` (Step 16).
 Label = Literal["CONFLICTS", "FILLS_NULL_PCT", "NEW", "CONFIRMS", "INDIRECT_INFO", "INTEREST_INFO"]
 LABEL_ORDER: dict[str, int] = {
     "CONFLICTS": 0,
@@ -167,5 +168,8 @@ class Acceptance(_Model):
     rel_type: DocRelType
     basis: DocBasis
     pct: Pct | None = None
+    # What the stake is of: shares, or votes (Step 16). An acceptance recorded before
+    # stakes had an interest is of shares.
+    interest: Literal["equity", "voting"] = "equity"
     # Field -> [before, after] for what the reviewer changed.
     edits: dict[str, list[Any]] = {}

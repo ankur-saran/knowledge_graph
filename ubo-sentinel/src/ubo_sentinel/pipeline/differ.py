@@ -66,7 +66,18 @@ _TABLES = (
         "id",
         tuple(
             (name, name)
-            for name in ("upper_id", "lower_id", "rel_type", "pct", "basis", "is_ultimate")
+            for name in (
+                "upper_id",
+                "lower_id",
+                "rel_type",
+                "pct",
+                "pct_low",
+                "pct_high",
+                "pct_bounds",
+                "interest",
+                "basis",
+                "is_ultimate",
+            )
         ),
         about=("upper_id", "lower_id"),
     ),

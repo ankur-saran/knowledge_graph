@@ -1,6 +1,7 @@
 """The rule pack, the rule engine and the evaluator."""
 
 from decimal import Decimal
+from fractions import Fraction
 
 import pytest
 import yaml
@@ -14,7 +15,14 @@ from ubo_sentinel.graph.store import GraphStore
 from ubo_sentinel.models import EffectiveExposure
 from ubo_sentinel.pipeline.entity_linking import LINK_FLOOR
 from ubo_sentinel.rules import pack as pack_module
-from ubo_sentinel.rules.engine import PathLimitExceeded, RuleEngine
+from ubo_sentinel.rules.engine import (
+    PathLimitExceeded,
+    RuleEngine,
+    Stake,
+    stake_max,
+    stake_product,
+    stake_sum,
+)
 from ubo_sentinel.rules.evaluator import compare, run_rules_suite, screen
 from ubo_sentinel.rules.pack import (
     DEFAULT_PACK,
@@ -630,3 +638,125 @@ def test_eval_refuses_what_it_cannot_run():
     assert unbuilt.exit_code == 1 and "ubo build-graph" in unbuilt.output
     assert runner.invoke(app, ["eval", "--rule-pack", "nonesuch"]).exit_code == 2
     assert runner.invoke(app, ["eval", "--role", "analyst"]).exit_code == 1
+
+
+# --- Step 16: stakes as intervals, and votes --------------------------------------------
+
+F = Fraction
+
+
+def iv(text):
+    """`(25, 50]` -> a `Stake`."""
+    opening, rest = text[0], text[1:-1]
+    low, high = (F(part.strip()) for part in rest.split(","))
+    return Stake(low, high, opening == "[", text[-1] == "]")
+
+
+@pytest.mark.parametrize(
+    ("stake", "operator", "every", "some"),
+    [
+        # At 50 under ">=": a closed end counts; under ">" an open low end does.
+        ("[50, 50]", ">=", True, True),
+        ("[50, 50]", ">", False, False),
+        ("(50, 75)", ">=", True, True),
+        ("(50, 75)", ">", True, True),
+        ("[50, 75]", ">", False, True),
+        ("(25, 50]", ">=", False, True),
+        ("(25, 50]", ">", False, False),
+        ("(25, 50)", ">=", False, False),
+        ("[40, 60)", ">=", False, True),
+        ("[40, 60)", ">", False, True),
+        ("[75, 100]", ">", True, True),
+        ("(0, 10)", ">=", False, False),
+    ],
+)
+def test_every_value_and_some_value_of_an_interval_against_each_operator(
+    stake, operator, every, some
+):
+    item = iv(stake)
+    assert item.every_meets(operator, F(50)) is every
+    assert item.some_meets(operator, F(50)) is some
+
+
+@pytest.mark.parametrize(
+    ("stakes", "total", "largest"),
+    [
+        (["[25, 25]", "[30, 30]"], "[55, 55]", "[30, 30]"),
+        (["(25, 50]", "(25, 50]"], "(50, 100]", "(25, 50]"),
+        (["[25, 50]", "(25, 50]"], "(50, 100]", "[25, 50]"),
+        (["[25, 50)", "[10, 50]"], "[35, 100)", "[25, 50]"),
+        (["(0, 10)", "[60, 60]"], "(60, 70)", "[60, 60]"),
+        (["[40, 60)", "(40, 60]"], "(80, 120]", "[40, 60]"),
+    ],
+)
+def test_intervals_add_end_by_end_and_the_largest_takes_each_end(stakes, total, largest):
+    items = [iv(text) for text in stakes]
+    assert stake_sum(items) == iv(total)
+    assert stake_max(items) == iv(largest)
+
+
+def test_a_chain_of_intervals_multiplies_end_by_end():
+    assert stake_product([iv("[50, 50]"), iv("(40, 60]")]) == iv("(20, 30]")
+    assert stake_product([iv("[50, 50]"), iv("[80, 80]")]) == Stake.point(F(40))
+
+
+def test_a_point_behaves_as_the_one_figure_did():
+    for value in (F(49), F(50), F(51)):
+        point = Stake.point(value)
+        for operator in (">=", ">"):
+            meets = value > 50 if operator == ">" else value >= 50
+            assert point.every_meets(operator, F(50)) is meets
+            assert point.some_meets(operator, F(50)) is meets
+
+
+def _packs():
+    return {name: load_rule_pack(pack_path(name)) for name in ("ofac", "uk_ofsi", "eu")}
+
+
+def test_a_range_alone_makes_its_holder_possibly_blocked_and_reports_its_ends():
+    subgraph = graph("T", [edge("A", "T", stake=("(]", 25, 50))])
+    result = RuleEngine(_packs()["ofac"]).evaluate(subgraph, [designated("A")])
+    assert result.possibly_blocked_set == ["T"]
+    (why,) = [d for d in result.derivations if d.node_id == "T"]
+    assert (why.basis, str(why.aggregate_pct), str(why.aggregate_pct_high), why.pct_bounds) == (
+        "RANGE",
+        "25.0000",
+        "50.0000",
+        "(]",
+    )
+    (gap,) = result.data_gaps
+    assert (gap.code, gap.decision_relevant) == ("PCT_RANGE", True)
+    near = next(f for f in result.findings if f.code == "NEAR_MISS_AGGREGATE")
+    assert (str(near.pct), str(near.pct_high), near.pct_bounds) == ("25.0000", "50.0000", "(]")
+    assert (str(result.aggregate_pct), str(result.aggregate_pct_high)) == ("25.0000", "50.0000")
+    exposure = result.effective_exposure
+    assert (str(exposure.sum_pct), str(exposure.sum_pct_high)) == ("25.0000", "50.0000")
+    assert result.stake_coverage.model_dump() == {"exact": 0, "range": 1, "none": 0}
+
+
+def test_a_point_finding_dumps_as_it_did_before_ranges():
+    result = RuleEngine(PACK).evaluate(graph("T", [edge("A", "T", 45)]), [designated("A")])
+    near = next(f for f in result.findings if f.code == "NEAR_MISS_AGGREGATE")
+    assert "pct_high" not in near.model_dump() and "pct_bounds" not in near.model_dump()
+    assert "sum_pct_high" not in result.effective_exposure.model_dump()
+    assert result.stake_coverage.model_dump() == {"exact": 1, "range": 0, "none": 0}
+
+
+def test_votes_are_a_second_test_never_added_to_shares():
+    packs = _packs()
+    # 30 % of the shares and 30 % of the votes: neither measure meets any test.
+    split = graph("T", [edge("A", "T", 30), edge("A", "T", 30, interest="voting")])
+    for name in ("uk_ofsi", "eu"):
+        assert "T" not in RuleEngine(packs[name]).evaluate(split, [designated("A")]).blocked_set
+    # A voting majority meets the UK and EU tests; under OFAC it is a control link.
+    majority = graph("T", [edge("A", "T", 10), edge("A", "T", 60, interest="voting")])
+    for name in ("uk_ofsi", "eu"):
+        result = RuleEngine(packs[name]).evaluate(majority, [designated("A")])
+        assert result.recommendation == "ESCALATE"
+        (derived,) = [f for f in result.findings if f.code == "DERIVED_50PCT"]
+        assert str(derived.pct) == "60.0000"
+    ofac = RuleEngine(packs["ofac"]).evaluate(majority, [designated("A")])
+    assert (ofac.recommendation, ofac.reasons) == ("REVIEW", ["CONTROL_LINK"])
+    # A voting stake too small to meet OFAC's threshold is nothing to that pack.
+    small = graph("T", [edge("A", "T", 10), edge("A", "T", 20, interest="voting")])
+    assert RuleEngine(packs["ofac"]).evaluate(small, [designated("A")]).recommendation == "CLEAR"

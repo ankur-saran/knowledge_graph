@@ -8,6 +8,7 @@ its `designation_lists`), `other` a list no pack applies. One graph is therefore
 read the same way under every pack.
 """
 
+import re
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -31,7 +32,7 @@ from ubo_sentinel.models.decision import Recommendation
 from ubo_sentinel.models.evidence import GapCode, ReasonCode
 from ubo_sentinel.models.graph import upper_lower
 from ubo_sentinel.models.provenance import Confidence, NonEmptyStr
-from ubo_sentinel.models.relationship import RelType
+from ubo_sentinel.models.relationship import Interest, RelType
 from ubo_sentinel.models.rule_result import RuleResult
 from ubo_sentinel.rules.engine import RuleEngine
 from ubo_sentinel.rules.pack import RULES_DIR, RulePack, load_rule_pack
@@ -59,13 +60,40 @@ class _Spec(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
+_RANGE = re.compile(r"^([\[(])\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*([\])])$")
+
+
 class SpecEdge(_Spec):
-    """An edge named by its upper end (owner, parent or controller) and lower end."""
+    """An edge named by its upper end (owner, parent or controller) and lower end.
+
+    A stake is `pct` (a figure) or `range`, written as an interval: `(25, 50]` is
+    more than 25 % and at most 50 %. `interest` is what it is a stake of.
+    """
 
     upper: NonEmptyStr
     lower: NonEmptyStr
     rel: RelType = "OWNS"
     pct: Decimal | None = Field(default=None, gt=0, le=100)
+    range: str | None = Field(default=None, pattern=_RANGE.pattern)
+    interest: Interest = "equity"
+
+    @model_validator(mode="after")
+    def _one_stake(self) -> Self:
+        if self.pct is not None and self.range is not None:
+            raise ValueError("an edge states a pct or a range, not both")
+        return self
+
+    def stake_fields(self) -> dict[str, object]:
+        if self.range is None:
+            return {"pct": self.pct}
+        found = _RANGE.match(self.range)
+        assert found is not None
+        opening, low, high, closing = found.groups()
+        return {
+            "pct_low": Decimal(low),
+            "pct_high": Decimal(high),
+            "pct_bounds": f"{opening}{closing}",
+        }
 
 
 class SpecDesignation(_Spec):
@@ -143,11 +171,12 @@ def _relationship(spec: SpecEdge) -> Relationship:
         (spec.lower, spec.upper) if spec.rel == "CONSOLIDATED_BY" else (spec.upper, spec.lower)
     )
     return Relationship(
-        id=relationship_id(subject, obj, spec.rel, False),
+        id=relationship_id(subject, obj, spec.rel, False, spec.interest),
         subject_id=subject,
         object_id=obj,
         rel_type=spec.rel,
-        pct=spec.pct,
+        interest=spec.interest,
+        **spec.stake_fields(),
         basis=_BASIS[spec.rel],
         is_ultimate=False,
         provenance=_PROVENANCE,

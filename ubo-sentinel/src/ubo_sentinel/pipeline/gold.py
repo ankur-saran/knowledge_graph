@@ -62,6 +62,10 @@ _TABLES: dict[str, tuple[str, str]] = {
     object_id TEXT NOT NULL,
     rel_type TEXT NOT NULL,
     pct DECIMAL(7,4),
+    pct_low DECIMAL(7,4),
+    pct_high DECIMAL(7,4),
+    pct_bounds TEXT,
+    interest TEXT NOT NULL,
     basis TEXT NOT NULL,
     is_ultimate BOOLEAN NOT NULL,{_PROVENANCE},
     supporting_records JSON NOT NULL,
@@ -311,7 +315,8 @@ def _write_edges(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
     con.execute(
         f"""
         INSERT INTO graph_edges
-        SELECT snapshot_set_id, id, subject_id, object_id, rel_type, pct, basis, is_ultimate,
+        SELECT snapshot_set_id, id, subject_id, object_id, rel_type, pct,
+            pct_low, pct_high, pct_bounds, interest, basis, is_ultimate,
             {_PROV}, supporting_records,
             CASE WHEN rel_type = 'CONSOLIDATED_BY' THEN object_id ELSE subject_id END,
             CASE WHEN rel_type = 'CONSOLIDATED_BY' THEN subject_id ELSE object_id END

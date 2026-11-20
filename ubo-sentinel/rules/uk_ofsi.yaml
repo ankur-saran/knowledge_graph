@@ -11,6 +11,8 @@ threshold_operator: ">"
 # (only a joint arrangement is one holding, which this engine cannot express):
 # the largest holding is tested. Counsel to confirm.
 aggregate_blocked_owners: false
+# Shares or voting rights: either may meet the test; they are never added together.
+ownership_measures: [equity, voting]
 
 # FX-UK-LIST is the stand-in in the pack scenarios (eval/pack_scenarios.yaml);
 # gb_fcdo_sanctions is the OpenSanctions dataset of the UK Sanctions List, the

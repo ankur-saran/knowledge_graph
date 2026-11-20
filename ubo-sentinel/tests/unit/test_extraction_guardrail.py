@@ -76,3 +76,19 @@ def test_percentages_are_figures_followed_by_a_percent_sign_or_the_words():
     assert guardrail.percentages(text) == [
         Decimal(v).quantize(Decimal("0.0001")) for v in ("60", "12.5", "7", "8")
     ]
+
+
+def test_a_holding_of_votes_stands_as_a_holding_of_shares_does():
+    """Step 16: a direct voting stake is a holding; the guardrail holds it to its quote."""
+    votes = GOOD.model_copy(
+        update={
+            "interest": "voting",
+            "pct": Decimal("75"),
+            "quote": "and 75 % of its votes",
+            "owner_name": "Quillon Harbour Group Ltd",
+        }
+    )
+    span, fault = guardrail.check_edge(votes, PAGES)
+    assert fault is None and span is not None
+    wrong = votes.model_copy(update={"pct": Decimal("70")})
+    assert guardrail.check_edge(wrong, PAGES) == (None, guardrail.PCT_NOT_IN_QUOTE)

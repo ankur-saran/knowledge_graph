@@ -78,7 +78,7 @@ def label_for(
     """What the proposal would do to the graph, and the stake on record for its pair."""
     if edge.holding == "indirect":
         return "INDIRECT_INFO", None
-    if edge.rel_type == "OWNS" and edge.interest != "equity":
+    if edge.rel_type == "OWNS" and edge.interest == "economic":
         return "INTEREST_INFO", None
     owner, asset = _sure(owners), _sure(assets)
     if owner is None or asset is None:
@@ -89,12 +89,17 @@ def label_for(
             item.owner.id != owner
             or relationship.rel_type != edge.rel_type
             or relationship.is_ultimate
+            or (edge.rel_type == "OWNS" and relationship.interest != edge.interest)
         ):
             continue
         if edge.rel_type == "CONTROLS":
             return "CONFIRMS", None
-        if relationship.pct is None:
+        if not relationship.stated:
             return "FILLS_NULL_PCT", None
+        if relationship.is_range:
+            # A figure where a range is on record: another statement of the stake, which
+            # Silver would report as conflicting (`CONFLICTING_PCT`).
+            return "CONFLICTS", None
         return ("CONFIRMS" if relationship.pct == edge.pct else "CONFLICTS"), relationship.pct
     return "NEW", None
 

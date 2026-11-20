@@ -1,6 +1,7 @@
 """Properties of the rule engine over arbitrary graphs: cycles, parallel edges, unknown stakes."""
 
 from collections import defaultdict
+from decimal import Decimal
 from fractions import Fraction
 
 import networkx as nx
@@ -8,8 +9,10 @@ from conftest import PACK
 from graphs import designated, edge, graph, over_100, upward_depths
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from oracles.engine_v3 import RuleEngine as RuleEngineV3
 
 from ubo_sentinel.models.graph import upper_lower
+from ubo_sentinel.models.relationship import Relationship
 from ubo_sentinel.rules.engine import RuleEngine
 from ubo_sentinel.rules.pack import RulePack
 
@@ -273,3 +276,121 @@ def test_a_designation_on_another_list_never_blocks(case, pack):
             ("CLEAR", "REVIEW"),
             ("REVIEW", "REVIEW"),
         }
+
+
+# --- Step 16: stakes as ranges, and votes ----------------------------------------------
+
+MEASURED_PACKS = st.builds(
+    lambda pack, measures: RulePack.model_validate(
+        {**pack.model_dump(), "ownership_measures": measures}
+    ),
+    PACKS,
+    st.sampled_from([["equity"], ["equity", "voting"]]),
+)
+# Ranges around the levels the packs test: (bounds, low, high).
+RANGES = [
+    ("[]", 25, 50),
+    ("(]", 25, 50),
+    ("()", 0, 10),
+    ("(]", 50, 100),
+    ("[]", 50, 100),
+    ("[)", 40, 60),
+    ("()", 40, 60),
+    ("[]", 60, 75),
+    ("(]", "49.9999", "50.0001"),
+    ("[]", 10, 30),
+]
+
+
+@given(cases(), MEASURED_PACKS)
+@settings(max_examples=400, deadline=None)
+def test_on_point_stakes_the_engine_is_the_rules_version_3_engine(case, pack):
+    """The oracle is the engine as it was before ranges (`tests/oracles/engine_v3.py`)."""
+    subgraph, matches = case
+    now = RuleEngine(pack).evaluate(subgraph, matches)
+    then = RuleEngineV3(pack).evaluate(subgraph, matches)
+    assert now.recommendation == then.recommendation
+    assert now.reasons == then.reasons
+    assert now.findings == then.findings
+    assert (now.blocked_set, now.possibly_blocked_set) == (
+        then.blocked_set,
+        then.possibly_blocked_set,
+    )
+    assert now.data_gaps == then.data_gaps
+    assert now.derivations == then.derivations
+    assert now.effective_exposure == then.effective_exposure
+    assert now.aggregate_pct == then.aggregate_pct
+
+
+@st.composite
+def ranged_cases(draw):
+    """Graphs whose ownership stakes are points, ranges or unknown, of shares or of votes."""
+    keys = draw(
+        st.lists(
+            st.tuples(
+                st.sampled_from(NODES),
+                st.sampled_from(NODES),
+                st.sampled_from(["OWNS", "OWNS", "CONSOLIDATED_BY", "CONTROLS"]),
+                st.sampled_from(["equity", "equity", "voting"]),
+            ).filter(lambda key: key[0] != key[1]),
+            unique=True,
+            max_size=12,
+        )
+    )
+    edges = []
+    for upper, lower, rel, interest in keys:
+        if rel == "CONTROLS":
+            edges.append(edge(upper, lower, rel=rel))
+            continue
+        interest = interest if rel == "OWNS" else "equity"
+        stake = draw(st.sampled_from([None, *PERCENTAGES[1:], *RANGES]))
+        if isinstance(stake, tuple):
+            edges.append(edge(upper, lower, rel=rel, stake=stake, interest=interest))
+        else:
+            edges.append(edge(upper, lower, stake, rel, interest=interest))
+    subgraph = subgraph_of(list({item.id: item for item in edges}.values()))
+    listed = draw(st.lists(st.sampled_from(sorted(subgraph.depth_up)), unique=True, max_size=3))
+    matches = [
+        designated(node) if draw(st.booleans()) else designated(node, by="L", confidence=0.88)
+        for node in listed
+    ]
+    return subgraph, matches
+
+
+def _inside(data, item):
+    """A point of the edge's range."""
+    low, high = Fraction(item.pct_low), Fraction(item.pct_high)
+    points = [(low + high) / 2]
+    if item.pct_bounds[0] == "[" and low > 0:
+        points.append(low)
+    if item.pct_bounds[1] == "]":
+        points.append(high)
+    if low < 50 < high:
+        points.append(Fraction(50))
+    value = data.draw(st.sampled_from(sorted(points)))
+    return Decimal(value.numerator) / Decimal(value.denominator)
+
+
+@given(ranged_cases(), MEASURED_PACKS, st.data())
+@settings(max_examples=400, deadline=None)
+def test_a_range_never_claims_more_than_its_values_would(case, pack, data):
+    """Each range replaced by a point inside it: the same recommendation, or the range's
+    is REVIEW. A range never escalates or clears where one of its values would not."""
+    subgraph, matches = case
+    ranged = RuleEngine(pack).evaluate(subgraph, matches)
+    points = [
+        Relationship.model_validate(
+            {
+                **item.model_dump(exclude={"pct_low", "pct_high", "pct_bounds"}),
+                "pct": _inside(data, item),
+            }
+        )
+        if item.is_range
+        else item
+        for item in subgraph.edges
+    ]
+    pointed = graph(TARGET, points, set_gaps=subgraph.set_gaps)
+    result = RuleEngine(pack).evaluate(pointed, matches)
+    assert ranged.recommendation in (result.recommendation, "REVIEW")
+    assert set(ranged.blocked_set) <= set(result.blocked_set)
+    assert set(result.blocked_set) <= set(ranged.blocked_set) | set(ranged.possibly_blocked_set)

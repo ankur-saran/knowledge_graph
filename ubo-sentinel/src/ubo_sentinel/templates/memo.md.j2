@@ -10,19 +10,23 @@
 {% elif claim.code == "POSSIBLY_DESIGNATED" %}
 - {{ name(claim.subject_id) }} may be a designated party: the match is not settled.{{ cites(claim.citations) }}
 {% elif claim.code == "BLOCKED_BY_OWNERSHIP" %}
-- {{ name(claim.subject_id) }} is blocked by ownership: blocked owners hold {{ p.aggregate_pct | pct }} % of it.{{ cites(claim.citations) }}
+- {{ name(claim.subject_id) }} is blocked by ownership: blocked owners hold {{ stake(p.aggregate_pct, p.get("aggregate_pct_high"), p.get("pct_bounds")) }} of it.{{ cites(claim.citations) }}
 {% elif claim.code == "POSSIBLY_BLOCKED_BY_OWNERSHIP" %}
-- {{ name(claim.subject_id) }} is possibly blocked: blocked and possibly-blocked owners hold {{ p.aggregate_pct | pct }} % of it.{{ cites(claim.citations) }}
+- {{ name(claim.subject_id) }} is possibly blocked: blocked and possibly-blocked owners hold {{ stake(p.aggregate_pct, p.get("aggregate_pct_high"), p.get("pct_bounds")) }} of it.{{ cites(claim.citations) }}
+{% elif claim.code == "POSSIBLY_BLOCKED_BY_RANGE" %}
+- {{ name(claim.subject_id) }} is possibly blocked: blocked and possibly-blocked owners hold {{ stake(p.aggregate_pct, p.get("aggregate_pct_high"), p.get("pct_bounds")) }} of it, a stated range of which some values meet the test and some do not.{{ cites(claim.citations) }}
 {% elif claim.code == "PRESUMED_MAJORITY" %}
 - {{ name(claim.subject_id) }} is possibly blocked: a blocked or possibly-blocked parent holds a stake of unknown size, presumed a majority.{{ cites(claim.citations) }}
 {% elif claim.code == "REASON" %}
-- `{{ p.reason }}` on {{ subject(claim.subject_id) }}{% if p.pct is defined %}: {{ p.pct | pct }} %{% endif %}.{{ cites(claim.citations) }}
+- `{{ p.reason }}` on {{ subject(claim.subject_id) }}{% if p.pct is defined %}: {{ stake(p.pct, p.get("pct_high"), p.get("pct_bounds")) }}{% endif %}.{{ cites(claim.citations) }}
 {% elif claim.code == "DATA_GAP" %}
 - `{{ p.gap }}` on {{ subject(claim.subject_id) }} ({{ "decides" if p.decision_relevant else "for information" }}).{{ cites(claim.citations) }}
 {% elif claim.code == "DIRECT_AGGREGATE" %}
-- Blocked owners hold {{ p.aggregate_pct | pct }} % of {{ name(claim.subject_id) }} directly.{{ cites(claim.citations) }}
+- Blocked owners hold {{ stake(p.aggregate_pct, p.get("aggregate_pct_high"), p.get("pct_bounds")) }} of {{ name(claim.subject_id) }} directly.{{ cites(claim.citations) }}
 {% elif claim.code == "EFFECTIVE_EXPOSURE" %}
-- Effective exposure of {{ name(claim.subject_id) }} (a risk signal, not the legal test): {% if p.sum_pct is not none %}{{ p.sum_pct | pct }} % over all paths, {{ p.max_pct | pct }} % on the largest{% else %}not known{% endif %}{% if p.has_unknown %}; a path has a stake of unknown size, so this is a lower bound{% endif %}.{{ cites(claim.citations) }}
+- Effective exposure of {{ name(claim.subject_id) }} (a risk signal, not the legal test): {% if p.sum_pct is not none %}{{ p.sum_pct | pct }}{% if p.sum_pct_high is defined %} % to {{ p.sum_pct_high | pct }}{% endif %} % over all paths, {{ p.max_pct | pct }}{% if p.max_pct_high is defined %} % to {{ p.max_pct_high | pct }}{% endif %} % on the largest{% else %}not known{% endif %}{% if p.has_unknown %}; a path has a stake of unknown size, so this is a lower bound{% endif %}.{{ cites(claim.citations) }}
+{% elif claim.code == "STAKE_COVERAGE" %}
+- Stakes stated on {{ p.stated }} of {{ p.total }} ownership links on the paths ({{ p.ranges }} as ranges); the others are presumed.{{ cites(claim.citations) }}
 {% elif claim.code == "NO_DESIGNATION_FOUND" %}
 - No active designation reaches any of the {{ p.nodes_checked }} entities checked.{{ cites(claim.citations) }}
 {% elif claim.code == "COVERAGE" %}
@@ -50,8 +54,8 @@ Rule pack: `{{ memo.rule_pack.id }}` (`{{ memo.rule_pack.hash[:16] }}`), blockin
 ## Why
 
 {{ claims_of(["REASON"]) }}
-{{- claims_of(["DESIGNATED", "POSSIBLY_DESIGNATED", "BLOCKED_BY_OWNERSHIP", "POSSIBLY_BLOCKED_BY_OWNERSHIP", "PRESUMED_MAJORITY"]) }}
-{{- claims_of(["DIRECT_AGGREGATE", "EFFECTIVE_EXPOSURE", "NO_DESIGNATION_FOUND"]) -}}
+{{- claims_of(["DESIGNATED", "POSSIBLY_DESIGNATED", "BLOCKED_BY_OWNERSHIP", "POSSIBLY_BLOCKED_BY_OWNERSHIP", "POSSIBLY_BLOCKED_BY_RANGE", "PRESUMED_MAJORITY"]) }}
+{{- claims_of(["DIRECT_AGGREGATE", "EFFECTIVE_EXPOSURE", "STAKE_COVERAGE", "NO_DESIGNATION_FOUND"]) -}}
 {% if memo.paths %}
 
 ## Evidence paths

@@ -6,6 +6,9 @@ id: ofac_50pct_v1
 ownership_threshold_pct: 50
 threshold_operator: ">="
 aggregate_blocked_owners: true
+# Shares only: OFAC's 50 Percent Rule is a test of ownership. A voting stake that
+# could meet the threshold is reviewed as a control link (owner's decision, 2026-11-19).
+ownership_measures: [equity]
 
 # The lists this pack applies. Only their designations block or possibly
 # block. FX-OFAC-SDN is the fixtures' stand-in for the SDN list; us_ofac_sdn is

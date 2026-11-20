@@ -32,7 +32,10 @@ STAGE_TABLES: dict[str, str] = {
     ),
     "stg_relationships": (
         "subject_ref TEXT, object_ref TEXT, rel_type TEXT, pct DECIMAL(7,4), basis TEXT,"
-        " is_ultimate BOOLEAN, pct_raw TEXT"
+        " is_ultimate BOOLEAN, pct_raw TEXT,"
+        # A stake as a range (Step 16): a point has both ends equal and `[]`; an
+        # unknown stake has none. `interest` is `equity` or `voting`.
+        " pct_low DECIMAL(7,4), pct_high DECIMAL(7,4), pct_bounds TEXT, interest TEXT"
     ),
     "stg_sanctions": (
         "entity_ref TEXT, program TEXT, list_date DATE, list_source TEXT, is_active BOOLEAN"
@@ -97,10 +100,18 @@ MAPPERS: dict[str, Mapper] = {
             _text("subject_ref"),
             _text("object_ref"),
             _text("rel_type"),
-            _cast("pct", "DECIMAL(7,4)"),
+            # A closed range of one value is the point it names.
+            f"coalesce({_cast('pct', 'DECIMAL(7,4)')}, CASE WHEN {_text('pct_bounds')} = '[]'"
+            f" AND {_cast('pct_low', 'DECIMAL(7,4)')} = {_cast('pct_high', 'DECIMAL(7,4)')}"
+            f" THEN {_cast('pct_high', 'DECIMAL(7,4)')} END)",
             _text("basis"),
             _cast("is_ultimate", "BOOLEAN"),
             _text("pct"),
+            # A file written before ranges states only `pct`: the point it names.
+            f"coalesce({_cast('pct_low', 'DECIMAL(7,4)')}, {_cast('pct', 'DECIMAL(7,4)')})",
+            f"coalesce({_cast('pct_high', 'DECIMAL(7,4)')}, {_cast('pct', 'DECIMAL(7,4)')})",
+            f"coalesce({_text('pct_bounds')}, CASE WHEN {_text('pct')} IS NOT NULL THEN '[]' END)",
+            f"coalesce({_text('interest')}, 'equity')",
         ),
     ),
     "sanctions": Mapper(
@@ -225,6 +236,10 @@ def _gleif_relationships() -> Mapper:
             _case(rel_type, {n: repr(s[1]) for n, s in pick.items()}),
             _case(rel_type, {n: str(s[2]).lower() for n, s in pick.items()}),
             "NULL",
+            "NULL",
+            "NULL",
+            "NULL",
+            "'equity'",
         ),
         filters=(
             (FILTER_DELETED, f"{_g('DeletedAt')} IS NOT NULL"),
@@ -320,24 +335,45 @@ FILTER_NO_ENTITY = "NO_ENTITY"
 FILTER_NO_ENDS = "NO_ENDS"
 
 
-def os_percentage(text: str) -> str:
-    """SQL reading an FtM `percentage` as DECIMAL(7,4), or NULL.
+def os_percentage(text: str) -> tuple[str, str, str, str]:
+    """SQL reading an FtM `percentage` as a stake: (pct, pct_low, pct_high, pct_bounds).
 
-    `50`, `50%`, `50.0` and `50,5` are read as written; a range (`25-50`) takes
-    its upper bound, and `<10` or `>50` the bound it states: the cautious side,
-    since a stake is compared with a threshold from below. Anything else
-    (`majority`) is NULL: an edge of unknown share, a `NULL_PCT_EDGE` gap.
+    `50`, `50%`, `50.0` and `50,5` are the point they write (`pct` and both ends
+    equal, `[]`). A range is kept as one, never rounded to a bound: `25-50` is
+    `[25, 50]`, `<10` is `(0, 10)`, `≤10` `(0, 10]`, `>50` `(50, 100]` and `≥50`
+    `[50, 100]`; `pct` is NULL. Anything else (`majority`) is NULL in all four:
+    an edge of unknown share, a `NULL_PCT_EDGE` gap.
     """
     number = r"\d+(\.\d+)?"
     clean = f"trim(replace(replace({text}, '%', ''), ',', '.'))"
-    bound = (
-        f"CASE WHEN regexp_full_match({clean}, '[<>≤≥~]?\\s*{number}')"
-        f" THEN regexp_extract({clean}, '{number}')"
-        f" WHEN regexp_full_match({clean}, '{number}\\s*[-–]\\s*{number}')"
-        f" THEN regexp_extract({clean}, '[-–]\\s*({number})$', 1) END"
+    single = f"regexp_full_match({clean}, '[<>≤≥~]?\\s*{number}')"
+    pair = f"regexp_full_match({clean}, '{number}\\s*[-–]\\s*{number}')"
+    sign = f"regexp_extract({clean}, '^([<>≤≥~]?)', 1)"
+    first = f"TRY_CAST(regexp_extract({clean}, '{number}') AS DECIMAL(9,4))"
+    second = f"TRY_CAST(regexp_extract({clean}, '[-–]\\s*({number})$', 1) AS DECIMAL(9,4))"
+    low = (
+        f"CASE WHEN {single} THEN CASE WHEN {sign} IN ('<', '≤') THEN 0 ELSE {first} END"
+        f" WHEN {pair} THEN {first} END"
     )
-    value = f"TRY_CAST({bound} AS DECIMAL(9,4))"
-    return f"CASE WHEN {value} > 0 AND {value} <= 100 THEN CAST({value} AS DECIMAL(7,4)) END"
+    high = (
+        f"CASE WHEN {single} THEN CASE WHEN {sign} IN ('>', '≥') THEN 100 ELSE {first} END"
+        f" WHEN {pair} THEN {second} END"
+    )
+    bounds = (
+        f"CASE WHEN {single} THEN CASE {sign} WHEN '<' THEN '()' WHEN '≤' THEN '(]'"
+        f" WHEN '>' THEN '(]' ELSE '[]' END WHEN {pair} THEN '[]' END"
+    )
+    # A stake within (0, 100], low end first; an open range of no width is no range.
+    valid = (
+        f"(({low}) >= 0 AND ({high}) > 0 AND ({high}) <= 100 AND ({low}) <= ({high})"
+        f" AND NOT (({low}) = ({high}) AND ({bounds}) <> '[]'))"
+    )
+    return (
+        f"CASE WHEN {valid} AND ({low}) = ({high}) THEN CAST({high} AS DECIMAL(7,4)) END",
+        f"CASE WHEN {valid} THEN CAST({low} AS DECIMAL(7,4)) END",
+        f"CASE WHEN {valid} THEN CAST({high} AS DECIMAL(7,4)) END",
+        f"CASE WHEN {valid} THEN {bounds} END",
+    )
 
 
 def _os_entities() -> Mapper:
@@ -392,16 +428,19 @@ def _os_sanctions() -> Mapper:
 def _os_relationships() -> Mapper:
     schema = _os("schema")
     specs = OS_LINK_SCHEMAS
+    stake = os_percentage(_first("percentage"))
     return Mapper(
         "stg_relationships",
         (
             _case(schema, {s: _os_ref(spec[2]) for s, spec in specs.items()}),
             _case(schema, {s: _os_ref(spec[3]) for s, spec in specs.items()}),
             _case(schema, {s: repr(spec[0]) for s, spec in specs.items()}),
-            f"CASE WHEN {schema} = 'Ownership' THEN {os_percentage(_first('percentage'))} END",
+            f"CASE WHEN {schema} = 'Ownership' THEN {stake[0]} END",
             _case(schema, {s: repr(spec[1]) for s, spec in specs.items()}),
             "false",
             _first("percentage"),
+            *(f"CASE WHEN {schema} = 'Ownership' THEN {end} END" for end in stake[1:]),
+            "'equity'",
         ),
         filters=(
             (FILTER_UNSUPPORTED, f"NOT {_in(schema, tuple(specs))}"),

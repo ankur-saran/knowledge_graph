@@ -138,3 +138,101 @@
     uk_ofsi: {recommendation: CLEAR, blocked: [A]}
     eu: {recommendation: CLEAR, blocked: [A]}
   rationale: Below every threshold and every risk signal.
+
+# --- Step 16: stakes stated as ranges, and votes. A range meets a test only when
+# every value in it does; when only some do, the holder is possibly blocked. The
+# UK and EU packs test votes as well as shares; OFAC tests shares, and reviews a
+# voting stake that could meet its threshold as a control link.
+- id: PACK-10
+  title: a designated owner of more than 25 % and at most 50 %
+  target: T
+  edges:
+    - {upper: A, lower: T, range: "(25, 50]"}
+  designations:
+    - {node: A}
+  expected:
+    ofac: {recommendation: REVIEW, reasons: [DECISION_RELEVANT_GAP, EFFECTIVE_EXPOSURE, NEAR_MISS_AGGREGATE, POSSIBLY_BLOCKED], blocked: [A], possibly_blocked: [T], gaps: [PCT_RANGE]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [EFFECTIVE_EXPOSURE, NEAR_MISS_AGGREGATE], blocked: [A], gaps: [PCT_RANGE]}
+    eu: {recommendation: REVIEW, reasons: [EFFECTIVE_EXPOSURE, NEAR_MISS_AGGREGATE], blocked: [A], gaps: [PCT_RANGE]}
+  rationale: >-
+    The stake may be exactly half, which OFAC's ">=" blocks, or less: possibly
+    blocked, and the range is the gap that decides. No value of it is more than
+    half, so the UK and EU tests are not met; as for 50 % stated (PACK-01), the
+    stake is a near miss and a large exposure, so a reviewer sees it.
+
+- id: PACK-11
+  title: a designated owner of more than half and less than 75 %
+  target: T
+  edges:
+    - {upper: A, lower: T, range: "(50, 75)"}
+  designations:
+    - {node: A}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T], gaps: [PCT_RANGE]}
+    uk_ofsi: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T], gaps: [PCT_RANGE]}
+    eu: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T], gaps: [PCT_RANGE]}
+  rationale: Every value of the range is more than half, so every pack's test is met.
+
+- id: PACK-12
+  title: a designated owner of 75 % to 100 %
+  target: T
+  edges:
+    - {upper: A, lower: T, range: "[75, 100]"}
+  designations:
+    - {node: A}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T], gaps: [PCT_RANGE]}
+    uk_ofsi: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T], gaps: [PCT_RANGE]}
+    eu: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T], gaps: [PCT_RANGE]}
+  rationale: The register's top band; the range is recorded, and it decides nothing.
+
+- id: PACK-13
+  title: two designated owners of more than 25 % and at most 50 % each
+  target: T
+  edges:
+    - {upper: A, lower: T, range: "(25, 50]"}
+    - {upper: B, lower: T, range: "(25, 50]"}
+  designations:
+    - {node: A}
+    - {node: B}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, B, T], gaps: [PCT_RANGE]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [EFFECTIVE_EXPOSURE, NEAR_MISS_AGGREGATE], blocked: [A, B], gaps: [PCT_RANGE]}
+    eu: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, B, T], gaps: [PCT_RANGE]}
+  rationale: >-
+    Added together the two hold more than half and at most all of it, and every
+    value of that meets OFAC's and the EU's test. The UK pack tests the largest
+    holding alone, which may be half and no more: a near miss for review.
+
+- id: PACK-14
+  title: a designated owner of 10 % of the shares and 60 % of the votes
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 10}
+    - {upper: A, lower: T, pct: 60, interest: voting}
+  designations:
+    - {node: A}
+  expected:
+    ofac: {recommendation: REVIEW, reasons: [CONTROL_LINK], blocked: [A]}
+    uk_ofsi: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T]}
+    eu: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T]}
+  rationale: >-
+    The UK and EU tests count voting rights, and a majority of the votes meets
+    them. OFAC's rule is ownership of shares; a voting majority is control, sent
+    for review, never a block.
+
+- id: PACK-15
+  title: a range on a holder no designated party reaches
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 10}
+    - {upper: X, lower: T, range: "(25, 50]"}
+  designations:
+    - {node: A}
+  expected:
+    ofac: {recommendation: CLEAR, blocked: [A], gaps: [PCT_RANGE]}
+    uk_ofsi: {recommendation: CLEAR, blocked: [A], gaps: [PCT_RANGE]}
+    eu: {recommendation: CLEAR, blocked: [A], gaps: [PCT_RANGE]}
+  rationale: >-
+    The range is on an owner that is not designated and not on any blocked
+    party's path, so it decides nothing: a gap for information only.

@@ -2,122 +2,466 @@
   "decisions": {
     "SCEN-01": {
       "decision_id": "851725d0a4ac570d",
+      "outcome": {
+        "blocked_set": [],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [],
+        "recommendation": "CLEAR"
+      },
       "payload_sha256": "96437a61dad63604e13c335e7639292f7b4005c8d5eb950825a8b6192687e949"
     },
     "SCEN-02": {
       "decision_id": "4ec5da8b639f397f",
+      "outcome": {
+        "blocked_set": [
+          "lei:FXS02TARGET000000000"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "DIRECT_DESIGNATION"
+        ],
+        "recommendation": "ESCALATE"
+      },
       "payload_sha256": "281c73e5e4ee09ec45107a57864d497a6689c71c1768a7d3c38fa74f338ec58b"
     },
     "SCEN-03": {
       "decision_id": "f43343f620651115",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s03-owner-a",
+          "fx_list:s03-owner-b",
+          "lei:FXS03TARGET000000000"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "DERIVED_50PCT"
+        ],
+        "recommendation": "ESCALATE"
+      },
       "payload_sha256": "417c870d91882b8868220592dec4e3420b91fa48d4807ffdb939b5517566024f"
     },
     "SCEN-04": {
       "decision_id": "b36085ef392ad4e3",
+      "outcome": {
+        "blocked_set": [
+          "lei:FXS04PARENT000000000"
+        ],
+        "gap_codes": [
+          "NULL_PCT_EDGE"
+        ],
+        "possibly_blocked_set": [
+          "lei:FXS04TARGET000000000"
+        ],
+        "reasons": [
+          "DECISION_RELEVANT_GAP",
+          "POSSIBLY_BLOCKED"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "c0da0aca58d1c744504bb1f0c91dee3984edac4e2a8e880da7a7f11c52cd3742"
     },
     "SCEN-05": {
       "decision_id": "e929badee8a2b8c3",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s05-owner-a",
+          "fx_list:s05-owner-b"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "EFFECTIVE_EXPOSURE",
+          "NEAR_MISS_AGGREGATE"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "d1c66da6e207ee6190d9871e56387fb70f2548f14058bf2c808a3259f0ed3c78"
     },
     "SCEN-06": {
       "decision_id": "3e860371aab46a62",
+      "outcome": {
+        "blocked_set": [
+          "lei:FXS06INTER1000000000",
+          "lei:FXS06INTER2000000000",
+          "lei:FXS06TARGET000000000",
+          "lei:FXS06TOP000000000000"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "DERIVED_50PCT"
+        ],
+        "recommendation": "ESCALATE"
+      },
       "payload_sha256": "1d7f3346af1a7ba6da7f5e277f756bc289fb0380f5e8fa0515890155c8e9f005"
     },
     "SCEN-07": {
       "decision_id": "966abc63a152f1a1",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s07-owner-a",
+          "fx_list:s07-owner-b",
+          "lei:FXS07TARGET000000000"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "DERIVED_50PCT"
+        ],
+        "recommendation": "ESCALATE"
+      },
       "payload_sha256": "d4140a6108b28d907c373eeab00f0e99fd867179f2d0be7a81a828c1ef13e6ab"
     },
     "SCEN-08": {
       "decision_id": "dcd65ab9ed623e98",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s08-owner"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "EFFECTIVE_EXPOSURE"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "adc77246ed2e1e74211bb99da0ead8d049a65aa2d11952dff7ecc992aeeeae75"
     },
     "SCEN-09": {
       "decision_id": "4a23ac3fbc0cf994",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s09-blocked"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "EFFECTIVE_EXPOSURE"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "ba81de5e2db80dfd24b818b7b0981238d2086a9308ce2ae806f03af21abb8c8d"
     },
     "SCEN-10": {
       "decision_id": "b6f5f396bc62d3e5",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s10-blocked"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [],
+        "recommendation": "CLEAR"
+      },
       "payload_sha256": "de2b264e8f8bdd56a18c6cf4e2e0f8376fb7097b9b1e3851f15ac1ac2373b978"
     },
     "SCEN-11": {
       "decision_id": "c325561682e5aa5c",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s11-director"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "CONTROL_LINK"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "aee1d7a55c0475add1941b35d005d9b880eceee3765322882ee71e2f279134c2"
     },
     "SCEN-12": {
       "decision_id": "238f6684859f85ef",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s12-blocked"
+        ],
+        "gap_codes": [
+          "REPORTING_EXCEPTION"
+        ],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "DECISION_RELEVANT_GAP"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "d7c4aedf48c6f20bb7481358d9d6220d253928d482c59cb74fea6ef880bcf678"
     },
     "SCEN-13": {
       "decision_id": "ef7689445abfdde3",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s13-blocked"
+        ],
+        "gap_codes": [
+          "LAPSED_LEI"
+        ],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "DECISION_RELEVANT_GAP"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "48bb0c25ea899b9d242468285a3780e0c87aca68ef9f0e8366499e3dbe0593b6"
     },
     "SCEN-14": {
       "decision_id": "ac32484106c35522",
+      "outcome": {
+        "blocked_set": [],
+        "gap_codes": [
+          "REVIEW_BAND_MATCH"
+        ],
+        "possibly_blocked_set": [
+          "lei:FXS14OWNER0000000000",
+          "lei:FXS14TARGET000000000"
+        ],
+        "reasons": [
+          "DECISION_RELEVANT_GAP",
+          "POSSIBLY_BLOCKED"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "a27b005096fa87906b69dba3d209b2a55a3037241928a5085448f29c4305a1c8"
     },
     "SCEN-15": {
       "decision_id": "9072ca02f5653e99",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s15-blocked",
+          "lei:FXS15TARGET000000000"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "DERIVED_50PCT"
+        ],
+        "recommendation": "ESCALATE"
+      },
       "payload_sha256": "1026b67986fd77e7b0028368b185c006de8d551dd4631dbff14a178f5d7ddb7d"
     },
     "SCEN-16": {
       "decision_id": "007c29ffb0895aae",
+      "outcome": {
+        "blocked_set": [],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [],
+        "recommendation": "CLEAR"
+      },
       "payload_sha256": "a9c8a05c23f0dabfdc71d01de008767cadc65f3027b5f3fd2aa4fb6968c42748"
     },
     "SCEN-17": {
       "decision_id": "309db01b686a6371",
+      "outcome": {
+        "blocked_set": [],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [],
+        "recommendation": "CLEAR"
+      },
       "payload_sha256": "07586ae5eb4746767479b5d5350e8bda69195f24e75889e460c8b6afc7018adc"
     },
     "SCEN-18": {
       "decision_id": "24676f1926ae2d5f",
+      "outcome": {
+        "blocked_set": [
+          "lei:FXS18OWNER0000000000"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "EFFECTIVE_EXPOSURE"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "73bc4b651ec6409501dd315654006578fa2a2221c2bc7720c5c5d1dbaa4f558f"
     },
     "SCEN-19": {
       "decision_id": "8f74cac12cefcf81",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s19-blocked"
+        ],
+        "gap_codes": [
+          "PCT_SUM_OVER_100"
+        ],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "DECISION_RELEVANT_GAP"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "c119cd9a2dc9792cf9352be1d821d9c22af316ffee65d44151e2e62db2807194"
     },
     "SCEN-20": {
       "decision_id": "c3341366cd9f5644",
+      "outcome": {
+        "blocked_set": [],
+        "gap_codes": [
+          "LAPSED_LEI",
+          "REPORTING_EXCEPTION"
+        ],
+        "possibly_blocked_set": [],
+        "reasons": [],
+        "recommendation": "CLEAR"
+      },
       "payload_sha256": "979e0afb612587765a8254b0a10d0cf33348e22ff0df9c0652f5bfbd669f9ab1"
     },
     "SCEN-21": {
       "decision_id": "1e1bdfc3fa7043d0",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s21-blocked"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "EFFECTIVE_EXPOSURE"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "fa8f2aa1591323337da1bd5652aa924347faae14e242ae1bbf8f4c38c5274891"
     },
     "SCEN-22": {
       "decision_id": "3a11649107b80ded",
+      "outcome": {
+        "blocked_set": [],
+        "gap_codes": [
+          "DEPTH_LIMIT_REACHED"
+        ],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "DECISION_RELEVANT_GAP"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "49f8402ddddaa91cdd99800e3e9237806976331c6994060c44cb2fb061f5f859"
     },
     "SCEN-23": {
       "decision_id": "a05a109afe28827a",
+      "outcome": {
+        "blocked_set": [],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "ENTITY_NOT_FOUND"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "4da4705a5ce5c8a1ad08740d0da9e85014be964cd2787efccd837dd8ef5f2e58"
     },
     "SCEN-24": {
       "decision_id": "6f0b6a7262f6d986",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s24-owner",
+          "lei:FXS24TARGET000000000"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "DERIVED_50PCT"
+        ],
+        "recommendation": "ESCALATE"
+      },
       "payload_sha256": "bac344649aa388db9d794a24f147d47c7be7a234281397386390231abe6f95c5"
     },
     "SCEN-25": {
       "decision_id": "e479d8c80c0159c2",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s25-owner-a",
+          "fx_list:s25-owner-b"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "EFFECTIVE_EXPOSURE",
+          "NEAR_MISS_AGGREGATE"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "3798e3b55afb3a392168545de6eefbea629ac0376ae3931cae85ed5dd7e90cba"
     },
     "SCEN-26": {
       "decision_id": "e159bb61879414f1",
+      "outcome": {
+        "blocked_set": [
+          "lei:FXS26OWNER0000000000",
+          "lei:FXS26TARGET000000000"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "DERIVED_50PCT"
+        ],
+        "recommendation": "ESCALATE"
+      },
       "payload_sha256": "b6b01b0363d0a1399542484ae4805588765b89ef95b308a9bcb519b0ce885c79"
     },
     "SCEN-27": {
       "decision_id": "a0b589bf67cf7f14",
+      "outcome": {
+        "blocked_set": [],
+        "gap_codes": [
+          "POSSIBLE_DUPLICATE"
+        ],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "DECISION_RELEVANT_GAP"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "79acd6a9c40f3c3e095f2768da05ee0b8e6d385b824c2af323bd1df93dd8ef4d"
     },
     "SCEN-28": {
       "decision_id": "9e236296b82a9f6e",
+      "outcome": {
+        "blocked_set": [
+          "fx_list:s28-director"
+        ],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "CONTROL_LINK"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "f68f4c81161b58c450cb4a606a87fd91143d0598ced85bcb5cac0fb1df733593"
     },
     "SCEN-29": {
       "decision_id": "dd6a5f4fe9d3863d",
+      "outcome": {
+        "blocked_set": [],
+        "gap_codes": [
+          "REVIEW_BAND_MATCH"
+        ],
+        "possibly_blocked_set": [
+          "lei:FXS29OWNER0000000000",
+          "lei:FXS29TARGET000000000"
+        ],
+        "reasons": [
+          "DECISION_RELEVANT_GAP",
+          "POSSIBLY_BLOCKED"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "0a933e1fea43ea73b1f32efebc235ecf7103301ac13f1ad32f349f64757fb73c"
     },
     "SCEN-30": {
       "decision_id": "250de573e797c607",
+      "outcome": {
+        "blocked_set": [],
+        "gap_codes": [],
+        "possibly_blocked_set": [],
+        "reasons": [
+          "OTHER_REGIME_DESIGNATION"
+        ],
+        "recommendation": "REVIEW"
+      },
       "payload_sha256": "e415e74099a769ac8554791411f72cefdee63b2a9a5b200568612c93edbedd63"
     }
   },

@@ -25,7 +25,8 @@ _NODE_COLUMNS = (
     " supporting_records"
 )
 _EDGE_COLUMNS = (
-    "id, subject_id, object_id, rel_type, pct, basis, is_ultimate,"
+    "id, subject_id, object_id, rel_type, pct, pct_low, pct_high, pct_bounds, interest,"
+    " basis, is_ultimate,"
     f" {_PROVENANCE}, supporting_records"
 )
 

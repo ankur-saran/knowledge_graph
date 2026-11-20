@@ -25,11 +25,12 @@ from ubo_sentinel.models.evidence import (
     ReasonCode,
 )
 from ubo_sentinel.models.provenance import Confidence, NonEmptyStr, Provenance
-from ubo_sentinel.models.relationship import Pct, RelType
+from ubo_sentinel.models.relationship import Interest, Pct, PctBounds, PctLow, RelType
 from ubo_sentinel.models.sanction import MatchType
 
 # Raise when a change alters the memo a screen produces. Part of `PIPELINE_VERSION`.
-MEMO_SCHEMA_VERSION = 1
+# 2: stakes as ranges, the edge's interest, stake coverage (Step 16).
+MEMO_SCHEMA_VERSION = 2
 
 DISCLAIMER = (
     "A recommendation for a human reviewer, not a decision and not legal advice."
@@ -43,6 +44,8 @@ ClaimCode = Literal[
     # Its owners in the set hold enough of it.
     "BLOCKED_BY_OWNERSHIP",
     "POSSIBLY_BLOCKED_BY_OWNERSHIP",
+    # Its owners' stakes are stated as ranges, and only some of their values meet the test.
+    "POSSIBLY_BLOCKED_BY_RANGE",
     # An ownership edge without a percentage to such an owner.
     "PRESUMED_MAJORITY",
     # A rule that fired; `params.reason` is the reason code.
@@ -54,6 +57,8 @@ ClaimCode = Literal[
     "NO_DESIGNATION_FOUND",
     # How far the screen went and what it read.
     "COVERAGE",
+    # How many ownership links on the paths state their stake, and how many as ranges.
+    "STAKE_COVERAGE",
 ]
 
 # What a citation points at. `record` is any other source record (a reporting
@@ -150,6 +155,12 @@ class MemoEdge(_Model):
     lower_id: NonEmptyStr
     rel_type: RelType
     pct: Pct | None = None
+    # A stake stated as a range: its ends and bounds, with `pct` empty. Left out of
+    # the dump for a point or an unknown stake, as `interest` is for shares.
+    pct_low: PctLow | None = Field(default=None, exclude_if=lambda value: value is None)
+    pct_high: Pct | None = Field(default=None, exclude_if=lambda value: value is None)
+    pct_bounds: PctBounds | None = Field(default=None, exclude_if=lambda value: value is None)
+    interest: Interest = Field(default="equity", exclude_if=lambda value: value == "equity")
     is_ultimate: bool = False
     provenance: Provenance
 

@@ -42,7 +42,8 @@ from ubo_sentinel.pipeline.sources import CONTEXT_DATASETS, SOURCE_RANK
 
 # Raise this when a change here alters the rows Silver holds for the same Bronze
 # rows. A set built by another version is not reused. 5: `CONFLICTING_PCT` (Step 15).
-TRANSFORM_VERSION = 5
+# 6: stakes as ranges and an interest (equity or voting) on every edge (Step 16).
+TRANSFORM_VERSION = 6
 
 REJECT_UNRESOLVED_REF = "UNRESOLVED_REF"
 REJECT_SELF_LOOP = "SELF_LOOP_AFTER_MERGE"
@@ -72,7 +73,7 @@ _FUNCTIONS = {
     "ubo_similarity_normalised": (similarity_normalised, ["VARCHAR", "VARCHAR"], "DOUBLE"),
     "ubo_relationship_id": (
         relationship_id,
-        ["VARCHAR", "VARCHAR", "VARCHAR", "BOOLEAN"],
+        ["VARCHAR", "VARCHAR", "VARCHAR", "BOOLEAN", "VARCHAR"],
         "VARCHAR",
     ),
     "ubo_sanction_id": (sanction_id, ["VARCHAR", "VARCHAR", "VARCHAR"], "VARCHAR"),
@@ -566,34 +567,36 @@ def _write_relationships(
         " FROM stg_edges WHERE reject IS NOT NULL",
         [set_id],
     )
-    # One edge per id. The newest record that gives a percentage decides it; a
-    # later record without one does not erase a known stake.
+    # One edge per id. The newest record that states a stake (a point or a range)
+    # decides it; a later record without one does not erase a known stake. A
+    # voting stake is another edge than the equity stake of the same pair.
     con.execute(
         f"""
         INSERT INTO stg_silver_relationships
         WITH keys AS (
             -- Each id is computed once, whatever the number of records of the edge.
-            SELECT subject_id, object_id, rel_type, is_ultimate,
-                ubo_relationship_id(subject_id, object_id, rel_type, is_ultimate) AS id
+            SELECT subject_id, object_id, rel_type, is_ultimate, interest,
+                ubo_relationship_id(subject_id, object_id, rel_type, is_ultimate, interest) AS id
             FROM (
-                SELECT DISTINCT subject_id, object_id, rel_type, is_ultimate
+                SELECT DISTINCT subject_id, object_id, rel_type, is_ultimate, interest
                 FROM stg_edges WHERE reject IS NULL
             )
         ), accepted AS (
             SELECT e.*, k.id
             FROM stg_edges e
-            JOIN keys k USING (subject_id, object_id, rel_type, is_ultimate)
+            JOIN keys k USING (subject_id, object_id, rel_type, is_ultimate, interest)
             WHERE e.reject IS NULL
         ), ranked AS (
             SELECT *, row_number() OVER (
                 PARTITION BY id
-                ORDER BY (pct IS NULL), as_of DESC, confidence DESC, source, source_record_id
+                ORDER BY (pct_high IS NULL), as_of DESC, confidence DESC, source, source_record_id
             ) AS rn FROM accepted
         ), supporting AS (
             SELECT id, {_SUPPORTING_RECORDS} AS supporting_records
             FROM accepted GROUP BY id
         )
-        SELECT ?, w.id, w.subject_id, w.object_id, w.rel_type, w.pct, w.basis, w.is_ultimate,
+        SELECT ?, w.id, w.subject_id, w.object_id, w.rel_type, w.pct,
+            w.pct_low, w.pct_high, w.pct_bounds, w.interest, w.basis, w.is_ultimate,
             {", ".join(f"w.{c.strip()}" for c in _PROV.split(","))}, s.supporting_records
         FROM ranked w JOIN supporting s ON s.id = w.id
         WHERE w.rn = 1
@@ -692,16 +695,23 @@ def _write_gaps(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
     )
     # Records of one edge that state different stakes: the newest decides the edge
     # (`_write_relationships`), and the disagreement is a gap on the asset, so it
-    # is never settled silently. One row per asset, naming each edge.
+    # is never settled silently. One row per asset, naming each edge. A stake is
+    # written as its figure, a range as its bounds (`(25.0000,50.0000]`), so two
+    # points are listed as they were before ranges.
     con.execute(
         f"""
         INSERT INTO stg_silver_gaps
-        WITH conflicts AS (
-            SELECT subject_id, object_id, rel_type, is_ultimate,
-                list_sort(list(DISTINCT CAST(pct AS VARCHAR))) AS pcts
-            FROM stg_edges WHERE reject IS NULL AND pct IS NOT NULL
-            GROUP BY subject_id, object_id, rel_type, is_ultimate
-            HAVING count(DISTINCT pct) > 1
+        WITH stated AS (
+            SELECT *, CASE WHEN pct IS NOT NULL THEN CAST(pct AS VARCHAR)
+                ELSE left(pct_bounds, 1) || CAST(pct_low AS VARCHAR) || ','
+                    || CAST(pct_high AS VARCHAR) || right(pct_bounds, 1) END AS stake
+            FROM stg_edges WHERE reject IS NULL AND pct_high IS NOT NULL
+        ), conflicts AS (
+            SELECT subject_id, object_id, rel_type, is_ultimate, interest,
+                list_sort(list(DISTINCT stake)) AS pcts
+            FROM stated
+            GROUP BY subject_id, object_id, rel_type, is_ultimate, interest
+            HAVING count(DISTINCT stake) > 1
         ), edges AS (
             SELECT r.*,
                 row_number() OVER (PARTITION BY r.object_id ORDER BY r.id) AS rn,
@@ -712,7 +722,7 @@ def _write_gaps(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
             FROM conflicts c JOIN stg_silver_relationships r
                 ON r.snapshot_set_id = ? AND r.subject_id = c.subject_id
                 AND r.object_id = c.object_id AND r.rel_type = c.rel_type
-                AND r.is_ultimate = c.is_ultimate
+                AND r.is_ultimate = c.is_ultimate AND r.interest = c.interest
         )
         SELECT ?, 'CONFLICTING_PCT', object_id, to_json({{'edges': found}}), {_PROV}
         FROM edges WHERE rn = 1
@@ -773,6 +783,6 @@ def _counts(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any]:
                 "stg_entities", "lei_status IS NULL AND lei_status_raw IS NOT NULL"
             ),
             # An ownership share written in words ("majority"): the edge has no percentage.
-            "pct": count("stg_relationships", "pct IS NULL AND pct_raw IS NOT NULL"),
+            "pct": count("stg_relationships", "pct_high IS NULL AND pct_raw IS NOT NULL"),
         },
     }

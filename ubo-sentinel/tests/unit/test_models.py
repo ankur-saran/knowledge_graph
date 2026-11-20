@@ -22,6 +22,8 @@ from ubo_sentinel.models import (
     sanction_id,
     sha256_hex,
 )
+from ubo_sentinel.models.canonical import short_id
+from ubo_sentinel.models.fixture_rows import RelationshipRow
 
 SNAPSHOT_IDS = {"fixtures": "abc123def456"}
 CREATED_AT = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
@@ -497,3 +499,88 @@ def test_a_screen_that_found_nothing_is_named_by_all_it_was_asked_for():
     assert make_decision(query_identifiers={"lei": "A" * 20}).decision_id == (
         make_decision().decision_id
     )
+
+
+# --- Step 16: stakes as ranges, and votes ----------------------------------------------
+
+
+def test_a_point_is_also_its_own_closed_range():
+    point = make_relationship()
+    assert (point.pct_low, point.pct_high, point.pct_bounds) == (
+        Decimal("30"),
+        Decimal("30"),
+        "[]",
+    )
+    assert point.stated and not point.is_range and point.interest == "equity"
+    unknown = make_relationship(pct=None)
+    assert (unknown.pct_low, unknown.pct_high, unknown.pct_bounds) == (None, None, None)
+    assert not unknown.stated
+    # A closed range of one value is the point.
+    same = make_relationship(pct=None, pct_low="30", pct_high="30", pct_bounds="[]")
+    assert same == point
+
+
+@pytest.mark.parametrize("bounds", ["[]", "(]", "[)", "()"])
+def test_a_range_states_both_ends_and_its_bounds(bounds):
+    stake = make_relationship(pct=None, pct_low="25", pct_high="50", pct_bounds=bounds)
+    assert stake.is_range and stake.stated and stake.pct is None
+    assert (str(stake.pct_low), str(stake.pct_high)) == ("25.0000", "50.0000")
+    # "Less than 10 %" starts at 0.
+    assert make_relationship(pct=None, pct_low="0", pct_high="10", pct_bounds="()").is_range
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"pct": None, "pct_low": "50", "pct_high": "25", "pct_bounds": "[]"},
+        {"pct": None, "pct_low": "25", "pct_high": "50"},
+        {"pct": None, "pct_low": "25", "pct_bounds": "[]"},
+        {"pct": None, "pct_low": "30", "pct_high": "30", "pct_bounds": "(]"},
+        {"pct": "30", "pct_low": "25", "pct_high": "50", "pct_bounds": "[]"},
+        {"pct": None, "pct_low": "25", "pct_high": "50", "pct_bounds": "{}"},
+        {"pct": None, "pct_low": "25", "pct_high": "101", "pct_bounds": "[]"},
+        {"interest": "economic"},
+    ],
+)
+def test_a_range_that_is_not_one_is_refused(fields):
+    with pytest.raises(ValidationError):
+        make_relationship(**fields)
+
+
+def test_an_equity_edge_keeps_its_id_and_a_voting_edge_has_another():
+    """Every edge written before stakes had an interest keeps its id (Step 16)."""
+    old = short_id(["owner-1", "asset-1", "OWNS", False])
+    assert relationship_id("owner-1", "asset-1", "OWNS", False) == old
+    assert relationship_id("owner-1", "asset-1", "OWNS", False, "equity") == old
+    assert relationship_id("owner-1", "asset-1", "OWNS", False, None) == old
+    voting = relationship_id("owner-1", "asset-1", "OWNS", False, "voting")
+    assert voting != old
+    assert voting == short_id(["owner-1", "asset-1", "OWNS", False, "voting"])
+
+
+def test_a_fixture_row_may_leave_out_the_range_columns_or_state_a_range():
+    base = {
+        "source": "fx",
+        "source_record_id": "r",
+        "as_of": "2026-01-01",
+        "confidence": "1.0",
+        "subject_ref": "fx:a",
+        "object_ref": "fx:b",
+        "rel_type": "OWNS",
+        "basis": "shareholding",
+        "is_ultimate": "false",
+    }
+    assert RelationshipRow.OPTIONAL_COLUMNS == ("pct_low", "pct_high", "pct_bounds", "interest")
+    assert RelationshipRow.model_validate(base | {"pct": "30"}).interest is None
+    ranged = RelationshipRow.model_validate(
+        base | {"pct_low": "25", "pct_high": "50", "pct_bounds": "(]", "interest": "voting"}
+    )
+    assert (ranged.pct, ranged.pct_bounds, ranged.interest) == (None, "(]", "voting")
+    for wrong in (
+        {"pct_low": "25", "pct_high": "50"},
+        {"pct": "30", "pct_low": "25", "pct_high": "50", "pct_bounds": "[]"},
+        {"pct_low": "30", "pct_high": "30", "pct_bounds": "()"},
+        {"rel_type": "CONTROLS", "basis": "directorship", "interest": "voting"},
+    ):
+        with pytest.raises(ValidationError):
+            RelationshipRow.model_validate(base | wrong)

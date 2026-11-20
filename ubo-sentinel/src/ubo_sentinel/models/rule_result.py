@@ -1,6 +1,6 @@
 """What the rule engine concludes for one target, and how it got there."""
 
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -13,11 +13,24 @@ from ubo_sentinel.models.evidence import (
     ReasonCode,
 )
 from ubo_sentinel.models.provenance import NonEmptyStr
+from ubo_sentinel.models.relationship import PctBounds
 
 BlockSet = Literal["BLOCKED", "POSSIBLY_BLOCKED"]
 # SEED: a designation put the node in the set. AGGREGATE: its owners in the set
 # hold enough of it. PRESUMED_MAJORITY: an edge without a percentage to such an owner.
-DerivationBasis = Literal["SEED", "AGGREGATE", "PRESUMED_MAJORITY"]
+# RANGE: its owners' stakes are stated as ranges, and some of their values meet
+# the test while not all do (Step 16).
+DerivationBasis = Literal["SEED", "AGGREGATE", "PRESUMED_MAJORITY", "RANGE"]
+
+
+def _absent(value: object) -> bool:
+    return value is None
+
+
+# The high end of a reported range and its bounds; both left out of a dump when
+# the figure is a point, so a finding over points is written as it was before.
+PctHigh = Annotated[Exposure | None, Field(default=None, exclude_if=_absent)]
+Bounds = Annotated[PctBounds | None, Field(default=None, exclude_if=_absent)]
 
 
 class _Model(BaseModel):
@@ -38,6 +51,9 @@ class NodeDerivation(_Model):
     round: int = Field(ge=0)
     # What the node's owners in the set hold of it. May exceed 100 on over-reported stakes.
     aggregate_pct: Exposure | None = None
+    # When that holding is a range: `aggregate_pct` is its low end, this its high end.
+    aggregate_pct_high: PctHigh = None
+    pct_bounds: Bounds = None
     edge_ids: list[str] = []
     sanction_ids: list[str] = []
 
@@ -51,6 +67,9 @@ class ReasonFinding(_Model):
     # The node or edge the finding is about.
     subject_id: NonEmptyStr
     pct: Exposure | None = None
+    # When the figure is a range: `pct` is its low end, this its high end.
+    pct_high: PctHigh = None
+    pct_bounds: Bounds = None
     edge_ids: list[str] = []
     sanction_ids: list[str] = []
 
@@ -58,6 +77,26 @@ class ReasonFinding(_Model):
 
     def sort_key(self) -> tuple[str, str]:
         return (self.code, self.subject_id)
+
+
+class StakeCoverage(_Model):
+    """The ownership links on the evidence paths, by what they state of their stake.
+
+    A decision that rests on presumed majorities says so: a reviewer reads how
+    many links carry a stated stake.
+    """
+
+    exact: int = Field(default=0, ge=0)
+    range: int = Field(default=0, ge=0)
+    none: int = Field(default=0, ge=0)
+
+    @property
+    def total(self) -> int:
+        return self.exact + self.range + self.none
+
+    @property
+    def stated(self) -> int:
+        return self.exact + self.range
 
 
 class RuleResult(_Model):
@@ -73,8 +112,12 @@ class RuleResult(_Model):
     data_gaps: list[DataGap] = []
     # What blocked owners hold of the target directly: the figure the legal test reads.
     aggregate_pct: Exposure
+    # When that holding is a range: `aggregate_pct` is its low end, this its high end.
+    aggregate_pct_high: PctHigh = None
+    aggregate_pct_bounds: Bounds = None
     findings: list[ReasonFinding] = []
     derivations: list[NodeDerivation] = []
+    stake_coverage: StakeCoverage = StakeCoverage()
     # What was looked at, so a CLEAR still says how far the screen went.
     max_depth: int = Field(ge=0)
     nodes_checked: int = Field(ge=1)

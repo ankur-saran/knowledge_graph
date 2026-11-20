@@ -12,6 +12,8 @@ threshold_operator: ">"
 # assumption for counsel to confirm. Adding them is the cautious side: it can
 # only block more, and every block goes to a reviewer.
 aggregate_blocked_owners: true
+# Shares or voting rights: either may meet the test; they are never added together.
+ownership_measures: [equity, voting]
 
 # FX-EU-LIST is the fixtures' stand-in (SCEN-30); eu_fsf is the OpenSanctions
 # dataset of the EU Financial Sanctions Files (checked 2026-10-28).

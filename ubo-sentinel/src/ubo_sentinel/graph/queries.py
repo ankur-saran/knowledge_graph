@@ -427,7 +427,7 @@ def get_sibling_entities(store: GraphStore, entity_id: str, limit: int = 50) -> 
             SiblingGroup(
                 parent=nodes[upper],
                 # The stake edge first, as a path cites it (6.2).
-                relationship=min(own, key=lambda e: (e.pct is None, e.id)),
+                relationship=min(own, key=lambda e: (not e.stated, e.id)),
                 total=total,
                 siblings=[
                     HeldEdge(entity=nodes[upper_lower(edge)[1]], relationship=edge) for edge in held
@@ -469,7 +469,7 @@ def _down_from(store: GraphStore, start: str, max_depth: int) -> nx.DiGraph:
         if not frontier or len(seen) > MAX_PATH_NODES:
             break
         rows = store.con.execute(
-            "SELECT upper_id, lower_id, pct IS NULL, id FROM graph_edges"
+            "SELECT upper_id, lower_id, pct_high IS NULL, id FROM graph_edges"
             f" WHERE snapshot_set_id = ? AND NOT is_ultimate AND upper_id IN {id_list()}",
             [store.set_id, frontier],
         ).fetchall()

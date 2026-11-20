@@ -185,9 +185,13 @@ def test_labels_follow_what_the_graph_holds_for_the_pair(store, monkeypatch):
         == "INDIRECT_INFO"
     )
     assert (
-        run.label_for(store, edge.model_copy(update={"interest": "voting"}), sure, asset)[0]
+        run.label_for(store, edge.model_copy(update={"interest": "economic"}), sure, asset)[0]
         == "INTEREST_INFO"
     )
+    # A direct holding of votes is a holding (Step 16): the pair's equity stake on
+    # record is another edge, so the votes are new.
+    voting = edge.model_copy(update={"interest": "voting"})
+    assert run.label_for(store, voting, sure, asset) == ("NEW", None)
 
 
 def test_windows_cover_the_pages_in_order_up_to_the_budget():

@@ -4,6 +4,7 @@ import csv
 import json
 import math
 import tempfile
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -14,7 +15,12 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from ubo_sentinel.agents import change_monitor, intake_assist
-from ubo_sentinel.agents.evaluator import compare_golden, golden_of, run_pipeline_suite
+from ubo_sentinel.agents.evaluator import (
+    compare_golden,
+    golden_moves,
+    golden_of,
+    run_pipeline_suite,
+)
 from ubo_sentinel.agents.extraction_eval import DocumentResult, load_labels, run_extraction_suite
 from ubo_sentinel.agents.investigation_eval import (
     ScenarioResult,
@@ -562,6 +568,15 @@ def _run_extraction(out: _Output, store: GraphStore) -> bool:
 def _golden(out: _Output, current: dict, update: bool) -> bool:
     """Compare the suite's decisions with the golden file, or write the file."""
     if update:
+        if GOLDEN_PATH.exists():
+            # The golden-move report: what moved since the file was last written.
+            golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
+            moves = golden_moves(golden, current)
+            for move in moves:
+                out.echo(f"  GOLDEN-MOVE  {move.line()}")
+            counts = Counter(move.verdict for move in moves)
+            summary = ", ".join(f"{counts[v]} {v}" for v in sorted(counts))
+            out.echo(f"  {'Golden moves':<22} {summary}")
         text = json.dumps(current, indent=2, sort_keys=True) + "\n"
         GOLDEN_PATH.write_text(text, encoding="utf-8", newline="\n")
         out.echo(f"  Golden decisions       written to {GOLDEN_PATH.as_posix()}")

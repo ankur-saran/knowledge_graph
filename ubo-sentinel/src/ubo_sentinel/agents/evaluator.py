@@ -1,7 +1,8 @@
 """Run the gold scenarios through the whole pipeline and compare."""
 
 import time
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 import duckdb
 
@@ -88,6 +89,17 @@ def run_pipeline_suite(
 # --- golden decisions -------------------------------------------------------------------
 
 
+def outcome_of(decision: Decision) -> dict[str, Any]:
+    """What a decision concludes, apart from its ids: the fields a golden move compares."""
+    return {
+        "recommendation": decision.recommendation,
+        "reasons": sorted(set(decision.reasons)),
+        "blocked_set": sorted(set(decision.blocked_set)),
+        "possibly_blocked_set": sorted(set(decision.possibly_blocked_set)),
+        "gap_codes": sorted({gap.code for gap in decision.data_gaps}),
+    }
+
+
 def golden_of(
     reports: list[ScenarioReport], snapshot_set_id: str, rule_pack_hash: str
 ) -> dict[str, Any]:
@@ -96,6 +108,8 @@ def golden_of(
     The audit log catches a decision that changed under its id only when the
     old decision is in that log. Kept in the repository, these catch it across
     commits: a change to what a screen produces that did not raise a version.
+    Each also keeps its outcome, so a later write can say whether only the ids
+    moved (`golden_moves()`) without the old database.
     """
     return {
         "snapshot_set_id": snapshot_set_id,
@@ -106,11 +120,64 @@ def golden_of(
             report.scenario_id: {
                 "decision_id": report.result.decision_id,
                 "payload_sha256": sha256_hex(report.result.canonical_payload()),
+                "outcome": outcome_of(report.result),
             }
             for report in sorted(reports, key=lambda item: item.scenario_id)
             if isinstance(report.result, Decision)
         },
     }
+
+
+# UNCHANGED: the same id and payload. ID_ONLY: the id or the payload moved, the
+# outcome did not. OUTCOME_CHANGED: the outcome moved. NOT_COMPARED: the golden
+# file kept no outcome for it (written before outcomes were kept). NEW, GONE: in
+# one of the two only.
+MoveVerdict = Literal["UNCHANGED", "ID_ONLY", "OUTCOME_CHANGED", "NOT_COMPARED", "NEW", "GONE"]
+
+
+@dataclass(frozen=True)
+class GoldenMove:
+    scenario_id: str
+    verdict: MoveVerdict
+    # The outcome fields that changed, for OUTCOME_CHANGED.
+    fields: tuple[str, ...] = ()
+
+    def line(self) -> str:
+        changed = f" ({', '.join(self.fields)})" if self.fields else ""
+        return f"{self.scenario_id}  {self.verdict}{changed}"
+
+
+def golden_moves(golden: dict[str, Any], current: dict[str, Any]) -> list[GoldenMove]:
+    """How each scenario's decision moved from the golden file to `current`.
+
+    Run before the file is written again, so a step that raises a version can
+    show that the ids moved and the outcomes did not, except where it says.
+    """
+    was, now = golden.get("decisions", {}), current["decisions"]
+    moves = []
+    for scenario_id in sorted(set(was) | set(now)):
+        old, new = was.get(scenario_id), now.get(scenario_id)
+        if old is None:
+            moves.append(GoldenMove(scenario_id, "NEW"))
+        elif new is None:
+            moves.append(GoldenMove(scenario_id, "GONE"))
+        elif (old["decision_id"], old["payload_sha256"]) == (
+            new["decision_id"],
+            new["payload_sha256"],
+        ):
+            moves.append(GoldenMove(scenario_id, "UNCHANGED"))
+        elif "outcome" not in old:
+            moves.append(GoldenMove(scenario_id, "NOT_COMPARED"))
+        else:
+            fields = tuple(
+                name
+                for name in sorted(new["outcome"])
+                if old["outcome"].get(name) != new["outcome"][name]
+            )
+            moves.append(
+                GoldenMove(scenario_id, "OUTCOME_CHANGED" if fields else "ID_ONLY", fields)
+            )
+    return moves
 
 
 def compare_golden(golden: dict[str, Any], current: dict[str, Any]) -> list[str]:

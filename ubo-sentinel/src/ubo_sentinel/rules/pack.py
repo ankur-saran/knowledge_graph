@@ -20,8 +20,9 @@ RULES_DIR = Path("rules")
 DEFAULT_PACK = "ofac"
 
 # Raise when a change to `rules/engine.py` alters what a pack concludes. It is
-# part of `rule_pack_hash`, and so of every `decision_id`.
-RULES_VERSION = 3
+# part of `rule_pack_hash`, and so of every `decision_id`. 4: stakes as ranges,
+# and the measures a pack tests (Step 16).
+RULES_VERSION = 4
 
 ThresholdPct = Annotated[Decimal, Field(gt=0, le=100)]
 
@@ -40,6 +41,10 @@ class RulePack(BaseModel):
     threshold_operator: Literal[">=", ">"]
     # False: no owner's stake is added to another's; the largest one is tested.
     aggregate_blocked_owners: bool
+    # What a stake may be a stake of for the test: shares, or shares and votes. A
+    # node meets the test on any one measure; measures are never added together.
+    # A voting stake outside them that could meet the threshold is a control link.
+    ownership_measures: list[Literal["equity", "voting"]] = Field(min_length=1)
     # Designations on these lists (`Sanction.list_source`) are the ones the pack applies.
     designation_lists: list[NonEmptyStr] = Field(min_length=1)
     other_designations: Literal["review", "ignore"]
@@ -61,9 +66,9 @@ class RulePack(BaseModel):
     # without one hashes as it did before the key existed.
     label: NonEmptyStr | None = Field(default=None, exclude_if=lambda value: value is None)
 
-    @field_validator("designation_lists")
+    @field_validator("designation_lists", "ownership_measures")
     @classmethod
-    def _sort_lists(cls, value: list[str]) -> list[str]:
+    def _sort_lists[T: str](cls, value: list[T]) -> list[T]:
         # A set: the order it is written in changes nothing, the hash included.
         return sorted(set(value))
 
@@ -76,6 +81,8 @@ class RulePack(BaseModel):
             raise ValueError("review_band_low may not be above match_threshold")
         if self.near_miss_pct >= self.ownership_threshold_pct:
             raise ValueError("near_miss_pct must be below ownership_threshold_pct")
+        if "equity" not in self.ownership_measures:
+            raise ValueError("ownership_measures must include equity")
         return self
 
     @property

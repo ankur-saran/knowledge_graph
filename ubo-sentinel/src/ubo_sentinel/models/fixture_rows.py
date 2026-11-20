@@ -7,7 +7,7 @@ fields. Ids, `repex_reason`, `match_type` and `match_confidence` are derived lat
 import csv
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, ClassVar, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -20,7 +20,7 @@ from pydantic import (
 
 from ubo_sentinel.models.entity import EntityStatus, EntityType, LeiStatus, entity_id
 from ubo_sentinel.models.provenance import Confidence, NonEmptyStr
-from ubo_sentinel.models.relationship import Basis, Pct, RelType
+from ubo_sentinel.models.relationship import Basis, Interest, Pct, PctBounds, PctLow, RelType
 from ubo_sentinel.models.reporting_exception import RepexCategory
 
 ALIAS_SEPARATOR = "|"
@@ -38,6 +38,9 @@ class _Row(BaseModel):
     """Columns every fixture file has; they become the row's `Provenance`."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+    # Columns a file may leave out, all of them or none: read as empty when it does.
+    # Added after files were written, so the files keep their bytes (Step 16).
+    OPTIONAL_COLUMNS: ClassVar[tuple[str, ...]] = ()
 
     source: NonEmptyStr
     source_record_id: NonEmptyStr
@@ -82,6 +85,8 @@ class EntityRow(_Row):
 
 
 class RelationshipRow(_Row):
+    OPTIONAL_COLUMNS: ClassVar[tuple[str, ...]] = ("pct_low", "pct_high", "pct_bounds", "interest")
+
     subject_ref: NonEmptyStr
     object_ref: NonEmptyStr
     rel_type: RelType
@@ -89,6 +94,12 @@ class RelationshipRow(_Row):
     pct: Pct | None = None
     basis: Basis
     is_ultimate: bool
+    # A stake stated as a range (Step 16): its ends and which of them belong to it.
+    # Empty with `pct` stated: the point `pct`. `interest` empty is `equity`.
+    pct_low: PctLow | None = None
+    pct_high: Pct | None = None
+    pct_bounds: PctBounds | None = None
+    interest: Interest | None = None
 
     @model_validator(mode="after")
     def _check(self) -> Self:
@@ -98,8 +109,23 @@ class RelationshipRow(_Row):
             raise ValueError(f"basis '{self.basis}' does not fit {self.rel_type}")
         if self.is_ultimate and self.rel_type != "CONSOLIDATED_BY":
             raise ValueError("only a CONSOLIDATED_BY edge may be ultimate")
-        if self.pct is not None and self.rel_type == "CONTROLS":
+        ends = (self.pct_low, self.pct_high, self.pct_bounds)
+        stated = self.pct is not None or self.pct_high is not None
+        if stated and self.rel_type == "CONTROLS":
             raise ValueError("a CONTROLS edge has no percentage")
+        if self.interest not in (None, "equity") and self.rel_type == "CONTROLS":
+            raise ValueError("a CONTROLS edge has no interest")
+        if any(end is None for end in ends) != all(end is None for end in ends):
+            raise ValueError("a range states pct_low, pct_high and pct_bounds together")
+        if self.pct_low is not None:
+            assert self.pct_high is not None
+            if self.pct_low > self.pct_high:
+                raise ValueError("pct_low may not be above pct_high")
+            point = self.pct_low == self.pct_high
+            if point and self.pct_bounds != "[]":
+                raise ValueError("a range of one value is closed: '[]'")
+            if self.pct is not None and not (point and self.pct == self.pct_high):
+                raise ValueError("pct and a range of other values")
         return self
 
 
@@ -159,7 +185,8 @@ def read_raw_rows[R: _Row](path: Path, model: type[R]) -> list[tuple[dict[str, s
     with path.open(encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         expected = list(model.model_fields)
-        if reader.fieldnames != expected:
+        without = [name for name in expected if name not in model.OPTIONAL_COLUMNS]
+        if reader.fieldnames not in (expected, without):
             raise ValueError(f"{path}: header is {reader.fieldnames}, expected {expected}")
         pairs = []
         for row in reader:

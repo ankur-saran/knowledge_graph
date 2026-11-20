@@ -33,18 +33,31 @@ _BASIS = {
 }
 
 
-def edge(upper, lower, pct=None, rel="OWNS", ultimate=False):
-    """An edge named by its upper and lower end, whatever the relation's own direction."""
+def edge(upper, lower, pct=None, rel="OWNS", ultimate=False, stake=None, interest="equity"):
+    """An edge named by its upper and lower end, whatever the relation's own direction.
+
+    `stake` is a range as `(bounds, low, high)`, e.g. `("(]", 25, 50)`, in place of `pct`.
+    """
     subject, obj = (lower, upper) if rel == "CONSOLIDATED_BY" else (upper, lower)
+    ends = {}
+    if stake is not None:
+        bounds, low, high = stake
+        ends = {
+            "pct_low": Decimal(str(low)),
+            "pct_high": Decimal(str(high)),
+            "pct_bounds": bounds,
+        }
     return Relationship(
-        id=relationship_id(subject, obj, rel, ultimate),
+        id=relationship_id(subject, obj, rel, ultimate, interest),
         subject_id=subject,
         object_id=obj,
         rel_type=rel,
         pct=None if pct is None else Decimal(str(pct)),
         basis=_BASIS[rel],
         is_ultimate=ultimate,
+        interest=interest,
         provenance=PROVENANCE,
+        **ends,
     )
 
 

@@ -51,6 +51,7 @@ GAP_ACTIONS: dict[GapCode, ActionCode] = {
     "DEPTH_LIMIT_REACHED": "RESCREEN_DEEPER",
     "POSSIBLE_DUPLICATE": "SCREEN_LINKED_RECORD",
     "CONFLICTING_PCT": "RECONCILE_STAKES",
+    "PCT_RANGE": "OBTAIN_SHAREHOLDING",
 }
 
 _DERIVATION_CLAIMS = {
@@ -59,7 +60,15 @@ _DERIVATION_CLAIMS = {
     ("BLOCKED", "AGGREGATE"): "BLOCKED_BY_OWNERSHIP",
     ("POSSIBLY_BLOCKED", "AGGREGATE"): "POSSIBLY_BLOCKED_BY_OWNERSHIP",
     ("POSSIBLY_BLOCKED", "PRESUMED_MAJORITY"): "PRESUMED_MAJORITY",
+    ("POSSIBLY_BLOCKED", "RANGE"): "POSSIBLY_BLOCKED_BY_RANGE",
 }
+
+
+def _range_params(high: object, bounds: object, high_name: str) -> dict[str, str]:
+    """The high end and bounds of a reported range, as claim parameters; none for a point."""
+    if high is None:
+        return {}
+    return {high_name: str(high), "pct_bounds": str(bounds)}
 
 
 def _pack_ref(pack: RulePack) -> RulePackRef:
@@ -168,6 +177,12 @@ def build_memo(
             lower_id=upper_lower(edge)[1],
             rel_type=edge.rel_type,
             pct=edge.pct,
+            **(
+                {"pct_low": edge.pct_low, "pct_high": edge.pct_high, "pct_bounds": edge.pct_bounds}
+                if edge.is_range
+                else {}
+            ),
+            interest=edge.interest,
             is_ultimate=edge.is_ultimate,
             provenance=edge.provenance,
         )
@@ -293,6 +308,7 @@ def _claims(evidence: _Evidence, subgraph: SubGraph, result: RuleResult) -> list
         params = {} if why.basis == "SEED" else {"round": why.round}
         if why.aggregate_pct is not None:
             params["aggregate_pct"] = str(why.aggregate_pct)
+            params |= _range_params(why.aggregate_pct_high, why.pct_bounds, "aggregate_pct_high")
         citations = [evidence.sanction(i) for i in why.sanction_ids]
         citations += [evidence.edge(i) for i in why.edge_ids]
         claims.append(
@@ -315,6 +331,7 @@ def _claims(evidence: _Evidence, subgraph: SubGraph, result: RuleResult) -> list
         params = {"reason": finding.code}
         if finding.pct is not None:
             params["pct"] = str(finding.pct)
+            params |= _range_params(finding.pct_high, finding.pct_bounds, "pct_high")
         claims.append(
             Claim(code="REASON", subject_id=finding.subject_id, params=params, citations=citations)
         )
@@ -337,14 +354,18 @@ def _claims(evidence: _Evidence, subgraph: SubGraph, result: RuleResult) -> list
             if upper_lower(edge)[1] == target
             and upper_lower(edge)[0] in blocked
             and edge.rel_type in OWNERSHIP_RELATIONS
-            and edge.pct is not None
+            and edge.stated
             and not edge.is_ultimate
         ]
+        params = {"aggregate_pct": str(result.aggregate_pct)}
+        params |= _range_params(
+            result.aggregate_pct_high, result.aggregate_pct_bounds, "aggregate_pct_high"
+        )
         claims.append(
             Claim(
                 code="DIRECT_AGGREGATE",
                 subject_id=target,
-                params={"aggregate_pct": str(result.aggregate_pct)},
+                params=params,
                 citations=[evidence.edge(edge.id) for edge in stakes],
             )
         )
@@ -365,8 +386,32 @@ def _claims(evidence: _Evidence, subgraph: SubGraph, result: RuleResult) -> list
                     "max_pct": None if exposure.max_pct is None else str(exposure.max_pct),
                     "sum_pct": None if exposure.sum_pct is None else str(exposure.sum_pct),
                     "has_unknown": exposure.has_unknown,
+                    **(
+                        {
+                            "max_pct_high": str(exposure.max_pct_high),
+                            "sum_pct_high": str(exposure.sum_pct_high),
+                        }
+                        if exposure.sum_pct_high is not None
+                        else {}
+                    ),
                 },
                 citations=[evidence.edge(i) for i in edge_ids] or [evidence.node(target)],
+            )
+        )
+
+    coverage = result.stake_coverage
+    if coverage.total:
+        # A decision that rests on presumed majorities says so.
+        claims.append(
+            Claim(
+                code="STAKE_COVERAGE",
+                subject_id=target,
+                params={
+                    "stated": coverage.stated,
+                    "total": coverage.total,
+                    "ranges": coverage.range,
+                },
+                citations=evidence.datasets,
             )
         )
 
@@ -439,6 +484,24 @@ def format_pct(value: Decimal | str | None) -> str:
     return format(Decimal(str(value)).normalize(), "f")
 
 
+def format_stake(
+    value: Decimal | str | None, high: Decimal | str | None = None, bounds: str | None = None
+) -> str:
+    """A stake in words: a figure (`50 %`), or a range from its bounds.
+
+    `(25, 50]` is "more than 25 % and at most 50 %"; a range from 0 or to 100
+    states only its other end ("less than 10 %", "more than 50 %").
+    """
+    if high is None or bounds is None:
+        return f"{format_pct(value)} %"
+    parts = []
+    if not (Decimal(str(value)) == 0 and bounds[0] == "("):
+        parts.append(f"{'at least' if bounds[0] == '[' else 'more than'} {format_pct(value)} %")
+    if not (Decimal(str(high)) == 100 and bounds[1] == "]"):
+        parts.append(f"{'at most' if bounds[1] == ']' else 'less than'} {format_pct(high)} %")
+    return " and ".join(parts) or f"{format_pct(value)} %"
+
+
 def format_score(value: float) -> str:
     return format(value, ".2f")
 
@@ -462,6 +525,7 @@ def _environment() -> jinja2.Environment:
         autoescape=False,
     )
     environment.filters.update(pct=format_pct, score=format_score, cite=cite)
+    environment.globals.update(stake=format_stake)
     return environment
 
 
@@ -479,7 +543,13 @@ def render_memo(memo: Memo) -> str:
 
     def edge(edge_id: str) -> str:
         item = memo.edge(edge_id)
-        stake = "" if item.rel_type == "CONTROLS" else f" {format_pct(item.pct)} %"
+        stake = ""
+        if item.rel_type != "CONTROLS":
+            stake = f" {format_stake(item.pct_low, item.pct_high, item.pct_bounds)}"
+            if item.pct_high is None:
+                stake = f" {format_pct(item.pct)} %"
+            if item.interest != "equity":
+                stake += f" of the {'votes' if item.interest == 'voting' else item.interest}"
         ultimate = " (ultimate parent)" if item.is_ultimate else ""
         return f"{name(item.upper_id)} `{item.rel_type}`{stake}{ultimate} → {name(item.lower_id)}"
 
