@@ -15,15 +15,15 @@ edge_types:
   OWNS:
     subject: {role: owner, labels: [LegalEntity, Person]}
     object: {role: asset, labels: [LegalEntity]}
-    properties: [id, subject_id, object_id, rel_type, pct, basis, is_ultimate]
+    properties: [id, subject_id, object_id, rel_type, pct, pct_low, pct_high, pct_bounds, interest, basis, is_ultimate]
   CONSOLIDATED_BY:
     subject: {role: child, labels: [LegalEntity]}
     object: {role: parent, labels: [LegalEntity]}
-    properties: [id, subject_id, object_id, rel_type, pct, basis, is_ultimate]
+    properties: [id, subject_id, object_id, rel_type, pct, pct_low, pct_high, pct_bounds, interest, basis, is_ultimate]
   CONTROLS:
     subject: {role: controller, labels: [LegalEntity, Person]}
     object: {role: controlled, labels: [LegalEntity]}
-    properties: [id, subject_id, object_id, rel_type, pct, basis, is_ultimate]
+    properties: [id, subject_id, object_id, rel_type, pct, pct_low, pct_high, pct_bounds, interest, basis, is_ultimate]
 
 # Designations are rows in a table keyed by node id, not edges.
 designations:

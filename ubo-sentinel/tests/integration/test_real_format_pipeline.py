@@ -28,7 +28,18 @@ EXPECTED = {
         "consolidated, with no share, into a designated parent",
     ),
     f"{OS}OrvMarine": ("ESCALATE", ["DERIVED_50PCT"], "50 % owned by a designated company"),
-    f"{OS}SarvRefining": ("ESCALATE", ["DERIVED_50PCT"], "25-50 % read at its upper bound"),
+    # A range, never its upper bound (Step 16): [25, 50] may be half, so possibly blocked.
+    f"{OS}SarvRefining": (
+        "REVIEW",
+        [
+            "CONTROL_LINK",
+            "DECISION_RELEVANT_GAP",
+            "EFFECTIVE_EXPOSURE",
+            "NEAR_MISS_AGGREGATE",
+            "POSSIBLY_BLOCKED",
+        ],
+        "25-50 % is a range of which only some values meet the test",
+    ),
     f"{OS}SarvLogistics": (
         "REVIEW",
         ["CONTROL_LINK", "DECISION_RELEVANT_GAP", "POSSIBLY_BLOCKED"],

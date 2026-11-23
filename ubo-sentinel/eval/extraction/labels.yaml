@@ -31,9 +31,10 @@
   file: doc-04-voting.txt
   subject_id: lei:FXS01TARGET000000000
   expected:
-    - {owner: Quillon Harbour Group Ltd, asset: Acme Trading FZE, rel_type: OWNS, pct: "75", kind: information, first_pass: true}
+    - {owner: Quillon Harbour Group Ltd, asset: Acme Trading FZE, rel_type: OWNS, pct: "75", first_pass: true}
     - {owner: Tobias Wrenfield, asset: Acme Trading FZE, rel_type: OWNS, pct: "40", first_pass: true}
-  rationale: Votes are not shares; the 75 % of votes is shown, not proposed as ownership.
+  rationale: A direct holding of votes is a holding (Step 16), proposed with interest voting; the
+    UK and EU packs test it, OFAC reviews it as a control link.
 - id: DOC-05
   file: doc-05-classes.txt
   subject_id: lei:FXS01TARGET000000000

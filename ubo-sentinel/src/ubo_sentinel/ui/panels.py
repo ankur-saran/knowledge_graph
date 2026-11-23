@@ -666,6 +666,7 @@ def glossary(memo: Memo) -> dict[str, str]:
         "DEPTH_LIMIT_REACHED": "The owners go on above the depth the screen walked.",
         "POSSIBLE_DUPLICATE": "A linked record of this entity has owners the screen did not see.",
         "CONFLICTING_PCT": "Two sources state different stakes for one ownership link.",
+        "PCT_RANGE": "An ownership link states its stake as a range, not one figure.",
     }
 
 

@@ -41,7 +41,13 @@ def test_the_changed_graph_shows_a_stake_a_merge_and_a_lapsed_lei(fresh_con):
     owner, listed = "lei:FXS14OWNER0000000000", "fx_list:s14-listed"
     assert summary(diff) == {
         # SCEN-10: the designated party's stake in the intermediate, and the other owner's.
-        ("edge", "CHANGED", "OWNERSHIP", ("lei:FXS10INTER0000000000",), ("pct",)),
+        (
+            "edge",
+            "CHANGED",
+            "OWNERSHIP",
+            ("lei:FXS10INTER0000000000",),
+            ("pct", "pct_high", "pct_low"),
+        ),
         # SCEN-14: the list record states the owner's LEI, so the two are one entity.
         # The designation reached the owner by name; now it is the owner's own (LINK):
         # the record is in both sets, it reaches another entity.
@@ -80,7 +86,7 @@ def test_one_entity_s_changes_are_the_set_diff_s_rows_about_it(fresh_con):
         ("link", "REMOVED", ()),
     }
     # Both stakes in the intermediate changed: an edge is about both its ends.
-    assert of("lei:FXS10INTER0000000000") == {("edge", "CHANGED", ("pct",))}
+    assert of("lei:FXS10INTER0000000000") == {("edge", "CHANGED", ("pct", "pct_high", "pct_low"))}
     assert len(diff_entity(con, t1, t2, "lei:FXS10INTER0000000000")) == 2
     assert of("lei:FXS16PARENT000000000") == {("entity", "CHANGED", ("lei_status",))}
     assert diff_entity(con, t1, t2, "fx_registry:s03-target") == []

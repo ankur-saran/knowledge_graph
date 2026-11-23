@@ -282,7 +282,9 @@ def test_every_recommendation_reason_and_gap_is_covered(gold):
     gaps = [gap for s in gold for gap in s.expected_gaps]
     # A second source of stakes arrives with documents (Step 15): rows for it in t0
     # would move every decision id, so its tests build their own (test_document_extraction).
-    assert {gap.code for gap in gaps} == set(get_args(GapCode)) - {"CONFLICTING_PCT"}
+    # A range (Step 16) is in no fixture file, which keep their bytes: the pack scenarios
+    # (PACK-10 to PACK-15) and tests/unit/test_silver.py cover it.
+    assert {gap.code for gap in gaps} == set(get_args(GapCode)) - {"CONFLICTING_PCT", "PCT_RANGE"}
     assert {gap.decision_relevant for gap in gaps} == {True, False}
     assert {s.suite for s in gold} == {"rules", "pipeline"}
 
