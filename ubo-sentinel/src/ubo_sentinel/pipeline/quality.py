@@ -10,9 +10,11 @@ A truncated file or a changed upstream format looks, downstream, like mass
 delistings, and re-screening on it would clear what is still designated. So
 when the entities or the active designations fall by more than the shrink
 limit, the set is not accepted and the `real` alias stays where it was, unless
-someone accepts the fall and says why. Each check is recorded in
-`quality_reports`; the report is derived from the set and can be made again,
-the acceptance cannot.
+someone accepts the fall and says why. A dataset the last accepted set held and
+this one does not (Companies House, an optional member) is a fall to zero and
+is refused the same way, so `real` never loses UK stakes unawares (Step 17).
+Each check is recorded in `quality_reports`; the report is derived from the set
+and can be made again, the acceptance cannot.
 """
 
 import json
@@ -149,7 +151,49 @@ def quality_report(con: duckdb.DuckDBPyConnection, snapshot_set: SnapshotSet) ->
         "unreadable": counts.get("unreadable", {}),
         "targets_without_designation": _targets_without_designation(con, snapshot_set),
         "list_companies_joined": _list_companies_joined(con, set_id),
+        # Rows a mapper staged and noted (a PSC held as a trustee or a firm member).
+        "noted": counts.get("noted", {}),
+        "stake_coverage": _stake_coverage(con, set_id),
+        "psc_statements": _psc_statements(con, snapshot_set),
     }
+
+
+def _stake_coverage(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, dict[str, int]]:
+    """`OWNS` edges by the source of the record that decides them: an exact stake
+    (`point`), a stated range (`range`) or none (`none`)."""
+    rows = con.execute(
+        """
+        SELECT source,
+            count(*) FILTER (WHERE pct IS NOT NULL),
+            count(*) FILTER (WHERE pct IS NULL AND pct_high IS NOT NULL),
+            count(*) FILTER (WHERE pct_high IS NULL)
+        FROM silver_relationships WHERE snapshot_set_id = ? AND rel_type = 'OWNS'
+        GROUP BY source ORDER BY source
+        """,
+        [set_id],
+    ).fetchall()
+    return {source: {"point": p, "range": r, "none": n} for source, p, r, n in rows}
+
+
+def _psc_statements(
+    con: duckdb.DuckDBPyConnection, snapshot_set: SnapshotSet
+) -> dict[str, int] | None:
+    """Companies House statements in force, and super-secure PSCs, by kind. None without them."""
+    snapshot_id = snapshot_set.snapshot_ids.get("ch_psc")
+    if snapshot_id is None:
+        return None
+    rows = con.execute(
+        """
+        SELECT coalesce((_raw->>'$.data.statement'), (_raw->>'$.data.kind')) AS kind, count(*)
+        FROM bronze_relationships
+        WHERE _snapshot_id = ? AND (_raw->>'$.data.ceased_on') IS NULL
+          AND ((_raw->>'$.data.statement') IS NOT NULL
+               OR (_raw->>'$.data.kind') LIKE 'super-secure%')
+        GROUP BY kind ORDER BY kind
+        """,
+        [snapshot_id],
+    ).fetchall()
+    return dict(rows)
 
 
 def _targets_without_designation(
@@ -288,6 +332,11 @@ def check(
             name
             for name in GUARDED
             if (c := report["changes"][name])["change"] is not None and c["change"] < -limit
+        ]
+        # A dataset gone since the last accepted set fell to zero.
+        previous = _stored_report(con, compared_with)["datasets"]
+        shrunk += [
+            f"dataset:{name}" for name in sorted(set(previous) - set(snapshot_set.snapshot_ids))
         ]
     accepted = not shrunk or accept_shrink
     con.execute(

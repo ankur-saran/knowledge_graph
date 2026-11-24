@@ -78,6 +78,11 @@ WITHHELD = "Withheld by the render guardrail: it held a value that is masked for
 LICENCE_NOTICE = (
     "This screen read OpenSanctions data, licensed CC BY-NC 4.0: for non-commercial use only."
 )
+# The attribution the Open Government Licence v3.0 asks for (Step 17).
+OGL_NOTICE = (
+    "Contains public sector information from Companies House licensed under the"
+    " Open Government Licence v3.0."
+)
 
 Panel = Literal["screen", "review", "extraction", "audit", "build"]
 
@@ -164,7 +169,13 @@ def candidate_rows(
 
 
 def licence_notice(view: DecisionView) -> str | None:
-    return LICENCE_NOTICE if "opensanctions" in view.memo.coverage.sources else None
+    sources = view.memo.coverage.sources
+    notices = [
+        notice
+        for source, notice in (("opensanctions", LICENCE_NOTICE), ("companies_house", OGL_NOTICE))
+        if source in sources
+    ]
+    return " ".join(notices) or None
 
 
 # --- screening ----------------------------------------------------------------------------

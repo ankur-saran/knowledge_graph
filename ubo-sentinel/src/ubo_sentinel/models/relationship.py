@@ -16,7 +16,16 @@ from ubo_sentinel.models.provenance import NonEmptyStr, Provenance, sort_provena
 # Direction: OWNS is owner -> asset, CONSOLIDATED_BY is child -> parent,
 # CONTROLS is controller -> controlled.
 RelType = Literal["OWNS", "CONSOLIDATED_BY", "CONTROLS"]
-Basis = Literal["shareholding", "accounting_consolidation", "directorship", "other"]
+# `board_appointment` and `significant_influence` are Companies House natures of
+# control (Step 17): the right to appoint the board, and significant influence.
+Basis = Literal[
+    "shareholding",
+    "accounting_consolidation",
+    "directorship",
+    "board_appointment",
+    "significant_influence",
+    "other",
+]
 # What a stake is a stake of (Step 16): shares, or votes.
 Interest = Literal["equity", "voting"]
 # Which ends of a stated range belong to it: "(]" is "more than low, at most high".

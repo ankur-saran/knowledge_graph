@@ -151,3 +151,39 @@ def test_the_command(tmp_path):
     assert "(new)" in result.output and "'sample' family" in result.output
     failed = cli("sample", "--path", tmp_path / "none", "--n", "3")
     assert failed.exit_code == 1 and "Sample failed" in failed.output
+
+
+CH_COMPANIES, CH_PSC = "companies_house/companies.csv", "companies_house/psc.txt"
+
+
+def numbers(directory):
+    return {r[" CompanyNumber"] for r in rows(directory, CH_COMPANIES)}
+
+
+def psc_lines(directory):
+    return [
+        json.loads(line) for line in (directory / CH_PSC).read_text(encoding="utf-8").splitlines()
+    ]
+
+
+def test_a_sample_cuts_companies_house_closed_under_its_psc_references(tmp_path, con):
+    """Step 17: a chosen LEI's company, seeded companies with PSCs, and the UK companies
+    their PSCs name; and the PSC lines of the companies chosen."""
+    whole = sample(SAMPLES, n=1000, seed=0, out_root=tmp_path / "all", list_n=1000)
+    assert numbers(whole.refresh_dir) >= {"FXR-HOLD", "FX100002", "OC400001", "01234567"}
+    for seed in range(8):
+        cut = sample(SAMPLES, n=2, seed=seed, out_root=tmp_path / str(seed), list_n=2)
+        chosen = numbers(cut.refresh_dir)
+        lines = psc_lines(cut.refresh_dir)
+        assert {line["company_number"] for line in lines} <= chosen
+        # Closed: a UK corporate PSC's company comes with it.
+        for line in lines:
+            identification = line["data"].get("identification", {})
+            if identification.get("place_registered", "").lower().startswith("companies house"):
+                assert identification["registration_number"].zfill(8) in chosen
+        # The file is read as published.
+        assert (cut.refresh_dir / CH_COMPANIES).read_text(encoding="utf-8").splitlines()[0] == (
+            (SAMPLES / CH_COMPANIES).read_text(encoding="utf-8").splitlines()[0]
+        )
+    snapshot_set = ingest_all(con, whole.refresh_dir).snapshot_set
+    assert {"ch_companies", "ch_psc"} <= set(snapshot_set.snapshot_ids)

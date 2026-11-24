@@ -16,6 +16,8 @@ SOURCE_RANK: dict[str, int] = {
     "fx_registry": REGISTRY,
     "fx_list": LIST,
     "gleif": REGISTRY,
+    # The UK register of companies and of people with significant control (Step 17).
+    "companies_house": REGISTRY,
     "opensanctions": LIST,
     "document": DOCUMENT,
 }
@@ -24,7 +26,17 @@ SOURCE_RANK: dict[str, int] = {
 # row states its own. A published record is taken as the publisher states it;
 # confidence below 1 belongs to links Silver infers, not to the records.
 # A document record is a person's confirmation; the proposer's own confidence is not kept.
-SOURCE_CONFIDENCE: dict[str, float] = {"gleif": 1.0, "opensanctions": 1.0, "document": 1.0}
+SOURCE_CONFIDENCE: dict[str, float] = {
+    "gleif": 1.0,
+    "companies_house": 1.0,
+    "opensanctions": 1.0,
+    "document": 1.0,
+}
+
+# Within one rank, the order in which records describe a merged entity, before the
+# newest: GLEIF's record of a UK company describes it before Companies House's,
+# since it carries the LEI. A source not listed is 0.
+SOURCE_TIE: dict[str, int] = {"companies_house": 1}
 
 # Datasets that are context, not graph (Step 14's addresses): Silver leaves them,
 # and `pipeline/context.py` derives them after Gold.

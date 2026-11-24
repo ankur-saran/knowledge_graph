@@ -28,7 +28,13 @@ from ubo_sentinel.pipeline.entity_linking import (
     resolve_groups,
 )
 from ubo_sentinel.pipeline.jurisdiction import normalise_jurisdiction
-from ubo_sentinel.pipeline.mappers import FILTERED_TABLE, MAPPERS, create_stage_tables, stage
+from ubo_sentinel.pipeline.mappers import (
+    FILTERED_TABLE,
+    MAPPERS,
+    NOTED_TABLE,
+    create_stage_tables,
+    stage,
+)
 from ubo_sentinel.pipeline.name_match import normalise_name, similarity_normalised
 from ubo_sentinel.pipeline.silver import (
     SILVER_TABLES,
@@ -38,7 +44,7 @@ from ubo_sentinel.pipeline.silver import (
     load_build,
     silver_digest,
 )
-from ubo_sentinel.pipeline.sources import CONTEXT_DATASETS, SOURCE_RANK
+from ubo_sentinel.pipeline.sources import CONTEXT_DATASETS, SOURCE_RANK, SOURCE_TIE
 
 # Raise this when a change here alters the rows Silver holds for the same Bronze
 # rows. A set built by another version is not reused. 5: `CONFLICTING_PCT` (Step 15).
@@ -97,6 +103,7 @@ def build_params() -> dict[str, Any]:
         "link_candidate_cap": LINK_CANDIDATE_CAP,
         "link_block_max": LINK_BLOCK_MAX,
         "source_rank": SOURCE_RANK,
+        "source_tie": SOURCE_TIE,
         "transform_version": TRANSFORM_VERSION,
     }
 
@@ -185,7 +192,10 @@ def _register_functions(con: duckdb.DuckDBPyConnection) -> None:
     }
     for name, (function, arguments, result) in _FUNCTIONS.items():
         if name not in present:
-            con.create_function(name, function, arguments, result)
+            # A source's jurisdiction that is not a country code ("United Arab
+            # Emirates") is no jurisdiction: the function may return NULL.
+            nulls = "special" if name == "ubo_jurisdiction" else "default"
+            con.create_function(name, function, arguments, result, null_handling=nulls)
 
 
 # --- a. verify and stage ----------------------------------------------------------------
@@ -267,8 +277,14 @@ def _resolve_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> list[tuple
     con.execute("CREATE OR REPLACE TEMP TABLE stg_roots (ref TEXT, root TEXT)")
     if roots:
         con.executemany("INSERT INTO stg_roots VALUES (?, ?)", list(roots.items()))
-    con.execute("CREATE OR REPLACE TEMP TABLE stg_source_rank (source TEXT, source_rank INTEGER)")
-    con.executemany("INSERT INTO stg_source_rank VALUES (?, ?)", list(SOURCE_RANK.items()))
+    con.execute(
+        "CREATE OR REPLACE TEMP TABLE stg_source_rank"
+        " (source TEXT, source_rank INTEGER, source_tie INTEGER)"
+    )
+    con.executemany(
+        "INSERT INTO stg_source_rank VALUES (?, ?, ?)",
+        [(source, rank, SOURCE_TIE.get(source, 0)) for source, rank in SOURCE_RANK.items()],
+    )
 
     # The id is `entity_id()` of the LEI that stands: the smallest LEI of a member
     # that names no successor, else the smallest LEI, else the smallest member id.
@@ -278,7 +294,7 @@ def _resolve_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> list[tuple
         f"""
         CREATE OR REPLACE TEMP TABLE stg_members AS
         WITH grouped AS (
-            SELECT r.*, coalesce(g.root, r.ref) AS root, k.source_rank
+            SELECT r.*, coalesce(g.root, r.ref) AS root, k.source_rank, k.source_tie
             FROM stg_records r
             LEFT JOIN stg_roots g ON g.ref = r.ref
             JOIN stg_source_rank k ON k.source = r.source
@@ -290,7 +306,8 @@ def _resolve_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> list[tuple
                          min(ref) OVER (PARTITION BY root)) AS entity_id,
                 row_number() OVER (
                     PARTITION BY root
-                    ORDER BY source_rank, successor_lei IS NOT NULL, as_of DESC, ref
+                    ORDER BY source_rank, source_tie, successor_lei IS NOT NULL, as_of DESC,
+                        ref
                 ) AS pos,
                 count(*) OVER (PARTITION BY root, lei) AS same_lei
             FROM grouped
@@ -589,7 +606,9 @@ def _write_relationships(
         ), ranked AS (
             SELECT *, row_number() OVER (
                 PARTITION BY id
-                ORDER BY (pct_high IS NULL), as_of DESC, confidence DESC, source, source_record_id
+                ORDER BY (pct_high IS NULL), as_of DESC, confidence DESC, source, source_record_id,
+                    -- One record may state an edge twice (a PSC's natures): the larger stake.
+                    pct_high DESC NULLS LAST, pct_low DESC NULLS LAST, pct_bounds
             ) AS rn FROM accepted
         ), supporting AS (
             SELECT id, {_SUPPORTING_RECORDS} AS supporting_records
@@ -755,6 +774,11 @@ def _counts(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any]:
         f"SELECT dataset, reason, sum(n) FROM {FILTERED_TABLE} GROUP BY ALL ORDER BY ALL"
     ).fetchall():
         filtered.setdefault(dataset, {})[reason] = int(n)
+    noted: dict[str, dict[str, int]] = {}
+    for dataset, note, n in con.execute(
+        f"SELECT dataset, note, sum(n) FROM {NOTED_TABLE} GROUP BY ALL ORDER BY ALL"
+    ).fetchall():
+        noted.setdefault(dataset, {})[note] = int(n)
     return {
         "entity_records": count("stg_entities"),
         "entities": count("stg_silver_entities"),
@@ -773,6 +797,9 @@ def _counts(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, Any]:
         # Records a mapper did not stage (an ended relationship, an unsupported
         # type), by dataset and reason. Bronze keeps them.
         "filtered": filtered,
+        # Rows a mapper staged and noted, by dataset and note (a PSC held as a
+        # trustee or a firm member: mapped as its plain form until Step 21).
+        "noted": noted,
         # Values a source gave that could not be read, by field. The record is kept
         # with the field empty.
         "unreadable": {

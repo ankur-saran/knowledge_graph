@@ -4,7 +4,9 @@ from pydantic import BaseModel, ConfigDict
 
 from ubo_sentinel.models.provenance import NonEmptyStr, Provenance
 
-RepexCategory = Literal["DIRECT_PARENT", "ULTIMATE_PARENT"]
+# `PSC_STATEMENT`: a Companies House statement that a person with significant
+# control is not identified or not confirmed, or is super-secure (Step 17).
+RepexCategory = Literal["DIRECT_PARENT", "ULTIMATE_PARENT", "PSC_STATEMENT"]
 
 
 class ReportingException(BaseModel):

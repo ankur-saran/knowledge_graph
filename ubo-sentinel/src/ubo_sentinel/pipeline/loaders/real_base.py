@@ -75,6 +75,8 @@ class Kind(StrEnum):
     TEXT = "text"
     TEXT_LIST = "text[]"
     BOOL = "bool"
+    # A whole number (Companies House's month and year of birth, Step 17).
+    INT = "int"
 
 
 @dataclass(frozen=True)
@@ -82,7 +84,8 @@ class Column:
     """A value a dataset reads: its key in `_raw` and where it is in the record.
 
     CSV: `key` is the header name. NDJSON: `key` is the property of the record,
-    or of the object `within` names (`within="properties"` for FtM properties).
+    or of the object `within` names (`within="properties"` for FtM properties;
+    a dotted path for an object inside another, `within="data.links"`).
     """
 
     key: str
@@ -91,6 +94,16 @@ class Column:
     # A CSV column some of the publisher's files lack (GLEIF's `DeletedAt` is in
     # its delta files, not its golden copy): absent, it is read as empty.
     optional: bool = False
+
+    @property
+    def path(self) -> tuple[str, ...]:
+        """The objects that hold the value, then its key."""
+        return (*self.within.split("."), self.key) if self.within else (self.key,)
+
+    @property
+    def name(self) -> str:
+        """How a dataset's `key` and `select` name the column: `within.key`, or `key`."""
+        return f"{self.within}.{self.key}" if self.within else self.key
 
 
 @dataclass(frozen=True)
@@ -102,24 +115,24 @@ class RealDataset:
     file: str
     format: Format
     columns: tuple[Column, ...]
-    # Top-level text columns whose values, joined by "|", are `_source_record_id`.
+    # Text columns (by `Column.name`) whose values, joined by "|", are `_source_record_id`.
     key: tuple[str, ...]
-    # (top-level text column, values): the records of the file this dataset holds.
-    # The others belong to another dataset or to none, and are not rejects.
+    # (text column, values): the records of the file this dataset holds. The
+    # others belong to another dataset or to none, and are not rejects.
     select: tuple[str, frozenset[str]] | None = None
 
     def __post_init__(self) -> None:
-        keys = [(c.within, c.key) for c in self.columns]
-        if len(set(keys)) != len(keys):
+        paths = [c.path for c in self.columns]
+        if len(set(paths)) != len(paths):
             raise ValueError(f"{self.name}: a column is declared twice")
-        top_text = {c.key for c in self.columns if c.within is None and c.kind == Kind.TEXT}
-        nested = {c.within for c in self.columns if c.within is not None}
-        if nested & {c.key for c in self.columns if c.within is None}:
+        text = {c.name for c in self.columns if c.kind == Kind.TEXT}
+        objects = {c.path[:i] for c in self.columns for i in range(1, len(c.path))}
+        if objects & set(paths):
             raise ValueError(f"{self.name}: a key is both a value and an object")
-        if not self.key or not set(self.key) <= top_text:
-            raise ValueError(f"{self.name}: the key must be declared top-level text columns")
-        if self.select is not None and self.select[0] not in top_text:
-            raise ValueError(f"{self.name}: the select column must be a declared top-level text")
+        if not self.key or not set(self.key) <= text:
+            raise ValueError(f"{self.name}: the key must be declared text columns")
+        if self.select is not None and self.select[0] not in text:
+            raise ValueError(f"{self.name}: the select column must be a declared text column")
         if self.format == Format.CSV and any(
             c.within is not None or c.kind != Kind.TEXT for c in self.columns
         ):
@@ -263,8 +276,7 @@ def _read_file(
 
 
 def _ndjson_path(column: Column) -> str:
-    parts = [column.key] if column.within is None else [column.within, column.key]
-    return _quote("$." + ".".join(json.dumps(part) for part in parts))
+    return _quote("$." + ".".join(json.dumps(part) for part in column.path))
 
 
 def _value_sql(column: Column, fmt: Format, alias: dict[str, str]) -> tuple[str, str, str]:
@@ -277,6 +289,12 @@ def _value_sql(column: Column, fmt: Format, alias: dict[str, str]) -> tuple[str,
     present = f"coalesce({json_type} <> 'NULL', false)"
     if column.kind == Kind.TEXT:
         return present, f"{json_type} = 'VARCHAR'", json_text(f"json_extract_string(j, {path})")
+    if column.kind == Kind.INT:
+        return (
+            present,
+            f"{json_type} IN ('BIGINT', 'UBIGINT')",
+            f"CAST(CAST(json_extract(j, {path}) AS BIGINT) AS VARCHAR)",
+        )
     if column.kind == Kind.BOOL:
         value = f"CAST(json_extract(j, {path}) AS BOOLEAN)"
         return (
@@ -303,23 +321,31 @@ def _object_sql(members: list[tuple[str, str, str]]) -> str:
 
 def _raw_sql(dataset: RealDataset, alias: dict[str, str]) -> tuple[str, str]:
     """(the record's `_raw` as canonical JSON, true when every value present has its type)."""
-    values = {}
+    values: dict[tuple[str, ...], tuple[str, str, str]] = {}
     for c in dataset.columns:
         present, typed, text = _value_sql(c, dataset.format, alias)
         # Written only when present and of its type, so no cast sees a value of another type.
-        values[(c.within, c.key)] = (
+        values[c.path] = (
             f"({present}) AND ({typed})",
             f"(NOT ({present}) OR ({typed}))",
             text,
         )
-    top: list[tuple[str, str, str]] = []
-    for within in sorted({c.within for c in dataset.columns if c.within is not None}):
-        inner = [(key, p, t) for (w, key), (p, _, t) in values.items() if w == within]
-        any_present = " OR ".join(f"({p})" for _, p, _ in inner)
-        top.append((within, any_present, _object_sql(inner)))
-    top += [(key, p, t) for (w, key), (p, _, t) in values.items() if w is None]
+
+    def members(prefix: tuple[str, ...]) -> list[tuple[str, str, str]]:
+        """The values and objects directly inside `prefix`: (key, present, JSON text)."""
+        depth = len(prefix)
+        found = [(path[-1], p, t) for path, (p, _, t) in values.items() if path[:-1] == prefix]
+        children = {
+            path[depth] for path in values if len(path) > depth + 1 and path[:depth] == prefix
+        }
+        for child in sorted(children):
+            inner = members((*prefix, child))
+            any_present = " OR ".join(f"({p})" for _, p, _ in inner)
+            found.append((child, any_present, _object_sql(inner)))
+        return found
+
     typed = " AND ".join(ok for _, ok, _ in values.values())
-    return _object_sql(top), typed
+    return _object_sql(members(())), typed
 
 
 def _stage_dataset(
@@ -332,6 +358,7 @@ def _stage_dataset(
 ) -> str:
     """A temp table of the dataset's records: `_row_num`, `_source_record_id`, `raw`,
     `reason` (null for a record that is loaded) and `reject_raw`."""
+    named = {c.name: c for c in dataset.columns}
     if dataset.format == Format.CSV:
         alias = {name: f"c{i}" for i, name in enumerate(columns)}
         text = {c: alias[c] for c in {*dataset.key, *(dataset.select or ())[:1]}}
@@ -340,7 +367,7 @@ def _stage_dataset(
     else:
         alias = {}
         text = {
-            c: f"nullif(json_extract_string(j, {_ndjson_path(Column(c))}), '')"
+            c: f"nullif(json_extract_string(j, {_ndjson_path(named[c])}), '')"
             for c in {*dataset.key, *(dataset.select or ())[:1]}
         }
         # Nested so that no JSON function sees a line that is not JSON.

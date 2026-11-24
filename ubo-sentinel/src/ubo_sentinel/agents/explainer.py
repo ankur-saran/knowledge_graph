@@ -54,6 +54,13 @@ GAP_ACTIONS: dict[GapCode, ActionCode] = {
     "PCT_RANGE": "OBTAIN_SHAREHOLDING",
 }
 
+# Source -> the stake at or below which it reports no holder (Step 17). The PSC
+# register names holders of more than 25 % only: two designated holders of 24 %
+# each are not in the graph, so their sum cannot be tested.
+SOURCE_THRESHOLDS: dict[str, str] = {"companies_house": "25.0000"}
+# Source -> the dataset whose snapshot the threshold claim cites.
+_THRESHOLD_DATASETS = {"companies_house": "ch_psc"}
+
 _DERIVATION_CLAIMS = {
     ("BLOCKED", "SEED"): "DESIGNATED",
     ("POSSIBLY_BLOCKED", "SEED"): "POSSIBLY_DESIGNATED",
@@ -252,7 +259,11 @@ def build_memo(
             **common,
         )
 
-    claims = [coverage_claim, *_claims(evidence, subgraph, rule_result)]
+    claims = [
+        coverage_claim,
+        *_source_thresholds(evidence, subgraph.target_id, datasets),
+        *_claims(evidence, subgraph, rule_result),
+    ]
     return Memo(
         recommendation=rule_result.recommendation,
         reasons=rule_result.reasons,
@@ -266,6 +277,27 @@ def build_memo(
         next_actions=_next_actions(pack, evidence, subgraph, rule_result, memo_matches),
         **common,
     )
+
+
+def _source_thresholds(
+    evidence: _Evidence, target_id: str, datasets: list[DatasetRef]
+) -> list[Claim]:
+    """A claim for each source the screen read that leaves out holdings below a level."""
+    records = [node.provenance for node in evidence.nodes.values()]
+    records += [edge.provenance for edge in evidence.edges.values()]
+    records += [p for node in evidence.nodes.values() for p in node.supporting_records]
+    sources = {record.source for record in records}
+    return [
+        Claim(
+            code="SOURCE_THRESHOLD",
+            subject_id=target_id,
+            params={"source": source, "pct": SOURCE_THRESHOLDS[source]},
+            citations=_dataset_citations(
+                [d for d in datasets if d.dataset == _THRESHOLD_DATASETS[source]] or datasets
+            ),
+        )
+        for source in sorted(sources & SOURCE_THRESHOLDS.keys())
+    ]
 
 
 def _memo_not_found(

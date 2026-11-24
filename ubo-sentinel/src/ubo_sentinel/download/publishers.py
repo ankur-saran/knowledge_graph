@@ -4,9 +4,13 @@ GLEIF: the golden-copy API names the latest publish and, per file type, the
 full CSV as a zip; GLEIF states no checksum. OpenSanctions: the `sanctions`
 collection's `index.json` names its version and, per resource, the URL, size
 and SHA-1 of the file. Only the `sanctions` collection is fetched: PEPs and
-crime are out of scope and far larger. Neither needs an API key for bulk files.
+crime are out of scope and far larger. Companies House (Step 17): two download
+pages list the dated parts of the company file (CSV) and of the PSC snapshot
+(JSON lines), each a zip of one file; no checksum is published. None of the
+three needs an API key for bulk files.
 """
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -17,6 +21,25 @@ OPENSANCTIONS_INDEX = "https://data.opensanctions.org/datasets/latest/sanctions/
 
 GLEIF_LICENCE = "CC0-1.0"
 OPENSANCTIONS_LICENCE = "CC-BY-NC-4.0"
+COMPANIES_HOUSE_LICENCE = "OGL-3.0"
+
+COMPANIES_HOUSE_BASE = "https://download.companieshouse.gov.uk/"
+# Manifest file key -> (download page, part file name with date, part and count
+# groups, path in the refresh directory, whether each part repeats a header row).
+COMPANIES_HOUSE_FILES = {
+    "ch_companies": (
+        COMPANIES_HOUSE_BASE + "en_output.html",
+        r"BasicCompanyData-(\d{4}-\d{2}-\d{2})-part(\d+)_(\d+)\.zip",
+        "companies_house/companies.csv",
+        True,
+    ),
+    "ch_psc": (
+        COMPANIES_HOUSE_BASE + "en_pscdata.html",
+        r"psc-snapshot-(\d{4}-\d{2}-\d{2})_(\d+)of(\d+)\.zip",
+        "companies_house/psc.txt",
+        False,
+    ),
+}
 
 # Manifest file key -> (GLEIF file type, path in the refresh directory).
 GLEIF_FILES = {
@@ -46,6 +69,11 @@ class Planned:
     zipped: bool
     # "<algorithm>:<hex>" of the file as fetched, when the publisher states one.
     publisher_checksum: str | None = None
+    # The URLs of the zips the file is joined from, in order, when the publisher
+    # splits it (Companies House); `url` is then the first.
+    parts: tuple[str, ...] = ()
+    # True when each part repeats the file's header row (a CSV split in parts).
+    repeats_header: bool = False
 
 
 def _get_json(client: httpx.Client, url: str) -> dict:
@@ -101,4 +129,42 @@ def opensanctions_files(client: httpx.Client) -> list[Planned]:
         raise PublisherError(f"{OPENSANCTIONS_INDEX}: unexpected content ({exc!r}).") from exc
 
 
-PUBLISHERS = {"gleif": gleif_files, "opensanctions": opensanctions_files}
+def companies_house_files(client: httpx.Client) -> list[Planned]:
+    """The newest complete set of parts of each Companies House file its page lists."""
+    planned = []
+    for key, (page, pattern, path, repeats_header) in COMPANIES_HOUSE_FILES.items():
+        response = client.get(page)
+        response.raise_for_status()
+        found: dict[str, dict[int, tuple[str, int]]] = {}
+        for match in re.finditer(pattern, response.text):
+            date, part, count = match[1], int(match[2]), int(match[3])
+            found.setdefault(date, {})[part] = (match[0], count)
+        if not found:
+            raise PublisherError(f"{page}: lists no file named like {pattern}.")
+        date = max(found)
+        parts = found[date]
+        counts = {count for _, count in parts.values()}
+        if len(counts) != 1 or sorted(parts) != list(range(1, counts.pop() + 1)):
+            raise PublisherError(f"{page}: the parts of the {date} file are not all listed.")
+        urls = tuple(COMPANIES_HOUSE_BASE + parts[n][0] for n in sorted(parts))
+        planned.append(
+            Planned(
+                key=key,
+                source="companies_house",
+                path=path,
+                url=urls[0],
+                published_at=datetime.fromisoformat(date),
+                licence=COMPANIES_HOUSE_LICENCE,
+                zipped=True,
+                parts=urls,
+                repeats_header=repeats_header,
+            )
+        )
+    return planned
+
+
+PUBLISHERS = {
+    "gleif": gleif_files,
+    "opensanctions": opensanctions_files,
+    "companies_house": companies_house_files,
+}

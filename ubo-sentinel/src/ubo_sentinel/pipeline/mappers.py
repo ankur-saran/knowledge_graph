@@ -4,6 +4,7 @@ Bronze keeps each record in its source's own shape. A mapper is the only code
 that knows that shape; everything after staging is the same for every source.
 """
 
+import re
 from dataclasses import dataclass
 from typing import get_args
 
@@ -45,6 +46,8 @@ STAGE_TABLES: dict[str, str] = {
 
 # Records a mapper does not stage, counted by dataset and reason.
 FILTERED_TABLE = "stg_filtered"
+# Staged rows a mapper notes, counted by dataset and note (Step 17).
+NOTED_TABLE = "stg_noted"
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,14 @@ class Mapper:
     # (reason, SQL condition): a row meeting a condition is not staged, and is
     # counted under the first reason it meets. Bronze keeps it.
     filters: tuple[tuple[str, str], ...] = ()
+    # A SQL condition: rows that are not this mapper's to stage at all, left out
+    # without a count (another mapper of the dataset stages or counts them).
+    skip: str | None = None
+    # A SQL list: one staged row per element, read as `item` (one Bronze record
+    # that states several things, as a PSC its natures of control).
+    unnest: str | None = None
+    # (note, SQL condition): staged rows meeting it are counted under the note.
+    notes: tuple[tuple[str, str], ...] = ()
 
 
 def _text(field: str) -> str:
@@ -463,6 +474,347 @@ MAPPERS |= {
 }
 
 
+# --- Companies House (Step 17) ------------------------------------------------------------
+# The free company data product (`ch_companies`, CSV; some headers begin with a
+# space, as published) and the PSC snapshot (`ch_psc`, one JSON object per line).
+# A company's ref is `companies_house:<company number>`; a person with significant
+# control is its own record, `companies_house:<links.self>`.
+
+CH_SOURCE = "companies_house"
+# GLEIF's registration authorities for Companies House: Northern Ireland's
+# register (numbers `NI…`, `NC…`, `R0…`) is RA000586, the others RA000585
+# (checked against GLEIF's L1 file, 2026-11-23).
+CH_AUTHORITY = "RA000585"
+CH_AUTHORITY_NI = "RA000586"
+CH_PREVIOUS_NAMES = tuple(f" PreviousName_{i}.CompanyName" for i in range(1, 11))
+
+# PSC kinds. A holder is an individual, a corporate entity or a legal person
+# (a beneficial owner of an overseas entity likewise); a super-secure PSC is not
+# named, so it is a statement, not a holder.
+CH_INDIVIDUAL = ("individual-person-with-significant-control", "individual-beneficial-owner")
+CH_CORPORATE = (
+    "corporate-entity-person-with-significant-control",
+    "corporate-entity-beneficial-owner",
+    "legal-person-person-with-significant-control",
+    "legal-person-beneficial-owner",
+)
+CH_SUPER_SECURE = ("super-secure-person-with-significant-control", "super-secure-beneficial-owner")
+CH_STATEMENT = "persons-with-significant-control-statement"
+CH_KINDS = (*CH_INDIVIDUAL, *CH_CORPORATE, *CH_SUPER_SECURE, CH_STATEMENT, "exemptions")
+
+# Statements that say a person with significant control exists and is not known
+# or not confirmed: a `REPORTING_EXCEPTION`, as a GLEIF reporting exception is.
+CH_GAP_STATEMENTS = tuple(
+    code + suffix
+    for code in (
+        "psc-exists-but-not-identified",
+        "psc-details-not-confirmed",
+        "steps-to-find-psc-not-yet-completed",
+        "psc-contacted-but-no-response",
+        "psc-has-failed-to-confirm-changed-details",
+        "restrictions-notice-issued-to-psc",
+    )
+    for suffix in ("", "-partnership")
+) + (
+    "no-beneficial-owner-identified",
+    "at-least-one-beneficial-owner-unidentified",
+    "information-not-provided-for-at-least-one-beneficial-owner",
+    "at-least-one-beneficial-owner-unidentified-and-information-not-provided-for-at-least-one-beneficial-owner",
+    "awaiting-confirmation-from-psc",
+)
+# "Nobody is registrable": recorded (counted), and no gap. The code is spelt as published.
+CH_NO_PSC_STATEMENTS = (
+    "no-individual-or-entity-with-signficant-control",
+    "no-individual-or-entity-with-signficant-control-partnership",
+)
+
+# Every nature of control Companies House publishes (`psc_descriptions.yml` of
+# companieshouse/api-enumerations, read 2026-11-23).
+CH_NATURES = (
+    *(
+        f"{measure}-{band}-percent{form}"
+        for measure in ("ownership-of-shares", "voting-rights")
+        for band in ("25-to-50", "50-to-75", "75-to-100")
+        for form in ("", "-as-trust", "-as-firm")
+    ),
+    *(
+        f"{measure}-more-than-25-percent{form}-registered-overseas-entity"
+        for measure in ("ownership-of-shares", "voting-rights")
+        for form in ("", "-as-trust", "-as-firm", "-as-control-over-trust", "-as-control-over-firm")
+    ),
+    "right-to-appoint-and-remove-directors",
+    "right-to-appoint-and-remove-directors-as-trust",
+    "right-to-appoint-and-remove-directors-as-firm",
+    "right-to-appoint-and-remove-directors-as-control-over-trust-registered-overseas-entity",
+    "right-to-appoint-and-remove-directors-as-control-over-firm-registered-overseas-entity",
+    "significant-influence-or-control",
+    "significant-influence-or-control-as-trust",
+    "significant-influence-or-control-as-firm",
+    *(
+        f"{measure}-{band}-percent{form}-limited-liability-partnership"
+        for measure in ("right-to-share-surplus-assets", "voting-rights")
+        for band in ("25-to-50", "50-to-75", "75-to-100")
+        for form in ("", "-as-trust", "-as-firm")
+    ),
+    "right-to-appoint-and-remove-members-limited-liability-partnership",
+    "right-to-appoint-and-remove-members-as-trust-limited-liability-partnership",
+    "right-to-appoint-and-remove-members-as-firm-limited-liability-partnership",
+    "significant-influence-or-control-limited-liability-partnership",
+    "significant-influence-or-control-as-trust-limited-liability-partnership",
+    "significant-influence-or-control-as-firm-limited-liability-partnership",
+    *(
+        f"significant-influence-or-control{form}-registered-overseas-entity"
+        for form in ("", "-as-trust", "-as-firm", "-as-control-over-trust", "-as-control-over-firm")
+    ),
+    *(
+        f"part-right-to-share-surplus-assets-{band}-percent{form}"
+        for band in ("25-to-50", "50-to-75", "75-to-100")
+        for form in ("", "-as-trust", "-as-firm")
+    ),
+    "right-to-appoint-and-remove-person",
+    "right-to-appoint-and-remove-person-as-firm",
+    "right-to-appoint-and-remove-person-as-trust",
+    "right-to-appoint-and-remove-directors-registered-overseas-entity",
+    "right-to-appoint-and-remove-directors-as-trust-registered-overseas-entity",
+    "right-to-appoint-and-remove-directors-as-firm-registered-overseas-entity",
+    *(
+        f"registered-owner-as-nominee-{who}-{where}-registered-overseas-entity"
+        for who in ("person", "another-entity")
+        for where in ("england-wales", "scotland", "northern-ireland")
+    ),
+)
+
+# A band -> (low, high, bounds), as the register defines it: "more than 25 % but
+# not more than 50 %", "more than 50 % but less than 75 %", "75 % or more".
+CH_BANDS = {
+    "25-to-50": ("25", "50", "(]"),
+    "50-to-75": ("50", "75", "()"),
+    "75-to-100": ("75", "100", "[]"),
+    "more-than-25": ("25", "100", "(]"),
+}
+
+
+@dataclass(frozen=True)
+class NatureEdge:
+    """The edge one nature of control states."""
+
+    rel_type: str
+    basis: str
+    interest: str = "equity"
+    low: str | None = None
+    high: str | None = None
+    bounds: str | None = None
+    # Held as a trustee or a firm member: mapped as the plain form until Step 21.
+    trust_or_firm: bool = False
+
+
+_FORMS = re.compile(r"-as-(control-over-)?(trust|firm)")
+_SCOPES = re.compile(r"-(limited-liability-partnership|registered-overseas-entity)$")
+_STAKE = re.compile(
+    r"(ownership-of-shares|voting-rights|right-to-share-surplus-assets"
+    r"|part-right-to-share-surplus-assets)-(25-to-50|50-to-75|75-to-100|more-than-25)-percent"
+)
+
+
+def ch_nature(code: str) -> NatureEdge | None:
+    """The edge a nature of control states; None for one the graph does not hold
+    (a nominee registered owner of an overseas entity's land)."""
+    plain = _FORMS.sub("", code)
+    trust_or_firm = plain != code
+    base = _SCOPES.sub("", plain)
+    found = _STAKE.fullmatch(base)
+    if found:
+        low, high, bounds = CH_BANDS[found[2]]
+        interest = "voting" if found[1] == "voting-rights" else "equity"
+        return NatureEdge("OWNS", "shareholding", interest, low, high, bounds, trust_or_firm)
+    if re.fullmatch(r"right-to-appoint-and-remove-(directors|members|person)", base):
+        return NatureEdge("CONTROLS", "board_appointment", trust_or_firm=trust_or_firm)
+    if base == "significant-influence-or-control":
+        return NatureEdge("CONTROLS", "significant_influence", trust_or_firm=trust_or_firm)
+    return None
+
+
+CH_NATURE_EDGES = {code: edge for code in CH_NATURES if (edge := ch_nature(code)) is not None}
+
+
+def _psc(path: str) -> str:
+    """A text value of a PSC record: `company_number`, or a dotted path inside `data`."""
+    return f"(_raw->>'$.{path}')"
+
+
+def _ch_ref(number: str) -> str:
+    return f"'{CH_SOURCE}:' || {number}"
+
+
+def _ch_number(value: str) -> str:
+    """A company number as the register writes it: upper case, all-digit numbers to 8."""
+    clean = f"upper(replace(trim({value}), ' ', ''))"
+    digits = f"regexp_full_match({clean}, '[0-9]+')"
+    return f"CASE WHEN {digits} THEN lpad({clean}, 8, '0') ELSE {clean} END"
+
+
+_PSC_KIND = _psc("data.kind")
+_PSC_CEASED = f"{_psc('data.ceased_on')} IS NOT NULL"
+_PSC_NO_COMPANY = f"{_psc('company_number')} IS NULL"
+_UK_COUNTRIES = (
+    "england", "wales", "scotland", "northern ireland", "england and wales", "england & wales",
+    "england/wales", "united kingdom", "uk", "great britain",
+)  # fmt: skip
+_PSC_REG_NUMBER = _psc("data.identification.registration_number")
+_PSC_REG_PLACE = _psc("data.identification.place_registered")
+_PSC_REG_COUNTRY = f"lower(trim({_psc('data.identification.country_registered')}))"
+# A corporate PSC on a UK register: the edge names that company's own record.
+_PSC_UK_CORPORATE = (
+    f"({_in(_PSC_KIND, CH_CORPORATE)} AND {_PSC_REG_NUMBER} IS NOT NULL"
+    f" AND ({_PSC_REG_PLACE} ILIKE '%companies house%'"
+    f" OR {_in(_PSC_REG_COUNTRY, _UK_COUNTRIES)}))"
+)
+
+
+def _nature_case(value: str) -> str:
+    """SQL: the given field of the edge each nature of control (`item`) states."""
+    whens = " ".join(
+        f"WHEN {code!r} THEN {value_sql}"
+        for code, edge in sorted(CH_NATURE_EDGES.items())
+        if (value_sql := _nature_value(edge, value)) != "NULL"
+    )
+    return f"CASE item {whens} END" if whens else "NULL"
+
+
+def _nature_value(edge: NatureEdge, field: str) -> str:
+    value = getattr(edge, field)
+    if value is None:
+        return "NULL"
+    if field in ("low", "high"):
+        return f"CAST({value} AS DECIMAL(7,4))"
+    return repr(value)
+
+
+def _ch_companies() -> Mapper:
+    number = _g(" CompanyNumber")
+    status = _g("CompanyStatus")
+    names = ", ".join(_g(field) for field in CH_PREVIOUS_NAMES)
+    return Mapper(
+        "stg_entities",
+        (
+            "NULL",
+            f"CASE WHEN {number} LIKE 'N%' OR {number} LIKE 'R0%'"
+            f" THEN '{CH_AUTHORITY_NI}' ELSE '{CH_AUTHORITY}' END",
+            number,
+            _g("CompanyName"),
+            f"list_filter([{names}], name -> name IS NOT NULL)",
+            "ubo_jurisdiction('GB')",
+            f"CASE WHEN {status} = 'Active' THEN 'ACTIVE'"
+            f" WHEN {status} ILIKE 'dissolved%' OR {status} ILIKE 'removed%' THEN 'INACTIVE'"
+            " ELSE 'UNKNOWN' END",
+            "NULL",
+            "'LegalEntity'",
+            "NULL",
+            "'GB'",
+            "NULL",
+        ),
+    )
+
+
+def _ch_psc_relationships() -> Mapper:
+    holder = _ch_ref(
+        f"CASE WHEN {_PSC_UK_CORPORATE}"
+        f" THEN {_ch_number(_PSC_REG_NUMBER)}"
+        f" ELSE {_psc('data.links.self')} END"
+    )
+    low, high = _nature_case("low"), _nature_case("high")
+    return Mapper(
+        "stg_relationships",
+        (
+            holder,
+            _ch_ref(_psc("company_number")),
+            _nature_case("rel_type"),
+            f"CASE WHEN ({low}) = ({high}) THEN {high} END",
+            _nature_case("basis"),
+            "false",
+            "NULL",
+            low,
+            high,
+            _nature_case("bounds"),
+            f"coalesce({_nature_case('interest')}, 'equity')",
+        ),
+        filters=(
+            (FILTER_NO_ENDS, _PSC_NO_COMPANY),
+            ("CEASED", _PSC_CEASED),
+            ("UNSUPPORTED_NATURE", f"({_nature_case('rel_type')}) IS NULL"),
+        ),
+        skip=f"NOT {_in(_PSC_KIND, (*CH_INDIVIDUAL, *CH_CORPORATE))}",
+        unnest=(
+            "coalesce(CAST(_raw->'$.data.natures_of_control' AS VARCHAR[]), CAST([] AS VARCHAR[]))"
+        ),
+        notes=(
+            (
+                "TRUST_OR_FIRM",
+                "item LIKE '%-as-trust%' OR item LIKE '%-as-firm%'"
+                " OR item LIKE '%-as-control-over-%'",
+            ),
+        ),
+    )
+
+
+def _ch_psc_entities() -> Mapper:
+    """A PSC holder's own record: a person, or a corporate PSC on no UK register."""
+    country = _psc("data.identification.country_registered")
+    return Mapper(
+        "stg_entities",
+        (
+            "NULL",
+            "NULL",
+            "NULL",
+            _psc("data.name"),
+            "CAST([] AS TEXT[])",
+            f"ubo_jurisdiction({country})",
+            "'UNKNOWN'",
+            "NULL",
+            f"CASE WHEN {_in(_PSC_KIND, CH_INDIVIDUAL)} THEN 'Person' ELSE 'LegalEntity' END",
+            "NULL",
+            country,
+            "NULL",
+        ),
+        skip=(
+            f"NOT ({_in(_PSC_KIND, CH_INDIVIDUAL)} OR ({_in(_PSC_KIND, CH_CORPORATE)}"
+            f" AND NOT {_PSC_UK_CORPORATE})) OR {_PSC_CEASED} OR {_PSC_NO_COMPANY}"
+            f" OR {_psc('data.name')} IS NULL"
+        ),
+    )
+
+
+def _ch_psc_statements() -> Mapper:
+    """A statement that a PSC is not known or not confirmed, or a super-secure PSC."""
+    statement = _psc("data.statement")
+    return Mapper(
+        "stg_repex",
+        (
+            _ch_ref(_psc("company_number")),
+            "'PSC_STATEMENT'",
+            f"coalesce({statement}, {_PSC_KIND})",
+        ),
+        filters=(
+            (FILTER_NO_ENDS, _PSC_NO_COMPANY),
+            ("CEASED", _PSC_CEASED),
+            ("NO_REGISTRABLE_PERSON", _in(f"coalesce({statement}, '')", CH_NO_PSC_STATEMENTS)),
+            (
+                "OTHER_STATEMENT",
+                f"{_PSC_KIND} = '{CH_STATEMENT}'"
+                f" AND NOT {_in(f'coalesce({statement}, chr(0))', CH_GAP_STATEMENTS)}",
+            ),
+        ),
+        skip=f"NOT {_in(_PSC_KIND, (*CH_SUPER_SECURE, CH_STATEMENT))}",
+    )
+
+
+MAPPERS |= {"ch_companies": _ch_companies(), "ch_psc": _ch_psc_relationships()}
+# Further mappers of one dataset, run after `MAPPERS[dataset]`.
+MORE_MAPPERS: dict[str, tuple[Mapper, ...]] = {
+    "ch_psc": (_ch_psc_entities(), _ch_psc_statements()),
+}
+
+
 # Holdings and holders confirmed from documents (Step 15) are written in the
 # fixture shape, with the document's evidence beside it in `_raw`.
 MAPPERS |= {
@@ -478,30 +830,53 @@ def create_stage_tables(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(
         f"CREATE OR REPLACE TEMP TABLE {FILTERED_TABLE} (dataset TEXT, reason TEXT, n BIGINT)"
     )
+    con.execute(f"CREATE OR REPLACE TEMP TABLE {NOTED_TABLE} (dataset TEXT, note TEXT, n BIGINT)")
 
 
 def stage(
     con: duckdb.DuckDBPyConnection, dataset: str, bronze_table: str, snapshot_id: str
 ) -> None:
-    """Copy one snapshot's rows into its staging table, and count those it filters."""
+    """Copy one snapshot's rows into the staging tables of its mappers, and count those
+    they filter."""
     if bronze_table not in BRONZE_TABLES:
         raise ValueError(f"'{bronze_table}' is not a Bronze table")
-    mapper = MAPPERS[dataset]
+    for mapper in (MAPPERS[dataset], *MORE_MAPPERS.get(dataset, ())):
+        _stage_one(con, dataset, mapper, bronze_table, snapshot_id)
+
+
+def _stage_one(
+    con: duckdb.DuckDBPyConnection,
+    dataset: str,
+    mapper: Mapper,
+    bronze_table: str,
+    snapshot_id: str,
+) -> None:
+    item = f", unnest({mapper.unnest}) AS item" if mapper.unnest else ""
+    skip = f" AND NOT coalesce({mapper.skip}, false)" if mapper.skip else ""
+    rows = f"(SELECT *{item} FROM {bronze_table} WHERE _snapshot_id = ?{skip})"
+    order = "_row_num, item" if mapper.unnest else "_row_num"
     keep = "true"
     if mapper.filters:
         whens = " ".join(f"WHEN coalesce({c}, false) THEN '{r}'" for r, c in mapper.filters)
         filtered = f"CASE {whens} END"
         keep = f"({filtered}) IS NULL"
+        # A record is counted once under a reason, however many rows it unnests to.
         con.execute(
-            f"INSERT INTO {FILTERED_TABLE} SELECT ?, reason, count(*) FROM ("
-            f" SELECT {filtered} AS reason FROM {bronze_table} WHERE _snapshot_id = ?)"
+            f"INSERT INTO {FILTERED_TABLE} SELECT ?, reason, count(DISTINCT _row_num) FROM ("
+            f" SELECT _row_num, {filtered} AS reason FROM {rows})"
             " WHERE reason IS NOT NULL GROUP BY reason",
             [dataset, snapshot_id],
+        )
+    for note, condition in mapper.notes:
+        con.execute(
+            f"INSERT INTO {NOTED_TABLE} SELECT ?, ?, count(*) FROM {rows}"
+            f" WHERE {keep} AND coalesce({condition}, false) HAVING count(*) > 0",
+            [dataset, note, snapshot_id],
         )
     con.execute(
         f"INSERT INTO {mapper.stage_table}"
         " SELECT ?, _source, _source_record_id, _snapshot_id, _as_of, _confidence,"
         f" {', '.join(mapper.columns)}"
-        f" FROM {bronze_table} WHERE _snapshot_id = ? AND {keep} ORDER BY _row_num",
+        f" FROM {rows} WHERE {keep} ORDER BY {order}",
         [dataset, snapshot_id],
     )

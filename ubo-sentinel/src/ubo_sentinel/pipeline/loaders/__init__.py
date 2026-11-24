@@ -10,6 +10,7 @@ from ubo_sentinel.pipeline.loaders.document_loader import ingest_documents
 from ubo_sentinel.pipeline.loaders.fixture_loader import ingest_fixtures
 from ubo_sentinel.pipeline.loaders.real_loader import (
     ingest_all,
+    ingest_companies_house,
     ingest_gleif,
     ingest_opensanctions,
 )
@@ -22,6 +23,7 @@ LOADERS: dict[str, Loader] = {
     "real": ingest_all,
     "gleif": ingest_gleif,
     "opensanctions": ingest_opensanctions,
+    "companies_house": ingest_companies_house,
     # What reviewers accepted from documents (Step 15), published from the audit log.
     "documents": ingest_documents,
 }

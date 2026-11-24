@@ -18,10 +18,29 @@ from ubo_sentinel.pipeline.db import connect
 pytestmark = pytest.mark.integration
 
 OS = "opensanctions:NK-fx"
+CH = "companies_house:"
 
 # target -> (recommendation, reasons, why).
 EXPECTED = {
     f"lei:{lei('ORV')}": ("ESCALATE", ["DIRECT_DESIGNATION"], "OFAC names it by its LEI"),
+    # Companies House (Step 17): the register states every stake as a band.
+    f"{CH}FX100002": (
+        "REVIEW",
+        ["CONTROL_LINK", "DECISION_RELEVANT_GAP", "POSSIBLY_BLOCKED"],
+        "50-75 % of shares from a PSC that may be Sarvanta; its votes are control under OFAC",
+    ),
+    f"{CH}FX100003": (
+        "REVIEW",
+        ["DECISION_RELEVANT_GAP", "POSSIBLY_BLOCKED"],
+        "more than 25 % and at most half, held by a PSC that may be Lomanov",
+    ),
+    f"{CH}OC400001": (
+        "REVIEW",
+        ["CONTROL_LINK", "DECISION_RELEVANT_GAP", "POSSIBLY_BLOCKED"],
+        "75-100 % of an LLP's surplus assets held by a possibly blocked UK company",
+    ),
+    f"{CH}FX100004": ("CLEAR", [], "a PSC not identified, and no designated party near it"),
+    f"{CH}NI600001": ("CLEAR", [], "statements only, on Northern Ireland's register"),
     f"lei:{lei('ORVDE')}": (
         "REVIEW",
         ["DECISION_RELEVANT_GAP", "POSSIBLY_BLOCKED"],
@@ -110,6 +129,9 @@ def test_a_real_decision_replays_identically():
         # Members of the set the screen read; no rule reads them (Step 14's context).
         "gleif_l1_addresses",
         "os_addresses",
+        # Companies House (Step 17): optional members, there when the refresh had them.
+        "ch_companies",
+        "ch_psc",
     }
     for args in ([], ["--deep", "--role", "reviewer"]):
         replayed = cli("audit", "replay", decision["decision_id"], *args)
@@ -232,3 +254,18 @@ def test_a_refresh_whose_list_shrank_leaves_real_where_it_was(tmp_path):
 def test_a_refresh_of_a_bad_directory_writes_nothing(tmp_path):
     result = cli("refresh", "--path", tmp_path)
     assert result.exit_code == 1 and "Ingest failed, nothing was written" in result.output
+
+
+def test_a_uk_company_s_memo_says_what_the_register_leaves_out():
+    """Step 17: the register names holders of more than 25 % only."""
+    build()
+    decision = screen(f"{CH}FX100003")
+    claims = [c for c in decision["memo"]["claims"] if c["code"] == "SOURCE_THRESHOLD"]
+    assert [(c["params"]["source"], c["params"]["pct"]) for c in claims] == [
+        ("companies_house", "25.0000")
+    ]
+    assert [c["kind"] for c in claims[0]["citations"]] == ["dataset"]
+    # An analyst sees the PSC person masked, as any person.
+    shown = cli("screen", "--target-id", f"{CH}FX100003", "--snapshot", "latest")
+    assert "does not report holdings of 25 % or less" in shown.output
+    assert "Viktor Lomanov" not in shown.output and "[PII MASKED]" in shown.output

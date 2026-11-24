@@ -14,10 +14,11 @@ from ubo_sentinel.pipeline.loaders import LOADERS, IngestSummary
 
 class Source(StrEnum):
     FIXTURES = "fixtures"
-    # Every real dataset of a refresh directory; gleif or opensanctions alone.
+    # Every real dataset of a refresh directory; gleif, opensanctions or companies_house alone.
     REAL = "real"
     GLEIF = "gleif"
     OPENSANCTIONS = "opensanctions"
+    COMPANIES_HOUSE = "companies_house"
     # Holdings reviewers accepted from documents, from the audit log (Step 15).
     DOCUMENTS = "documents"
 

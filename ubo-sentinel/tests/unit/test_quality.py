@@ -49,6 +49,10 @@ def without(tmp_path, keep, name="refresh"):
 def test_the_report_counts_what_the_sources_held(con, ontology):
     report = quality_report(con, build(con, ontology))
     assert {name: d["rows"] for name, d in report["datasets"].items()} == {
+        # Companies House (Step 17): the company file and the PSC snapshot without
+        # its summary line.
+        "ch_companies": 10,
+        "ch_psc": 17,
         "gleif_l1": 20,
         # The same records as gleif_l1 and os_entities, read for their addresses (Step 14).
         "gleif_l1_addresses": 20,
@@ -66,11 +70,56 @@ def test_the_report_counts_what_the_sources_held(con, ontology):
     # Orvasko LLC and its OFAC record join by LEI; Sarvanta and Mirovane by name.
     joined = report["list_companies_joined"]
     assert (joined["LEI"], joined["FUZZY_NAME"]) == (2, 2)
-    assert report["links_by_match_type"] == {"FUZZY_NAME": 2}
-    assert sum(report["name_link_scores"].values()) == 2
+    # And three PSCs to list records of their names (Sarvanta twice, Lomanov).
+    assert report["links_by_match_type"] == {"FUZZY_NAME": 5}
+    assert sum(report["name_link_scores"].values()) == 5
     assert report["filtered"]["os_entities"] == {"UNSUPPORTED_SCHEMA": 1}
     assert report["unreadable"]["pct"] == 1
     assert "changes" not in report
+
+
+def test_the_report_counts_stakes_by_source_and_psc_statements(con, ontology):
+    report = quality_report(con, build(con, ontology))
+    # Companies House states every stake as a band; OpenSanctions as a figure, a range or not.
+    assert report["stake_coverage"]["companies_house"] == {"point": 0, "range": 9, "none": 0}
+    assert report["stake_coverage"]["opensanctions"] == {"point": 3, "range": 1, "none": 2}
+    # Statements in force by kind, the super-secure PSC with them; a ceased one is not.
+    assert report["psc_statements"] == {
+        "no-individual-or-entity-with-signficant-control": 1,
+        "psc-details-not-confirmed": 1,
+        "psc-exists-but-not-identified": 1,
+        "steps-to-find-psc-not-yet-completed": 1,
+        "super-secure-person-with-significant-control": 1,
+    }
+    assert report["noted"] == {"ch_psc": {"TRUST_OR_FIRM": 3}}
+    assert report["filtered"]["ch_psc"] == {
+        "CEASED": 2,
+        "NO_ENDS": 1,
+        "NO_REGISTRABLE_PERSON": 1,
+        "UNSUPPORTED_NATURE": 1,
+    }
+
+
+def test_a_set_that_lost_a_dataset_is_refused_until_accepted(con, ontology, tmp_path):
+    first = build(con, ontology)
+    assert check(con, first).accepted
+    # A refresh without Companies House: its datasets are optional, so the set is made.
+    refresh = shutil.copytree(SAMPLES, tmp_path / "no-ch")
+    manifest = json.loads((refresh / "manifest.json").read_text(encoding="utf-8"))
+    for key in ("ch_companies", "ch_psc"):
+        del manifest["files"][key]
+    (refresh / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    later = build(con, ontology, refresh)
+    assert not {"ch_companies", "ch_psc"} & set(later.snapshot_ids)
+
+    refused = check(con, later)
+    # The datasets fell to zero; in the small sample, the entities fell with them.
+    assert refused.shrunk == ["entities", "dataset:ch_companies", "dataset:ch_psc"]
+    assert not refused.accepted
+    assert resolve_set(con, ALIAS_REAL).snapshot_set_id == first.snapshot_set_id
+    accepted = check(con, later, accept_shrink=True, reason="Companies House is withdrawn")
+    assert accepted.accepted
+    assert resolve_set(con, ALIAS_REAL).snapshot_set_id == later.snapshot_set_id
 
 
 def test_a_refused_record_is_in_the_report(con, ontology, tmp_path, monkeypatch):

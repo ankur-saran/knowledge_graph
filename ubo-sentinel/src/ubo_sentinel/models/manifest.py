@@ -26,6 +26,17 @@ FAMILY_SAMPLE = "sample"
 _SHA256 = r"^[0-9a-f]{64}$"
 
 
+class ManifestPart(BaseModel):
+    """One archive of a file the publisher splits into parts (Companies House)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    url: str
+    # Of the archive as downloaded.
+    size: int = Field(ge=0)
+    archive_sha256: str = Field(pattern=_SHA256)
+
+
 class ManifestFile(BaseModel):
     """One file of a refresh, as stored in the refresh directory."""
 
@@ -45,6 +56,9 @@ class ManifestFile(BaseModel):
     # Of the archive as downloaded, when the file came zipped.
     archive_sha256: str | None = Field(default=None, pattern=_SHA256)
     licence: str
+    # The archives the file was joined from, in order, when the publisher splits it.
+    # Left out when absent, so a manifest written before parts keeps its refresh id.
+    parts: list[ManifestPart] | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class SampleOf(BaseModel):

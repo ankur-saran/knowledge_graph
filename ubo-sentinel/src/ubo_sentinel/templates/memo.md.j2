@@ -29,6 +29,8 @@
 - Stakes stated on {{ p.stated }} of {{ p.total }} ownership links on the paths ({{ p.ranges }} as ranges){% if p.stated < p.total %}; the others are presumed{% endif %}.{{ cites(claim.citations) }}
 {% elif claim.code == "NO_DESIGNATION_FOUND" %}
 - No active designation reaches any of the {{ p.nodes_checked }} entities checked.{{ cites(claim.citations) }}
+{% elif claim.code == "SOURCE_THRESHOLD" %}
+- `{{ p.source }}` does not report holdings of {{ p.pct | pct }} % or less: holders below that level are not in the graph, so their stakes are neither seen nor added together.{{ cites(claim.citations) }}
 {% elif claim.code == "COVERAGE" %}
 - Checked {{ p.nodes_checked }} entities and {{ p.edges_checked }} relationships; reached depth {{ p.depth_reached }} of at most {{ p.max_depth }}.{{ cites(claim.citations) }}
 {% endif %}
@@ -104,7 +106,7 @@ Rule pack: `{{ memo.rule_pack.id }}` (`{{ memo.rule_pack.hash[:16] }}`), blockin
 
 ## Coverage
 
-{{ claims_of(["COVERAGE"]) }}
+{{ claims_of(["COVERAGE", "SOURCE_THRESHOLD"]) }}
 {%- for dataset in memo.coverage.datasets %}
 - Dataset `{{ dataset.dataset }}`, snapshot `{{ dataset.snapshot_id }}`: {{ dataset.row_count }} records{% if dataset.as_of_min is not none %}, as of {{ dataset.as_of_min }} to {{ dataset.as_of_max }}{% endif %}{% if dataset.published_at is not none %}, published {{ dataset.published_at }}{% endif %}.
 {% endfor %}

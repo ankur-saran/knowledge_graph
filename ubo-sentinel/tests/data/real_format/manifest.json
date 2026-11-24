@@ -44,6 +44,28 @@
       "publisher_checksum": "sha1:89b313b4a922510542b285b96866f6f94c71d8a2",
       "archive_sha256": null,
       "licence": "CC-BY-NC-4.0"
+    },
+    "ch_companies": {
+      "path": "companies_house/companies.csv",
+      "source": "companies_house",
+      "url": "https://download.companieshouse.gov.uk/BasicCompanyData-2026-10-01-part1_1.zip",
+      "published_at": "2026-10-01T00:00:00",
+      "size": 4972,
+      "sha256": "d65023adeb0492bb32cc122f654d2771a45b3fdcd0b4c58340c9e3ce26225d9a",
+      "publisher_checksum": null,
+      "archive_sha256": null,
+      "licence": "OGL-3.0"
+    },
+    "ch_psc": {
+      "path": "companies_house/psc.txt",
+      "source": "companies_house",
+      "url": "https://download.companieshouse.gov.uk/psc-snapshot-2026-10-01_1of1.zip",
+      "published_at": "2026-10-01T00:00:00",
+      "size": 7643,
+      "sha256": "29c42b22df4d6bf037d0f863cbf9269353668fef9be14a7d0a6de1db178c8732",
+      "publisher_checksum": null,
+      "archive_sha256": null,
+      "licence": "OGL-3.0"
     }
   }
 }

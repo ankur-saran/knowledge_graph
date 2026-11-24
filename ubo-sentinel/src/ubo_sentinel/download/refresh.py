@@ -28,7 +28,13 @@ import httpx
 from ubo_sentinel.download import http
 from ubo_sentinel.download.publishers import PUBLISHERS, Planned, PublisherError
 from ubo_sentinel.models.canonical import short_id
-from ubo_sentinel.models.manifest import MANIFEST_NAME, Manifest, ManifestFile, load_manifest
+from ubo_sentinel.models.manifest import (
+    MANIFEST_NAME,
+    Manifest,
+    ManifestFile,
+    ManifestPart,
+    load_manifest,
+)
 from ubo_sentinel.pipeline.bronze import file_sha256
 from ubo_sentinel.pipeline.quality import shrink_limit
 
@@ -124,6 +130,64 @@ def _unzip(archive: Path, target: Path) -> tuple[int, str]:
     return target.stat().st_size, digest.hexdigest()
 
 
+def _join(archives: list[Path], target: Path, repeats_header: bool) -> tuple[int, str]:
+    """The one file of each zip, joined in order into `target`. Returns its size and SHA-256.
+
+    A part that repeats the header row has it dropped, and must repeat it exactly;
+    a part that does not end its last line has the line ended.
+    """
+    digest = hashlib.sha256()
+    header: bytes | None = None
+    last = b"\n"
+
+    def write(dst, data: bytes) -> None:
+        nonlocal last
+        if data:
+            dst.write(data)
+            digest.update(data)
+            last = data[-1:]
+
+    try:
+        with target.open("wb") as dst:
+            for archive in archives:
+                with zipfile.ZipFile(archive) as z:
+                    members = [m for m in z.infolist() if not m.is_dir()]
+                    if len(members) != 1:
+                        raise DownloadError(f"{archive.name}: holds {len(members)} files, not one.")
+                    with z.open(members[0]) as src:
+                        if last != b"\n":
+                            write(dst, b"\n")
+                        if repeats_header:
+                            first = src.readline()
+                            if header is None:
+                                header = first
+                                write(dst, first)
+                            elif first != header:
+                                raise DownloadError(
+                                    f"{archive.name}: its header row is not the first part's."
+                                )
+                        while chunk := src.read(http.CHUNK):
+                            write(dst, chunk)
+    except zipfile.BadZipFile as exc:
+        target.unlink(missing_ok=True)
+        raise DownloadError(f"Not a readable zip ({exc}).") from exc
+    return target.stat().st_size, digest.hexdigest()
+
+
+def _fetch_parts(client: httpx.Client, planned: Planned, partial: Path, stem: str) -> dict:
+    """Fetch every part (each resumes on its own), then join them."""
+    archives, parts = [], []
+    for n, url in enumerate(planned.parts, start=1):
+        archive = partial / f"{stem}-part{n}.zip.part"
+        fetched = http.fetch(client, url, archive)
+        archives.append(archive)
+        parts.append({"url": url, "size": fetched.size, "archive_sha256": fetched.sha256})
+    size, sha256 = _join(archives, partial / stem, planned.repeats_header)
+    for archive in archives:
+        archive.unlink()
+    return {"size": size, "sha256": sha256, "archive_sha256": None, "parts": parts}
+
+
 def _fetch(client: httpx.Client, planned: Planned, partial: Path) -> tuple[Path, ManifestFile, str]:
     """Fetch one file into `.partial/` (or find it there, complete), checked."""
     stem = f"{planned.key}-{short_id([planned.url])}"
@@ -132,6 +196,10 @@ def _fetch(client: httpx.Client, planned: Planned, partial: Path) -> tuple[Path,
     if staged.is_file() and done.is_file():
         info = json.loads(done.read_text(encoding="utf-8"))
         origin = "resumed"
+    elif planned.parts:
+        origin = "resumed" if any(partial.glob(f"{stem}-part*.zip.part")) else "fetched"
+        info = _fetch_parts(client, planned, partial, stem)
+        done.write_text(json.dumps(info), encoding="utf-8")
     else:
         part = partial / (stem + (".zip" if planned.zipped else "") + ".part")
         origin = "resumed" if part.exists() else "fetched"
@@ -165,6 +233,7 @@ def _fetch(client: httpx.Client, planned: Planned, partial: Path) -> tuple[Path,
         publisher_checksum=planned.publisher_checksum,
         archive_sha256=info["archive_sha256"],
         licence=planned.licence,
+        parts=[ManifestPart(**part) for part in info["parts"]] if info.get("parts") else None,
     )
     return staged, entry, origin
 

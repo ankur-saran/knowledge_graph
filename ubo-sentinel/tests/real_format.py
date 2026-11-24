@@ -1,4 +1,4 @@
-"""Sample files in the published formats of GLEIF and OpenSanctions, for offline tests.
+"""Sample files in the published formats of GLEIF, OpenSanctions and Companies House.
 
 The files in `tests/data/real_format/` are written by `build_samples()` and
 committed; `test_real_loaders.py` checks they are what it writes. To change
@@ -17,6 +17,14 @@ lapsed LEI whose 60 % owner is designated only by the EU (Halvenstrand,
 Northgate); a name-only match with a jurisdiction (Sarvanta) and one without
 (Mirovane); inactive relationships; an ended designation; a vessel; a target
 with no designation record; ownership percentages written every way.
+
+Companies House (Step 17): the company file, with its published header (some
+names begin with a space), and the PSC snapshot. A UK company GLEIF also holds
+(Brackwater Velling); PSCs in every band, of shares, votes and an LLP's surplus
+assets; a designated company (Sarvanta) and person (Lomanov) as PSCs; corporate
+PSCs on a UK register and abroad; a company number written without its zeros;
+trust, firm and overseas-entity forms; a nominee; a ceased PSC; each kind of
+statement; a super-secure PSC; an exemption and the snapshot's summary line.
 """
 
 import csv
@@ -29,6 +37,7 @@ SAMPLES = Path("tests/data/real_format")
 
 GLEIF_PUBLISHED = "2026-10-01T00:00:00"
 OS_PUBLISHED = "2026-10-01T06:00:00"
+CH_PUBLISHED = "2026-10-01T00:00:00"
 
 
 def lei(tag: str) -> str:
@@ -746,10 +755,291 @@ def _ndjson(records: list[dict]) -> bytes:
     )
 
 
+# --- Companies House ----------------------------------------------------------------------
+
+# The free company data product's header, exactly as published (2026-11).
+CH_HEADER_LINE = (
+    "CompanyName, CompanyNumber,RegAddress.CareOf,RegAddress.POBox,RegAddress.AddressLine1,"
+    " RegAddress.AddressLine2,RegAddress.PostTown,RegAddress.County,RegAddress.Country,"
+    "RegAddress.PostCode,CompanyCategory,CompanyStatus,CountryOfOrigin,DissolutionDate,"
+    "IncorporationDate,Accounts.AccountRefDay,Accounts.AccountRefMonth,Accounts.NextDueDate,"
+    "Accounts.LastMadeUpDate,Accounts.AccountCategory,Returns.NextDueDate,"
+    "Returns.LastMadeUpDate,Mortgages.NumMortCharges,Mortgages.NumMortOutstanding,"
+    "Mortgages.NumMortPartSatisfied,Mortgages.NumMortSatisfied,SICCode.SicText_1,"
+    "SICCode.SicText_2,SICCode.SicText_3,SICCode.SicText_4,LimitedPartnerships.NumGenPartners,"
+    "LimitedPartnerships.NumLimPartners,URI,PreviousName_1.CONDATE, PreviousName_1.CompanyName,"
+    " PreviousName_2.CONDATE, PreviousName_2.CompanyName,"
+    + ",".join(f"PreviousName_{i}.CONDATE, PreviousName_{i}.CompanyName" for i in range(3, 11))
+    + ",ConfStmtNextDueDate, ConfStmtLastMadeUpDate"
+)
+CH_HEADER = CH_HEADER_LINE.split(",")
+
+
+def _ch_company(number, name, category, status, previous=(), **cells):
+    row = {
+        "CompanyName": name,
+        " CompanyNumber": number,
+        "RegAddress.AddressLine1": f"{len(name)} Harbour Street",
+        "RegAddress.PostTown": "LONDON",
+        "RegAddress.Country": "ENGLAND",
+        "CompanyCategory": category,
+        "CompanyStatus": status,
+        "CountryOfOrigin": "United Kingdom",
+        "IncorporationDate": "11/04/2012",
+        "Mortgages.NumMortCharges": "0",
+        "SICCode.SicText_1": "70100 - Activities of head offices",
+        "URI": f"http://business.data.gov.uk/id/company/{number}",
+    }
+    for i, (date, old) in enumerate(previous, start=1):
+        # As published, only the second date's header begins with a space.
+        row[" PreviousName_2.CONDATE" if i == 2 else f"PreviousName_{i}.CONDATE"] = date
+        row[f" PreviousName_{i}.CompanyName"] = old
+    row.update(cells)
+    return row
+
+
+CH_COMPANIES = [
+    # GLEIF holds it too (RA000585, number FXR-HOLD): one entity, GLEIF's record first.
+    _ch_company(
+        "FXR-HOLD",
+        "BRACKWATER VELLING HOLDINGS PLC",
+        "Public Limited Company",
+        "Active",
+        previous=[("14/02/2019", "BRACKWATER HOLDINGS PLC")],
+    ),
+    _ch_company("FX100002", "PELLMOOR FREIGHT LIMITED", "Private Limited Company", "Active"),
+    _ch_company("FX100003", "LINDQVIST HARBOUR SERVICES LTD", "Private Limited Company", "Active"),
+    _ch_company(
+        "FX100004", "QUARRYFIELD ESTATES LIMITED", "Private Limited Company", "Liquidation"
+    ),
+    _ch_company("FX100005", "ASHGROVE NOMINEES LIMITED", "Private Limited Company", "Active"),
+    # Northern Ireland's register: GLEIF's RA000586.
+    _ch_company(
+        "NI600001",
+        "BELFAST LOUGH TRADING LIMITED",
+        "Private Limited Company",
+        "Active - Proposal to Strike off",
+        **{"RegAddress.PostTown": "BELFAST", "RegAddress.Country": "NORTHERN IRELAND"},
+    ),
+    _ch_company("OC400001", "OLDFORD PARTNERS LLP", "Limited Liability Partnership", "Active"),
+    _ch_company(
+        "01234567", "HOLLINWORTH ENGINEERING LIMITED", "Private Limited Company", "Dissolved"
+    ),
+    _ch_company("OE000001", "VELMORA OVERSEAS HOLDINGS LTD", "Overseas Entity", "Registered"),
+    _ch_company("SL000001", "GLENBRAE FARMING PARTNERSHIP", "Scottish Partnership", "Active"),
+]
+
+
+def _psc(number, kind, psc_id, **data):
+    """One line of the PSC snapshot: `company_number` and `data`, as published."""
+    collection = (
+        "persons-with-significant-control-statements"
+        if kind == "persons-with-significant-control-statement"
+        else f"persons-with-significant-control/{kind.split('-person')[0].split('-beneficial')[0]}"
+    )
+    record = {
+        "etag": hashlib.sha1(f"{number}:{psc_id}".encode()).hexdigest(),
+        "kind": kind,
+        "links": {"self": f"/company/{number}/{collection}/{psc_id}"},
+        "notified_on": "2016-04-06",
+    }
+    record.update(data)
+    line = {"data": record}
+    if number is not None:
+        line = {"company_number": number, **line}
+    return line
+
+
+_UAE = {
+    "country_registered": "United Arab Emirates",
+    "legal_authority": "UAE Commercial Companies Law",
+    "legal_form": "Limited Liability Company",
+    "place_registered": "Dubai Department of Economy and Tourism",
+    "registration_number": "DXB-778812",
+}
+_IND = "individual-person-with-significant-control"
+_CORP = "corporate-entity-person-with-significant-control"
+_STATEMENT = "persons-with-significant-control-statement"
+
+CH_PSC = [
+    # A designated company abroad holds a majority of shares and votes.
+    _psc(
+        "FX100002",
+        _CORP,
+        "fxPsc0201",
+        name="Sarvanta Metals Trading L.L.C.",
+        identification=_UAE,
+        natures_of_control=[
+            "ownership-of-shares-50-to-75-percent",
+            "voting-rights-50-to-75-percent",
+        ],
+    ),
+    # A designated person holds more than 25 % and at most half, as a trustee.
+    _psc(
+        "FX100003",
+        _IND,
+        "fxPsc0301",
+        name="Mr Viktor Lomanov",
+        name_elements={"forename": "Viktor", "surname": "Lomanov", "title": "Mr"},
+        date_of_birth={"month": 4, "year": 1966},
+        nationality="Emirati",
+        country_of_residence="United Arab Emirates",
+        natures_of_control=["ownership-of-shares-25-to-50-percent-as-trust"],
+    ),
+    # A corporate PSC on no UK register appoints the board.
+    _psc(
+        "FX100003",
+        _CORP,
+        "fxPsc0302",
+        name="Vantelli Holdings S.A.",
+        identification={
+            "country_registered": "Luxembourg",
+            "legal_authority": "Luxembourg Company Law",
+            "legal_form": "Societe Anonyme",
+            "place_registered": "Registre de Commerce et des Societes",
+            "registration_number": "B123456",
+        },
+        natures_of_control=["right-to-appoint-and-remove-directors"],
+    ),
+    # Ceased: Bronze keeps it, the graph does not.
+    _psc(
+        "FX100004",
+        _IND,
+        "fxPsc0401",
+        name="Ms Anna Quarry",
+        date_of_birth={"month": 9, "year": 1970},
+        nationality="British",
+        ceased_on="2025-01-31",
+        natures_of_control=["ownership-of-shares-75-to-100-percent"],
+    ),
+    _psc(
+        "FX100004",
+        "legal-person-person-with-significant-control",
+        "fxPsc0402",
+        name="Eastmoor Borough Council",
+        identification={
+            "legal_authority": "Local Government Act 1972",
+            "legal_form": "Local Authority",
+        },
+        natures_of_control=["significant-influence-or-control"],
+    ),
+    _psc("FX100004", _STATEMENT, "fxSt0401", statement="psc-exists-but-not-identified"),
+    _psc(
+        "FX100005",
+        _STATEMENT,
+        "fxSt0501",
+        statement="no-individual-or-entity-with-signficant-control",
+    ),
+    _psc(
+        "FX100005",
+        "super-secure-person-with-significant-control",
+        "fxPsc0501",
+        description="super-secure-persons-with-significant-control",
+    ),
+    # A UK company holds it, its number written without the leading zero.
+    _psc(
+        "FX100005",
+        _CORP,
+        "fxPsc0502",
+        name="HOLLINWORTH ENGINEERING LIMITED",
+        identification={
+            "country_registered": "England",
+            "legal_authority": "Companies Act 2006",
+            "legal_form": "Private Limited Company",
+            "place_registered": "Companies House Cardiff",
+            "registration_number": "1234567",
+        },
+        natures_of_control=["ownership-of-shares-75-to-100-percent"],
+    ),
+    _psc("FX100005", "exemptions", "fxEx0501", exemptions={}),
+    _psc("NI600001", _STATEMENT, "fxSt0601", statement="psc-details-not-confirmed"),
+    _psc("NI600001", _STATEMENT, "fxSt0602", statement="steps-to-find-psc-not-yet-completed"),
+    _psc(
+        "NI600001",
+        _STATEMENT,
+        "fxSt0603",
+        statement="psc-contacted-but-no-response",
+        ceased_on="2024-06-30",
+    ),
+    # An LLP held by a UK company: surplus assets and votes, and the right to appoint members.
+    _psc(
+        "OC400001",
+        _CORP,
+        "fxPsc0701",
+        name="PELLMOOR FREIGHT LIMITED",
+        identification={
+            "country_registered": "England And Wales",
+            "legal_authority": "Companies Act 2006",
+            "legal_form": "Private Limited Company",
+            "place_registered": "Companies House",
+            "registration_number": "FX100002",
+        },
+        natures_of_control=[
+            "right-to-share-surplus-assets-75-to-100-percent-limited-liability-partnership",
+            "voting-rights-75-to-100-percent-limited-liability-partnership",
+            "right-to-appoint-and-remove-members-limited-liability-partnership",
+        ],
+    ),
+    # A registered overseas entity's beneficial owner, in every overseas form, and a nominee.
+    _psc(
+        "OE000001",
+        "individual-beneficial-owner",
+        "fxBo0801",
+        name="Mr Daniel Okafor",
+        date_of_birth={"month": 2, "year": 1980},
+        nationality="Nigerian",
+        natures_of_control=[
+            "ownership-of-shares-more-than-25-percent-registered-overseas-entity",
+            "voting-rights-more-than-25-percent-as-firm-registered-overseas-entity",
+            "significant-influence-or-control-as-control-over-trust-registered-overseas-entity",
+            "registered-owner-as-nominee-person-england-wales-registered-overseas-entity",
+        ],
+    ),
+    _psc(
+        "SL000001",
+        _IND,
+        "fxPsc0901",
+        name="Mrs Isla Brae",
+        date_of_birth={"month": 7, "year": 1975},
+        nationality="British",
+        natures_of_control=[
+            "part-right-to-share-surplus-assets-50-to-75-percent",
+            "right-to-appoint-and-remove-person",
+        ],
+    ),
+    # A record that names no company.
+    _psc(
+        None,
+        _IND,
+        "fxPsc9901",
+        name="Mr Nobody Known",
+        natures_of_control=["voting-rights-25-to-50-percent"],
+    ),
+    # The snapshot's summary line.
+    {
+        "data": {
+            "kind": "totals#persons-of-significant-control-snapshot",
+            "persons_of_significant_control_count": 17,
+        }
+    },
+]
+
+
+def _ch_csv() -> bytes:
+    out = io.StringIO()
+    writer = csv.writer(out, quoting=csv.QUOTE_ALL, lineterminator="\n")
+    for row in CH_COMPANIES:
+        unknown = set(row) - set(CH_HEADER)
+        assert not unknown, unknown
+        writer.writerow([row.get(column, "") for column in CH_HEADER])
+    return (CH_HEADER_LINE + "\n").encode("utf-8") + out.getvalue().encode("utf-8")
+
+
 # --- the refresh directory --------------------------------------------------------------
 
 _GLEIF_URL = "https://goldencopy.gleif.org/storage/golden-copy-files/2026/10/01/fx/"
 _OS_URL = "https://data.opensanctions.org/artifacts/sanctions/20261001060000-fxr/"
+_CH_URL = "https://download.companieshouse.gov.uk/"
 
 FILES = {
     "gleif_lei2": (
@@ -780,6 +1070,20 @@ FILES = {
         OS_PUBLISHED,
         "CC-BY-NC-4.0",
     ),
+    "ch_companies": (
+        "companies_house",
+        "companies_house/companies.csv",
+        _CH_URL + "BasicCompanyData-2026-10-01-part1_1.zip",
+        CH_PUBLISHED,
+        "OGL-3.0",
+    ),
+    "ch_psc": (
+        "companies_house",
+        "companies_house/psc.txt",
+        _CH_URL + "psc-snapshot-2026-10-01_1of1.zip",
+        CH_PUBLISHED,
+        "OGL-3.0",
+    ),
 }
 
 
@@ -790,6 +1094,8 @@ def build_samples() -> dict[str, bytes]:
         "gleif/rr.csv": _csv(RR_HEADER, RR_ROWS),
         "gleif/repex.csv": _csv(REPEX_HEADER, REPEX_ROWS),
         "opensanctions/entities.ftm.json": _ndjson(OS_ENTITIES),
+        "companies_house/companies.csv": _ch_csv(),
+        "companies_house/psc.txt": _ndjson(CH_PSC),
     }
     files = {}
     for key, (source, path, url, published_at, licence) in FILES.items():

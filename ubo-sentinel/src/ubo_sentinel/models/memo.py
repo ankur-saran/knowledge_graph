@@ -59,6 +59,9 @@ ClaimCode = Literal[
     "COVERAGE",
     # How many ownership links on the paths state their stake, and how many as ranges.
     "STAKE_COVERAGE",
+    # A source the screen read reports no holding at or below a level (Companies
+    # House: 25 %), so smaller holdings are absent, not zero (Step 17).
+    "SOURCE_THRESHOLD",
 ]
 
 # What a citation points at. `record` is any other source record (a reporting
