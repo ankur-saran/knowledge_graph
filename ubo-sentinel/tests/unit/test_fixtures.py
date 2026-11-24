@@ -301,9 +301,13 @@ def test_every_enum_value_appears_in_the_fixtures(entities, relationships, repex
     }
     assert {row.entity_type for row in entities} == set(get_args(EntityType))
     assert {row.rel_type for row in relationships} == set(get_args(RelType))
-    assert {row.basis for row in relationships} == set(get_args(Basis))
+    # The control bases Companies House states (Step 17) are in no fixture file, which
+    # keep their bytes: tests/unit/test_companies_house.py covers them.
+    companies_house = {"board_appointment", "significant_influence"}
+    assert {row.basis for row in relationships} == set(get_args(Basis)) - companies_house
     assert {row.is_ultimate for row in relationships} == {True, False}
-    assert {row.category for row in repex} == set(get_args(RepexCategory))
+    # A PSC statement is Companies House's (Step 17), likewise in no fixture file.
+    assert {row.category for row in repex} == set(get_args(RepexCategory)) - {"PSC_STATEMENT"}
 
 
 def test_sanctions_use_two_programs_and_one_inactive_record(sanctions):
