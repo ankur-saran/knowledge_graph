@@ -10,7 +10,7 @@ form is the query's (`form_similarity`), then to the smaller id.
 
 import csv
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +20,7 @@ from ubo_sentinel.pipeline.entity_linking import BLOCK_PREFIX_LENGTH
 from ubo_sentinel.pipeline.jurisdiction import normalise_jurisdiction
 from ubo_sentinel.pipeline.name_match import (
     form_similarity,
+    name_similarity,
     normalise_name,
     similarity_normalised,
 )
@@ -199,24 +200,42 @@ class ErReport:
     correct: int
     # (query, expected id, id returned first or None).
     misses: list[tuple[str, str, str | None]]
-    # `negative` rows that returned a candidate: (query, id, score).
+    # `negative` rows (invented names) that returned a candidate: (query, id, score).
     false_candidates: list[tuple[str, str, float]]
+    # Other rows that name no entity (`near_homonym`: a real name one letter
+    # away) and returned a candidate. Measured, not held to nothing (Step 18).
+    homonym_candidates: list[tuple[str, str, float]] = field(default_factory=list)
 
     @property
     def precision_at_1(self) -> float:
         return self.correct / self.total if self.total else 1.0
 
 
-def evaluate_labelled(store: GraphStore, path: Path) -> ErReport:
-    """Resolve every row of a labelled set (`eval/er_labelled.csv`).
+# The labelled sets' variant type for invented names, which must find nothing.
+NEGATIVE = "negative"
 
-    A row is correct when the entity it names comes first. A row with a
-    jurisdiction is resolved with it, which is what tells two homonyms apart.
-    A `negative` row must return nothing.
+
+@dataclass(frozen=True)
+class ScoredRow:
+    """One labelled query, resolved once: what the sweep cuts at every threshold."""
+
+    query: str
+    # The entity the row names; None for a row that names none.
+    expected: str | None
+    variant_type: str
+    # (entity id, score), best first, as `resolve()` returned them.
+    candidates: tuple[tuple[str, float], ...]
+
+
+def score_labelled(store: GraphStore, path: Path) -> list[ScoredRow]:
+    """Resolve every row of a labelled set (`eval/er_labelled.csv`) once.
+
+    A row with a jurisdiction is resolved with it, which is what tells two
+    homonyms apart. A row with no `expected_entity_id` names no entity.
+    Columns other than the five read here (`labelled_by`, `set_id`) say who
+    labelled the row and on which set.
     """
-    total = correct = 0
-    misses: list[tuple[str, str, str | None]] = []
-    false_candidates: list[tuple[str, str, float]] = []
+    rows: list[ScoredRow] = []
     with path.open(encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f):
             found = resolve(
@@ -225,15 +244,206 @@ def evaluate_labelled(store: GraphStore, path: Path) -> ErReport:
                 lei=row["lei"] or None,
                 jurisdiction=row["jurisdiction"] or None,
             )
-            if row["variant_type"] == "negative":
-                false_candidates += [
-                    (row["query_name"], match.entity_id, match.confidence) for match in found
-                ]
-                continue
-            total += 1
-            first = found[0].entity_id if found else None
-            if first == row["expected_entity_id"]:
-                correct += 1
+            rows.append(
+                ScoredRow(
+                    query=row["query_name"],
+                    expected=row["expected_entity_id"] or None,
+                    variant_type=row["variant_type"],
+                    candidates=tuple((match.entity_id, match.confidence) for match in found),
+                )
+            )
+    return rows
+
+
+def report_of(rows: list[ScoredRow]) -> ErReport:
+    """Precision@1 at the resolution floor.
+
+    A row is correct when the entity it names comes first. A `negative` row must
+    return nothing; another row that names no entity is counted when it does.
+    """
+    total = correct = 0
+    misses: list[tuple[str, str, str | None]] = []
+    false_candidates: list[tuple[str, str, float]] = []
+    homonym_candidates: list[tuple[str, str, float]] = []
+    for row in rows:
+        if row.expected is None:
+            found = [(row.query, entity_id, score) for entity_id, score in row.candidates]
+            if row.variant_type == NEGATIVE:
+                false_candidates += found
             else:
-                misses.append((row["query_name"], row["expected_entity_id"], first))
-    return ErReport(total, correct, misses, false_candidates)
+                homonym_candidates += found
+            continue
+        total += 1
+        first = row.candidates[0][0] if row.candidates else None
+        if first == row.expected:
+            correct += 1
+        else:
+            misses.append((row.query, row.expected, first))
+    return ErReport(total, correct, misses, false_candidates, homonym_candidates)
+
+
+def evaluate_labelled(store: GraphStore, path: Path) -> ErReport:
+    """Resolve every row of a labelled set and score it at the resolution floor."""
+    return report_of(score_labelled(store, path))
+
+
+# The sweep's cut-offs, in hundredths: 0.75 to 1.00 by 0.01 (Step 18).
+SWEEP_THRESHOLDS = tuple(range(75, 101))
+# Every variant type together.
+ALL_TYPES = "all"
+
+
+def cut(score: float, threshold: int) -> bool:
+    """Whether a score is at or above a cut-off in hundredths, compared as code compares
+    it with a pack's threshold (`0.85` is `85 / 100`)."""
+    return score >= threshold / 100
+
+
+@dataclass(frozen=True)
+class ResolutionCounts:
+    """Labelled queries of one variant type at one cut-off."""
+
+    # Rows that name an entity; of them, found first and found in the first five.
+    named: int = 0
+    first: int = 0
+    in_top_5: int = 0
+    # Rows that name none; of them, those that returned a candidate.
+    unnamed: int = 0
+    with_candidate: int = 0
+
+    @property
+    def precision_at_1(self) -> float | None:
+        return self.first / self.named if self.named else None
+
+    @property
+    def recall_at_5(self) -> float | None:
+        return self.in_top_5 / self.named if self.named else None
+
+    @property
+    def false_candidate_rate(self) -> float | None:
+        return self.with_candidate / self.unnamed if self.unnamed else None
+
+
+def sweep_labelled(
+    rows: list[ScoredRow], thresholds: tuple[int, ...] = SWEEP_THRESHOLDS
+) -> dict[int, dict[str, ResolutionCounts]]:
+    """Cut-off -> variant type (and `all`) -> counts, from the stored scores.
+
+    Candidates come best first, so those at or above a cut-off are a prefix of
+    what `resolve()` returned: the first of them is the first at that cut-off.
+    """
+    sweep: dict[int, dict[str, ResolutionCounts]] = {}
+    for threshold in thresholds:
+        counts: dict[str, list[int]] = {}
+        for row in rows:
+            kept = [entity_id for entity_id, score in row.candidates if cut(score, threshold)]
+            for key in (row.variant_type, ALL_TYPES):
+                c = counts.setdefault(key, [0, 0, 0, 0, 0])
+                if row.expected is None:
+                    c[3] += 1
+                    c[4] += bool(kept)
+                else:
+                    c[0] += 1
+                    c[1] += bool(kept) and kept[0] == row.expected
+                    c[2] += row.expected in kept[:5]
+        sweep[threshold] = {key: ResolutionCounts(*c) for key, c in sorted(counts.items())}
+    return sweep
+
+
+@dataclass(frozen=True)
+class LabelledPair:
+    """Two names labelled one party or two (`eval/er_pairs_real.csv`), for linking."""
+
+    name_a: str
+    name_b: str
+    entity_type: str
+    same: bool
+    variant_type: str
+    # As the source states them, or empty: Step 19 reads them, the score does not yet.
+    birth_year_a: str = ""
+    nationality_a: str = ""
+    birth_year_b: str = ""
+    nationality_b: str = ""
+
+
+PAIR_COLUMNS = (
+    "name_a", "name_b", "entity_type", "same", "variant_type",
+    "birth_year_a", "nationality_a", "birth_year_b", "nationality_b",
+    "labelled_by", "set_id",
+)  # fmt: skip
+
+
+def load_pairs(path: Path) -> list[LabelledPair]:
+    """Read a labelled pair file; `same` is `1` or `0`. The five columns scored are
+    required; the person attributes and who labelled the pair on which set may be absent."""
+    pairs: list[LabelledPair] = []
+    with path.open(encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        missing = [c for c in PAIR_COLUMNS[:5] if c not in (reader.fieldnames or [])]
+        if missing:
+            raise ValueError(f"{path.as_posix()} lacks columns {', '.join(missing)}")
+        for line, row in enumerate(reader, start=2):
+            if row["same"] not in ("0", "1"):
+                raise ValueError(f"{path.as_posix()}:{line}: same is {row['same']!r}, not 0 or 1")
+            pairs.append(
+                LabelledPair(
+                    name_a=row["name_a"],
+                    name_b=row["name_b"],
+                    entity_type=row["entity_type"],
+                    same=row["same"] == "1",
+                    variant_type=row["variant_type"],
+                    birth_year_a=row.get("birth_year_a") or "",
+                    nationality_a=row.get("nationality_a") or "",
+                    birth_year_b=row.get("birth_year_b") or "",
+                    nationality_b=row.get("nationality_b") or "",
+                )
+            )
+    return pairs
+
+
+@dataclass(frozen=True)
+class PairCounts:
+    """Labelled pairs of one variant type at one cut-off: a pair at or above it is linked."""
+
+    true_pos: int = 0
+    false_pos: int = 0
+    false_neg: int = 0
+    true_neg: int = 0
+
+    @property
+    def precision(self) -> float | None:
+        linked = self.true_pos + self.false_pos
+        return self.true_pos / linked if linked else None
+
+    @property
+    def recall(self) -> float | None:
+        same = self.true_pos + self.false_neg
+        return self.true_pos / same if same else None
+
+    @property
+    def f1(self) -> float | None:
+        p, r = self.precision, self.recall
+        if p is None or r is None:
+            return None
+        return 2 * p * r / (p + r) if p + r else 0.0
+
+
+def score_pairs(pairs: list[LabelledPair]) -> list[tuple[LabelledPair, float]]:
+    """Each pair with the score Silver links by (`name_similarity()`), computed once."""
+    return [(pair, name_similarity(pair.name_a, pair.name_b)) for pair in pairs]
+
+
+def sweep_pairs(
+    scored: list[tuple[LabelledPair, float]], thresholds: tuple[int, ...] = SWEEP_THRESHOLDS
+) -> dict[int, dict[str, PairCounts]]:
+    """Cut-off -> variant type (and `all`) -> counts, from the stored scores."""
+    sweep: dict[int, dict[str, PairCounts]] = {}
+    for threshold in thresholds:
+        counts: dict[str, list[int]] = {}
+        for pair, score in scored:
+            linked = cut(score, threshold)
+            slot = (0 if linked else 2) if pair.same else (1 if linked else 3)
+            for key in (pair.variant_type, ALL_TYPES):
+                counts.setdefault(key, [0, 0, 0, 0])[slot] += 1
+        sweep[threshold] = {key: PairCounts(*c) for key, c in sorted(counts.items())}
+    return sweep

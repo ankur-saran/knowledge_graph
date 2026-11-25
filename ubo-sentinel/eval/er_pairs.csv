@@ -1,0 +1,41 @@
+name_a,name_b,entity_type,same,variant_type,birth_year_a,nationality_a,birth_year_b,nationality_b,labelled_by,set_id
+Pellucid Optics Pte Ltd,Pellucid Optics Pte Ltd,LegalEntity,1,exact,,,,,synthetic,59005be3b94289c8
+Tobias Wrenfield,Tobias Wrenfield,Person,1,exact,,,,,synthetic,59005be3b94289c8
+ZEPHYRINE LOGISTICS BV,Zephyrine Logistics BV,LegalEntity,1,case,,,,,synthetic,59005be3b94289c8
+Vostrek Maritime LLC,Vostrek Maritime L.L.C.,LegalEntity,1,punctuation,,,,,synthetic,59005be3b94289c8
+Azovzerno Export LLC,AZOVZERNO EXPORT L.L.C.,LegalEntity,1,punctuation,,,,,synthetic,59005be3b94289c8
+Calloway Reef Resorts Ltd,Calloway-Reef Resorts Ltd,LegalEntity,1,punctuation,,,,,synthetic,59005be3b94289c8
+Pendlewick Salt Refiners Ltd,Pendlewick Salt Refiners Limited,LegalEntity,1,legal_form,,,,,synthetic,59005be3b94289c8
+Murmansk Trawl Flot AO,Murmansk Trawl Flot,LegalEntity,1,legal_form,,,,,synthetic,59005be3b94289c8
+Zhelezny Bereg Invest OOO,Zhelezny Bereg Invest,LegalEntity,1,legal_form,,,,,synthetic,59005be3b94289c8
+Nettlebed Cider Company Ltd,Nettlebed Cider Co Limited,LegalEntity,1,legal_form,,,,,synthetic,59005be3b94289c8
+Dmitri Volkanov,Дмитрий Волканов,Person,1,transliteration,,RU,,RU,synthetic,59005be3b94289c8
+Yusuf Al-Qahdari,يوسف القحدري,Person,1,transliteration,,AE,,AE,synthetic,59005be3b94289c8
+Zhelezny Bereg Invest OOO,Железный Берег Инвест,LegalEntity,1,transliteration,,,,,synthetic,59005be3b94289c8
+Rashid Tulyaganov,Rashid Tulaganov,Person,1,transliteration,,UZ,,UZ,synthetic,59005be3b94289c8
+Dmitri Volkanov,Dmitry Volkanov,Person,1,transliteration,,RU,,RU,synthetic,59005be3b94289c8
+Greywether Bookbinders Ltd,Greywether Book Binders Ltd,LegalEntity,1,spacing,,,,,synthetic,59005be3b94289c8
+Azovzerno Export LLC,Azov Zerno Export LLC,LegalEntity,1,spacing,,,,,synthetic,59005be3b94289c8
+Yusuf Al-Qahdari,Yusuf Alqahdari,Person,1,spacing,,AE,,AE,synthetic,59005be3b94289c8
+Tobias Wrenfield,T. Wrenfield,Person,1,initials,,GB,,GB,synthetic,59005be3b94289c8
+Cordelia Ashdowne,C. Ashdowne,Person,1,initials,,GB,,GB,synthetic,59005be3b94289c8
+Anvar Sodiqzoda,A. Sodiqzoda,Person,1,initials,,TJ,,TJ,synthetic,59005be3b94289c8
+Yusuf Al-Qahdari,Yousef Al-Qahdari,Person,1,given_name,,AE,,AE,synthetic,59005be3b94289c8
+Dmitri Volkanov,Dimitri Volkanov,Person,1,given_name,,RU,,RU,synthetic,59005be3b94289c8
+Kolvari Exports JSC,Kolvari Exports Trading Company,LegalEntity,1,generic_suffix,,,,,synthetic,59005be3b94289c8
+Acme Trading FZE,Acme Trading Group,LegalEntity,1,generic_suffix,,,,,synthetic,59005be3b94289c8
+Corvanta Bulk Carriers AG,Corvanta Bulk Carriers Shipping Holding AG,LegalEntity,1,generic_suffix,,,,,synthetic,59005be3b94289c8
+Mirzakhan Petrochem OOO,Mirzakhan Petrochem Oil Company,LegalEntity,1,generic_suffix,,,,,synthetic,59005be3b94289c8
+Thornaby Rolling Mills Ltd,Thornaby Roling Mills Ltd,LegalEntity,1,typo,,,,,synthetic,59005be3b94289c8
+Crannoch Distillers Ltd,Crannoch Distilers Ltd,LegalEntity,1,typo,,,,,synthetic,59005be3b94289c8
+Harrowgate Grain Terminals Ltd,Grain Terminals Harrowgate Ltd,LegalEntity,1,word_order,,,,,synthetic,59005be3b94289c8
+Vostrek Maritime L.L.C.,Vostrek Marine,LegalEntity,1,alias,,,,,synthetic,59005be3b94289c8
+AZM Shipping Ltd,AZN Shipping Ltd,LegalEntity,0,near_homonym,,,,,synthetic,59005be3b94289c8
+BTK Holdings Ltd,BTR Holdings Ltd,LegalEntity,0,near_homonym,,,,,synthetic,59005be3b94289c8
+SKL Metals OOO,SKM Metals OOO,LegalEntity,0,near_homonym,,,,,synthetic,59005be3b94289c8
+MTK Trade LLC,MTC Trade LLC,LegalEntity,0,near_homonym,,,,,synthetic,59005be3b94289c8
+Rashid Tulyaganov,Rashid Tulyakov,Person,0,near_homonym,,UZ,,UZ,synthetic,59005be3b94289c8
+Silverline Commodities Ltd,Silverline Commodities Ltd,LegalEntity,0,homonym,,,,,synthetic,59005be3b94289c8
+Kittiwake Packaging Ltd,Kittiwake Pottery Ltd,LegalEntity,0,shared_word,,,,,synthetic,59005be3b94289c8
+Ulveston Freight Ltd,Ulveston Ceramics Ltd,LegalEntity,0,shared_word,,,,,synthetic,59005be3b94289c8
+Fennimore Estates Ltd,Brightwater Tannery SA,LegalEntity,0,unrelated,,,,,synthetic,59005be3b94289c8

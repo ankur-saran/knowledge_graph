@@ -1,6 +1,7 @@
 """`ubo eval`: run the gold scenarios and the labelled entity-resolution set."""
 
 import csv
+import hashlib
 import json
 import math
 import tempfile
@@ -32,7 +33,18 @@ from ubo_sentinel.agents.supervisor import Supervisor
 from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.audit.replay import replay_all
 from ubo_sentinel.cli.app import ONTOLOGY_PATH, app, require_role
-from ubo_sentinel.graph.entity_resolution import ErReport, evaluate_labelled
+from ubo_sentinel.graph.entity_resolution import (
+    ALL_TYPES,
+    ErReport,
+    PairCounts,
+    ResolutionCounts,
+    load_pairs,
+    report_of,
+    score_labelled,
+    score_pairs,
+    sweep_labelled,
+    sweep_pairs,
+)
 from ubo_sentinel.graph.store import GraphNotBuilt, GraphStore
 from ubo_sentinel.llm.client import LLMUnavailable, client_for
 from ubo_sentinel.llm.config import load_config
@@ -63,6 +75,13 @@ ER_PATHS = {
     bronze.FAMILY_FIXTURES: Path("eval/er_labelled.csv"),
     bronze.FAMILY_REAL: Path("eval/er_labelled_real.csv"),
 }
+# Family -> name pairs labelled one party or two, for linking (Step 18).
+ER_PAIRS_PATHS = {
+    bronze.FAMILY_FIXTURES: Path("eval/er_pairs.csv"),
+    bronze.FAMILY_REAL: Path("eval/er_pairs_real.csv"),
+}
+# Per family, the sweep's figures at the pack's operating points: what Step 19 is measured against.
+ER_BASELINE_PATH = Path("eval/er_baseline.json")
 # Messy queries for the intake assist (Step 13.5), scored only with UBO_LLM_INTAKE on.
 ER_MESSY_PATH = Path("eval/er_messy.csv")
 # Invariants of real screens that hold on any refresh: `agents/real_smoke.py`.
@@ -246,8 +265,180 @@ def _print_er(out: _Output, report: ErReport) -> bool:
     for query, entity_id, score in report.false_candidates:
         out.echo(f"  FALSE CANDIDATE  '{query}': {entity_id} at {score:.2f}")
         out.problems.append(f"er: '{query}' returned a candidate")
+    if report.homonym_candidates:
+        # A real name one letter away: measured by the sweep, not held to nothing.
+        queries = len({query for query, _, _ in report.homonym_candidates})
+        out.echo(f"  Near-homonym queries that returned a candidate: {queries} (see --sweep)")
     met = out.metric("er", "ER precision@1", report.precision_at_1, ER_PRECISION_TARGET)
     return met and not report.false_candidates
+
+
+def _shown(value: float | None) -> str:
+    return "-" if value is None else f"{value:.1%}"
+
+
+def _sweep_table(
+    out: _Output,
+    title: str,
+    sweep: dict[int, dict],
+    columns: list[str],
+    value,
+    marks: dict[int, str],
+) -> None:
+    """One metric at every cut-off (rows) for each variant type (columns)."""
+    if not columns:
+        return
+    out.echo(f"  {title}")
+    widths = [max(len(column), 6) + 2 for column in columns]
+    out.echo("    cut   " + "".join(f"{c:>{w}}" for c, w in zip(columns, widths, strict=True)))
+    for threshold, by_type in sweep.items():
+        mark = " *" if threshold in marks else "  "
+        cells = "".join(
+            f"{_shown(value(by_type[c]) if c in by_type else None):>{w}}"
+            for c, w in zip(columns, widths, strict=True)
+        )
+        out.echo(f"    {threshold / 100:.2f}{mark}{cells}")
+
+
+def _types(by_type: dict, keep) -> list[str]:
+    """`all` first, then the variant types that `keep` holds for."""
+    found = sorted(key for key, counts in by_type.items() if key != ALL_TYPES and keep(counts))
+    return ([ALL_TYPES] if found else []) + found
+
+
+def _counts_document(counts: ResolutionCounts | PairCounts) -> dict:
+    names = ("precision_at_1", "recall_at_5", "false_candidate_rate", "precision", "recall", "f1")
+    document = asdict(counts)
+    for name in names:
+        if hasattr(counts, name):
+            figure = getattr(counts, name)
+            document[name] = None if figure is None else round(figure, 4)
+    return document
+
+
+def _sweep_document(sweep: dict[int, dict], only: set[int] | None = None) -> dict:
+    return {
+        f"{threshold / 100:.2f}": {key: _counts_document(c) for key, c in by_type.items()}
+        for threshold, by_type in sweep.items()
+        if only is None or threshold in only
+    }
+
+
+@dataclass
+class _Sweep:
+    """What `--sweep` measured, for the JSON document and the baseline."""
+
+    resolution: dict[int, dict[str, ResolutionCounts]]
+    pairs: dict[int, dict[str, PairCounts]] | None
+    marks: dict[int, str]
+
+
+def operating_points(pack) -> dict[int, str]:
+    """The pack's cut-offs in hundredths, and what each is."""
+    return {
+        round(pack.review_band_low * 100): "review_band_low (the link floor)",
+        round(pack.match_threshold * 100): "match_threshold",
+    }
+
+
+def _print_sweep(
+    out: _Output, store: GraphStore, er_path: Path, pairs_path: Path | None, pack
+) -> tuple[bool, _Sweep]:
+    """Score every labelled row and pair once, then report every cut-off from the scores."""
+    rows = score_labelled(store, er_path)
+    ok = _print_er(out, report_of(rows))
+    marks = operating_points(pack)
+    resolution = sweep_labelled(rows)
+    first = resolution[min(resolution)]
+    out.echo(f"Entity resolution sweep ({er_path.as_posix()}; * the pack's operating points:")
+    out.echo("  " + "; ".join(f"{t / 100:.2f} {what}" for t, what in sorted(marks.items())) + ")")
+    sizes = ", ".join(
+        f"{key} {c.named + c.unnamed}" for key, c in first.items() if key != ALL_TYPES
+    )
+    out.echo(f"  Rows by variant type: {sizes}")
+    named = _types(first, lambda c: c.named)
+    unnamed = _types(first, lambda c: c.unnamed)
+    _sweep_table(out, "Precision@1", resolution, named, lambda c: c.precision_at_1, marks)
+    _sweep_table(out, "Recall@5", resolution, named, lambda c: c.recall_at_5, marks)
+    _sweep_table(
+        out,
+        "Rows naming no entity that return a candidate",
+        resolution,
+        unnamed,
+        lambda c: c.false_candidate_rate,
+        marks,
+    )
+    if pairs_path is None or not pairs_path.is_file():
+        shown = pairs_path.as_posix() if pairs_path else "none for this family"
+        out.echo(f"Name pairs: not run (no labelled pairs: {shown})")
+        return ok, _Sweep(resolution, None, marks)
+    try:
+        scored = score_pairs(load_pairs(pairs_path))
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    pairs = sweep_pairs(scored)
+    first_pairs = pairs[min(pairs)]
+    out.echo(
+        f"Name pairs sweep ({pairs_path.as_posix()}; a pair at or above the cut-off is linked)"
+    )
+    sizes = ", ".join(
+        f"{key} {c.true_pos + c.false_neg}+/{c.false_pos + c.true_neg}-"
+        for key, c in first_pairs.items()
+        if key != ALL_TYPES
+    )
+    out.echo(f"  Pairs by variant type (same+/different-): {sizes}")
+    every = _types(first_pairs, lambda c: True)
+    with_same = _types(first_pairs, lambda c: c.true_pos + c.false_neg)
+    with_different = _types(first_pairs, lambda c: c.false_pos + c.true_neg)
+    _sweep_table(out, "Precision", pairs, every, lambda c: c.precision, marks)
+    _sweep_table(out, "Recall", pairs, with_same, lambda c: c.recall, marks)
+    _sweep_table(out, "F1", pairs, with_same, lambda c: c.f1, marks)
+    _sweep_table(
+        out,
+        "Pairs labelled different that are linked",
+        pairs,
+        with_different,
+        lambda c: c.false_pos / (c.false_pos + c.true_neg),
+        marks,
+    )
+    return ok, _Sweep(resolution, pairs, marks)
+
+
+def _file_entry(path: Path | None) -> dict | None:
+    if path is None or not path.is_file():
+        return None
+    data = path.read_bytes()
+    return {
+        "path": path.as_posix(),
+        "rows": max(data.count(b"\n") - 1, 0),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+
+def write_baseline(
+    path: Path,
+    family: str,
+    set_id: str,
+    sweep: _Sweep,
+    er_path: Path,
+    pairs_path: Path | None,
+) -> None:
+    """Write the family's figures at the operating points, keeping the other families'."""
+    baseline = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    points = set(sweep.marks)
+    baseline[family] = {
+        "snapshot_set_id": set_id,
+        "operating_points": {
+            what.split(" ")[0]: f"{t / 100:.2f}" for t, what in sorted(sweep.marks.items())
+        },
+        "labels": _file_entry(er_path),
+        "pairs": _file_entry(pairs_path) if sweep.pairs is not None else None,
+        "resolution": _sweep_document(sweep.resolution, points),
+        "pair_scores": _sweep_document(sweep.pairs, points) if sweep.pairs is not None else None,
+    }
+    text = json.dumps(baseline, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    path.write_text(text, encoding="utf-8", newline="\n")
 
 
 def _print_assist(out: _Output, store: GraphStore) -> bool:
@@ -625,12 +816,38 @@ def evaluate(
         Path,
         typer.Option("--smoke", help="Entries of the real-smoke suite."),
     ] = SMOKE_PATH,
+    sweep: Annotated[
+        bool,
+        typer.Option(
+            "--sweep",
+            help="er suite: every cut-off from 0.75 to 1.00 by type, for names and pairs.",
+        ),
+    ] = False,
+    pairs: Annotated[
+        Path | None,
+        typer.Option("--pairs", help="Labelled name pairs for --sweep (default: by family)."),
+    ] = None,
+    update_baseline: Annotated[
+        bool,
+        typer.Option(
+            "--update-baseline",
+            help=f"With --sweep: write the figures at the operating points to"
+            f" {ER_BASELINE_PATH.as_posix()}.",
+        ),
+    ] = False,
 ) -> None:
     """Run the gold scenarios through the rules and the pipeline, and score entity resolution."""
     require_role(role, "eval")
     if update_golden and suite not in (Suite.pipeline, Suite.all):
         typer.echo("--update-golden needs the pipeline suite.", err=True)
         raise typer.Exit(code=2)
+    if (sweep or update_baseline) and suite is not Suite.er:
+        typer.echo("--sweep and --update-baseline need the er suite.", err=True)
+        raise typer.Exit(code=2)
+    if update_baseline and not sweep:
+        typer.echo("--update-baseline writes what --sweep measures: pass both.", err=True)
+        raise typer.Exit(code=2)
+    measured: _Sweep | None = None
     out = _Output(as_json)
     try:
         engine = RuleEngine(load_rule_pack(pack_path(rule_pack)))
@@ -763,8 +980,19 @@ def evaluate(
                 ok = _run_extraction(out, store) and ok
             if suite is Suite.all:
                 ok = _run_packs(out) and ok
+            if Suite.er in runs and sweep:
+                pairs_path = pairs or ER_PAIRS_PATHS.get(family)
+                if pairs is not None and not pairs.is_file():
+                    typer.echo(f"No labelled pairs ({pairs.as_posix()}).", err=True)
+                    raise typer.Exit(code=2)
+                er_ok, measured = _print_sweep(out, store, er_path, pairs_path, engine.pack)
+                ok = er_ok and ok
+                if update_baseline:
+                    write_baseline(ER_BASELINE_PATH, family, set_id, measured, er_path, pairs_path)
+                    out.echo(f"  ER baseline ({family}) written to {ER_BASELINE_PATH.as_posix()}")
+            elif Suite.er in runs:
+                ok = _print_er(out, report_of(score_labelled(store, er_path))) and ok
             if Suite.er in runs:
-                ok = _print_er(out, evaluate_labelled(store, er_path)) and ok
                 ok = _print_assist(out, store) and ok
             if Suite.real_smoke in runs:
                 try:
@@ -791,6 +1019,12 @@ def evaluate(
             "metrics": [asdict(metric) for metric in out.metrics],
             "problems": out.problems,
         }
+        if measured is not None:
+            document["sweep"] = {
+                "operating_points": [f"{t / 100:.2f}" for t in sorted(measured.marks)],
+                "resolution": _sweep_document(measured.resolution),
+                "pairs": _sweep_document(measured.pairs) if measured.pairs is not None else None,
+            }
         typer.echo(json.dumps(document, indent=2))
     if not ok:
         raise typer.Exit(code=1)

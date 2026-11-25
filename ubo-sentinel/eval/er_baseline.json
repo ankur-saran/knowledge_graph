@@ -1,0 +1,597 @@
+{
+  "fixtures": {
+    "labels": {
+      "path": "eval/er_labelled.csv",
+      "rows": 44,
+      "sha256": "f2ebad863f4b0da3f582f4520c7275a0a5bd51ecffad07695908c054b6618a7b"
+    },
+    "operating_points": {
+      "match_threshold": "0.92",
+      "review_band_low": "0.85"
+    },
+    "pair_scores": {
+      "0.85": {
+        "alias": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 1
+        },
+        "all": {
+          "f1": 0.7018,
+          "false_neg": 11,
+          "false_pos": 6,
+          "precision": 0.7692,
+          "recall": 0.6452,
+          "true_neg": 3,
+          "true_pos": 20
+        },
+        "case": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 1
+        },
+        "exact": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 2
+        },
+        "generic_suffix": {
+          "f1": 0.4,
+          "false_neg": 3,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 0.25,
+          "true_neg": 0,
+          "true_pos": 1
+        },
+        "given_name": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 2
+        },
+        "homonym": {
+          "f1": null,
+          "false_neg": 0,
+          "false_pos": 1,
+          "precision": 0.0,
+          "recall": null,
+          "true_neg": 0,
+          "true_pos": 0
+        },
+        "initials": {
+          "f1": null,
+          "false_neg": 3,
+          "false_pos": 0,
+          "precision": null,
+          "recall": 0.0,
+          "true_neg": 0,
+          "true_pos": 0
+        },
+        "legal_form": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 4
+        },
+        "near_homonym": {
+          "f1": null,
+          "false_neg": 0,
+          "false_pos": 5,
+          "precision": 0.0,
+          "recall": null,
+          "true_neg": 0,
+          "true_pos": 0
+        },
+        "punctuation": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 3
+        },
+        "shared_word": {
+          "f1": null,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": null,
+          "recall": null,
+          "true_neg": 2,
+          "true_pos": 0
+        },
+        "spacing": {
+          "f1": 0.5,
+          "false_neg": 2,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 0.3333,
+          "true_neg": 0,
+          "true_pos": 1
+        },
+        "transliteration": {
+          "f1": 0.5714,
+          "false_neg": 3,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 0.4,
+          "true_neg": 0,
+          "true_pos": 2
+        },
+        "typo": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 2
+        },
+        "unrelated": {
+          "f1": null,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": null,
+          "recall": null,
+          "true_neg": 1,
+          "true_pos": 0
+        },
+        "word_order": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 1
+        }
+      },
+      "0.92": {
+        "alias": {
+          "f1": null,
+          "false_neg": 1,
+          "false_pos": 0,
+          "precision": null,
+          "recall": 0.0,
+          "true_neg": 0,
+          "true_pos": 0
+        },
+        "all": {
+          "f1": 0.6939,
+          "false_neg": 14,
+          "false_pos": 1,
+          "precision": 0.9444,
+          "recall": 0.5484,
+          "true_neg": 8,
+          "true_pos": 17
+        },
+        "case": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 1
+        },
+        "exact": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 2
+        },
+        "generic_suffix": {
+          "f1": null,
+          "false_neg": 4,
+          "false_pos": 0,
+          "precision": null,
+          "recall": 0.0,
+          "true_neg": 0,
+          "true_pos": 0
+        },
+        "given_name": {
+          "f1": 0.6667,
+          "false_neg": 1,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 0.5,
+          "true_neg": 0,
+          "true_pos": 1
+        },
+        "homonym": {
+          "f1": null,
+          "false_neg": 0,
+          "false_pos": 1,
+          "precision": 0.0,
+          "recall": null,
+          "true_neg": 0,
+          "true_pos": 0
+        },
+        "initials": {
+          "f1": null,
+          "false_neg": 3,
+          "false_pos": 0,
+          "precision": null,
+          "recall": 0.0,
+          "true_neg": 0,
+          "true_pos": 0
+        },
+        "legal_form": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 4
+        },
+        "near_homonym": {
+          "f1": null,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": null,
+          "recall": null,
+          "true_neg": 5,
+          "true_pos": 0
+        },
+        "punctuation": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 3
+        },
+        "shared_word": {
+          "f1": null,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": null,
+          "recall": null,
+          "true_neg": 2,
+          "true_pos": 0
+        },
+        "spacing": {
+          "f1": 0.5,
+          "false_neg": 2,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 0.3333,
+          "true_neg": 0,
+          "true_pos": 1
+        },
+        "transliteration": {
+          "f1": 0.5714,
+          "false_neg": 3,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 0.4,
+          "true_neg": 0,
+          "true_pos": 2
+        },
+        "typo": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 2
+        },
+        "unrelated": {
+          "f1": null,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": null,
+          "recall": null,
+          "true_neg": 1,
+          "true_pos": 0
+        },
+        "word_order": {
+          "f1": 1.0,
+          "false_neg": 0,
+          "false_pos": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_neg": 0,
+          "true_pos": 1
+        }
+      }
+    },
+    "pairs": {
+      "path": "eval/er_pairs.csv",
+      "rows": 40,
+      "sha256": "667c1a27a5aba120f861bb242fc2b01e21d29ae1661aae8d52f562e9fc76f467"
+    },
+    "resolution": {
+      "0.85": {
+        "alias": {
+          "false_candidate_rate": null,
+          "first": 2,
+          "in_top_5": 2,
+          "named": 2,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "all": {
+          "false_candidate_rate": 0.0,
+          "first": 39,
+          "in_top_5": 39,
+          "named": 39,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 5,
+          "with_candidate": 0
+        },
+        "case": {
+          "false_candidate_rate": null,
+          "first": 4,
+          "in_top_5": 4,
+          "named": 4,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "exact": {
+          "false_candidate_rate": null,
+          "first": 5,
+          "in_top_5": 5,
+          "named": 5,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "homonym": {
+          "false_candidate_rate": null,
+          "first": 2,
+          "in_top_5": 2,
+          "named": 2,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "legal_form": {
+          "false_candidate_rate": null,
+          "first": 5,
+          "in_top_5": 5,
+          "named": 5,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "lei": {
+          "false_candidate_rate": null,
+          "first": 2,
+          "in_top_5": 2,
+          "named": 2,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "merged_record": {
+          "false_candidate_rate": null,
+          "first": 2,
+          "in_top_5": 2,
+          "named": 2,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "negative": {
+          "false_candidate_rate": 0.0,
+          "first": 0,
+          "in_top_5": 0,
+          "named": 0,
+          "precision_at_1": null,
+          "recall_at_5": null,
+          "unnamed": 5,
+          "with_candidate": 0
+        },
+        "punctuation": {
+          "false_candidate_rate": null,
+          "first": 4,
+          "in_top_5": 4,
+          "named": 4,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "transliteration": {
+          "false_candidate_rate": null,
+          "first": 5,
+          "in_top_5": 5,
+          "named": 5,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "typo": {
+          "false_candidate_rate": null,
+          "first": 6,
+          "in_top_5": 6,
+          "named": 6,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "word_order": {
+          "false_candidate_rate": null,
+          "first": 2,
+          "in_top_5": 2,
+          "named": 2,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        }
+      },
+      "0.92": {
+        "alias": {
+          "false_candidate_rate": null,
+          "first": 2,
+          "in_top_5": 2,
+          "named": 2,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "all": {
+          "false_candidate_rate": 0.0,
+          "first": 39,
+          "in_top_5": 39,
+          "named": 39,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 5,
+          "with_candidate": 0
+        },
+        "case": {
+          "false_candidate_rate": null,
+          "first": 4,
+          "in_top_5": 4,
+          "named": 4,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "exact": {
+          "false_candidate_rate": null,
+          "first": 5,
+          "in_top_5": 5,
+          "named": 5,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "homonym": {
+          "false_candidate_rate": null,
+          "first": 2,
+          "in_top_5": 2,
+          "named": 2,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "legal_form": {
+          "false_candidate_rate": null,
+          "first": 5,
+          "in_top_5": 5,
+          "named": 5,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "lei": {
+          "false_candidate_rate": null,
+          "first": 2,
+          "in_top_5": 2,
+          "named": 2,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "merged_record": {
+          "false_candidate_rate": null,
+          "first": 2,
+          "in_top_5": 2,
+          "named": 2,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "negative": {
+          "false_candidate_rate": 0.0,
+          "first": 0,
+          "in_top_5": 0,
+          "named": 0,
+          "precision_at_1": null,
+          "recall_at_5": null,
+          "unnamed": 5,
+          "with_candidate": 0
+        },
+        "punctuation": {
+          "false_candidate_rate": null,
+          "first": 4,
+          "in_top_5": 4,
+          "named": 4,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "transliteration": {
+          "false_candidate_rate": null,
+          "first": 5,
+          "in_top_5": 5,
+          "named": 5,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "typo": {
+          "false_candidate_rate": null,
+          "first": 6,
+          "in_top_5": 6,
+          "named": 6,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        },
+        "word_order": {
+          "false_candidate_rate": null,
+          "first": 2,
+          "in_top_5": 2,
+          "named": 2,
+          "precision_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "unnamed": 0,
+          "with_candidate": 0
+        }
+      }
+    },
+    "snapshot_set_id": "59005be3b94289c8"
+  }
+}
