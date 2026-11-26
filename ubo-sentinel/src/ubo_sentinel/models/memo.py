@@ -17,6 +17,7 @@ from ubo_sentinel.models.decision import (
     UtcDatetime,
 )
 from ubo_sentinel.models.entity import EntityStatus, EntityType, LeiStatus
+from ubo_sentinel.models.graph import Corroboration, Corroborator
 from ubo_sentinel.models.evidence import (
     DataGap,
     EffectiveExposure,
@@ -177,6 +178,9 @@ class MemoMatch(_Model):
     confidence: Confidence
     is_active: bool
     effect: MatchEffect
+    # Whether the two records agree on jurisdiction, birth year and nationality
+    # (`SanctionMatch.corroboration`, Step 19).
+    corroboration: dict[Corroborator, Corroboration]
     programs: list[str] = []
     list_sources: list[str] = []
     citations: list[Citation] = []

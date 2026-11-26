@@ -12,6 +12,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ubo_sentinel.models.canonical import sha256_hex
+from ubo_sentinel.models.graph import Corroborator
 from ubo_sentinel.models.provenance import Confidence, NonEmptyStr
 from ubo_sentinel.pipeline.entity_linking import LINK_FLOOR
 
@@ -21,8 +22,9 @@ DEFAULT_PACK = "ofac"
 
 # Raise when a change to `rules/engine.py` alters what a pack concludes. It is
 # part of `rule_pack_hash`, and so of every `decision_id`. 4: stakes as ranges,
-# and the measures a pack tests (Step 16).
-RULES_VERSION = 4
+# and the measures a pack tests (Step 16). 5: a name match blocks only when a
+# listed corroborator agrees and none conflicts (Step 19).
+RULES_VERSION = 5
 
 ThresholdPct = Annotated[Decimal, Field(gt=0, le=100)]
 
@@ -50,7 +52,11 @@ class RulePack(BaseModel):
     other_designations: Literal["review", "ignore"]
     match_threshold: Confidence
     review_band_low: Confidence
-    name_match_requires_jurisdiction: bool
+    # What a fuzzy name match at or above `match_threshold` needs to block: at
+    # least one of these agrees and none conflicts (`SanctionMatch.corroboration`).
+    # Otherwise, or with a conflict at any score, it is possibly blocked, never
+    # dropped. Empty asks for none.
+    name_match_corroborators: list[Corroborator]
     presume_majority_for_consolidation: bool
     gap_scope: Literal["on_path", "any"]
     review_exposure_pct: ThresholdPct
@@ -66,11 +72,17 @@ class RulePack(BaseModel):
     # without one hashes as it did before the key existed.
     label: NonEmptyStr | None = Field(default=None, exclude_if=lambda value: value is None)
 
-    @field_validator("designation_lists", "ownership_measures")
+    @field_validator("designation_lists", "ownership_measures", "name_match_corroborators")
     @classmethod
     def _sort_lists[T: str](cls, value: list[T]) -> list[T]:
         # A set: the order it is written in changes nothing, the hash included.
         return sorted(set(value))
+
+    @property
+    def name_match_requires_jurisdiction(self) -> bool:
+        """Whether the pack asks a name match for a jurisdiction (the key before Step 19,
+        read by the test oracle `tests/oracles/engine_v3.py`)."""
+        return "jurisdiction" in self.name_match_corroborators
 
     @model_validator(mode="after")
     def _check_consistency(self) -> Self:

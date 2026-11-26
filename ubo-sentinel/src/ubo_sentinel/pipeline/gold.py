@@ -18,6 +18,7 @@ from ubo_sentinel.pipeline import silver
 from ubo_sentinel.pipeline.bronze import SnapshotSet, transaction
 from ubo_sentinel.pipeline.digest import fold_tables
 from ubo_sentinel.pipeline.entity_linking import BLOCK_PREFIX_LENGTH
+from ubo_sentinel.pipeline.name_match import block_tokens
 
 _PROVENANCE = """
     source TEXT NOT NULL,
@@ -47,6 +48,8 @@ _TABLES: dict[str, tuple[str, str]] = {
     status TEXT NOT NULL,
     lei_status TEXT,
     entity_type TEXT NOT NULL,
+    birth_dates TEXT[] NOT NULL,
+    nationalities TEXT[] NOT NULL,
     repex_reason TEXT,{_PROVENANCE},
     supporting_records JSON NOT NULL,
     up_degree INTEGER NOT NULL,
@@ -299,7 +302,7 @@ def _write_nodes(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
         )
         SELECT e.snapshot_set_id, e.id, e.entity_type, e.lei, e.registration_authority_id,
             e.registration_number, e.legal_name, e.aliases, e.jurisdiction, e.status,
-            e.lei_status, e.entity_type, e.repex_reason,
+            e.lei_status, e.entity_type, e.birth_dates, e.nationalities, e.repex_reason,
             {", ".join(f"e.{c.strip()}" for c in _PROV.split(","))},
             e.supporting_records, coalesce(up.n, 0), coalesce(down.n, 0)
         FROM silver_entities e
@@ -353,12 +356,18 @@ def _write_links(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
 
 
 def _write_name_blocks(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
-    # The same blocks Silver links on, so a name found there is found here.
+    # The same blocks Silver links on, so a name found there is found here: the
+    # tokens of both forms of a name (`block_tokens()`).
+    present = con.execute(
+        "SELECT count(*) FROM duckdb_functions() WHERE function_name = 'ubo_block_tokens'"
+    ).fetchone()[0]
+    if not present:
+        con.create_function("ubo_block_tokens", block_tokens, ["VARCHAR"], "VARCHAR[]")
     con.execute(
         """
         INSERT INTO graph_name_blocks
         SELECT DISTINCT snapshot_set_id, left(token, ?), entity_id, name, name_norm, kind FROM (
-            SELECT *, unnest(string_split(name_norm, ' ')) AS token
+            SELECT *, unnest(ubo_block_tokens(name_norm)) AS token
             FROM silver_entity_names WHERE snapshot_set_id = ?
         ) WHERE token <> ''
         """,

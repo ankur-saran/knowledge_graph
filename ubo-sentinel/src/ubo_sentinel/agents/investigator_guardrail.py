@@ -55,6 +55,7 @@ VALUE_FIELDS = frozenset(
     {
         "as_of",
         "basis",
+        "birth_year",
         "category",
         "cause",
         "changed_fields",
@@ -66,7 +67,6 @@ VALUE_FIELDS = frozenset(
         "is_active",
         "is_ultimate",
         "jurisdiction",
-        "jurisdictions_agree",
         "kind",
         "kinds",
         "lei_status",
@@ -74,6 +74,7 @@ VALUE_FIELDS = frozenset(
         "list_source",
         "mass",
         "match_type",
+        "nationality",
         "not_listed",
         "pct",
         "program",

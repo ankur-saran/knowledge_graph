@@ -30,7 +30,7 @@ from ubo_sentinel.models import (
 )
 from ubo_sentinel.models.decision import Recommendation
 from ubo_sentinel.models.evidence import GapCode, ReasonCode
-from ubo_sentinel.models.graph import upper_lower
+from ubo_sentinel.models.graph import unstated, upper_lower
 from ubo_sentinel.models.provenance import Confidence, NonEmptyStr
 from ubo_sentinel.models.relationship import Interest, RelType
 from ubo_sentinel.models.rule_result import RuleResult
@@ -217,7 +217,8 @@ def _match(spec: SpecDesignation, pack: RulePack) -> SanctionMatch:
         match_type=match_type,
         confidence=spec.confidence,
         is_active=True,
-        jurisdictions_agree=True,
+        # The two records state one jurisdiction and nothing else (Step 19).
+        corroboration={**unstated(), "jurisdiction": "AGREE"},
         sanction_records=[record],
     )
 

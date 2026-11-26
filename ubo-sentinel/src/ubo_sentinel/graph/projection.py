@@ -21,7 +21,8 @@ MAX_DOWN_NODES = 200
 _PROVENANCE = ", ".join(Provenance.model_fields)
 _NODE_COLUMNS = (
     "id, lei, registration_authority_id, registration_number, legal_name, aliases,"
-    f" jurisdiction, status, lei_status, entity_type, repex_reason, {_PROVENANCE},"
+    f" jurisdiction, status, lei_status, entity_type, birth_dates, nationalities, repex_reason,"
+    f" {_PROVENANCE},"
     " supporting_records"
 )
 _EDGE_COLUMNS = (

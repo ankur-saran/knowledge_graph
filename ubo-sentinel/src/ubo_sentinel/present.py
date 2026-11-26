@@ -204,6 +204,8 @@ def card_lines(cards: list[dict[str, Any]]) -> list[str]:
             f"{', '.join(item['shared_name_tokens']) or '-'}  alias match: {item['alias_match']}",
             f"    country   {a['jurisdiction'] or '-'}  |  {b['jurisdiction'] or '-'}"
             f"  (agree: {item['jurisdictions_agree']})",
+            "    corroborated "
+            + ", ".join(f"{key} {value}" for key, value in item["corroboration"].items()),
             f"    type      {item['type_a']}  |  {item['type_b']}",
             f"    conflicts LEI: {item['lei_conflict']}  registration: "
             f"{item['registration_conflict']}",

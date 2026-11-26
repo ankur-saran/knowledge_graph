@@ -41,6 +41,8 @@ _TABLES: dict[str, tuple[str, str]] = {
     status TEXT NOT NULL,
     lei_status TEXT,
     entity_type TEXT NOT NULL,
+    birth_dates TEXT[] NOT NULL,
+    nationalities TEXT[] NOT NULL,
     repex_reason TEXT,{_PROVENANCE},
     supporting_records JSON NOT NULL""",
         "id",

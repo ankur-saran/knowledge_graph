@@ -24,9 +24,11 @@ other_designations: review
 # `match_threshold` and is a review-band match down to `review_band_low`.
 match_threshold: 0.92
 review_band_low: 0.85
-# true: a name match at or above `match_threshold` blocks only when both records
-# state a jurisdiction and it is the same one; otherwise it is a review-band match.
-name_match_requires_jurisdiction: true
+# A name match at or above `match_threshold` blocks only when at least one of these
+# agrees (both records state it and it is the same) and none conflicts (both state
+# it and it differs); otherwise it is a review-band match. A conflict caps a match
+# of any score at a review, and never removes it.
+name_match_corroborators: [jurisdiction, birth_year, nationality]
 
 # A consolidation edge without a percentage is presumed a majority: possibly
 # blocked, so REVIEW, never a silent CLEAR.

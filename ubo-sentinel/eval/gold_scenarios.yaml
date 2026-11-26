@@ -621,3 +621,33 @@
     pack does not apply (FX-EU-LIST). The OFAC 50 % rule does not reach the target, so nothing is
     blocked; under the pack's own test that designation would block the target, so with
     other_designations 'review' it is a reason to review.
+
+- id: SCEN-31
+  query: Wexcombe Kiln Supplies Ltd
+  target_id: lei:FXS31TARGET000000000
+  expected_recommendation: REVIEW
+  expected_reasons:
+  - DECISION_RELEVANT_GAP
+  - POSSIBLY_BLOCKED
+  expected_possibly_blocked:
+  - fx_registry:s31-owner
+  - lei:FXS31TARGET000000000
+  expected_paths:
+  - nodes:
+    - fx_registry:s31-owner
+    - lei:FXS31TARGET000000000
+    via:
+    - OWNS
+  expected_gaps:
+  - code: REVIEW_BAND_MATCH
+    node: fx_registry:s31-owner
+    decision_relevant: true
+  declared_name_pairs:
+  - a: fx_list:s31-listed
+    b: fx_registry:s31-owner
+    band: blocked
+  rationale: A designated person and the target's 70 % owner have one name and one country, but
+    the list states another birth year. With name_match_corroborators, a match whose corroborator
+    conflicts is capped at a review-band match (Step 19), never proof and never dropped. The owner
+    is possibly blocked, and through its majority so is the target. Without the birth years the
+    agreeing jurisdiction would block the owner and escalate.

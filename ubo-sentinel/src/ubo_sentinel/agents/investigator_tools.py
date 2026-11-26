@@ -329,7 +329,8 @@ class ToolBox:
             "match_type": match.match_type,
             "confidence": match.confidence,
             "is_active": match.is_active,
-            "jurisdictions_agree": match.jurisdictions_agree,
+            # AGREE, CONFLICT or UNSTATED per corroborator, never the values (Step 19).
+            "corroboration": dict(match.corroboration),
             "designations": [
                 {
                     "program": sanction.program,

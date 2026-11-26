@@ -9,18 +9,19 @@ The machine-readable source is [ontology/ontology.yaml](ontology/ontology.yaml).
 | `LegalEntity` | A company, holding, fund or other legal person |
 | `Person` | A natural person (an owner, controller or designated individual) |
 
-Both labels have the same properties: `id`, `lei`, `registration_authority_id`, `registration_number`, `legal_name`, `aliases`, `jurisdiction`, `status`, `lei_status`, `entity_type`, `repex_reason`.
+Both labels have the same properties: `id`, `lei`, `registration_authority_id`, `registration_number`, `legal_name`, `aliases`, `jurisdiction`, `status`, `lei_status`, `entity_type`, `birth_dates`, `nationalities`, `repex_reason`.
 
 - `id` is `lei:<LEI>` when the entity has an LEI, otherwise `<source>:<source_record_id>`.
 - `status` is the entity's legal status: `ACTIVE`, `INACTIVE` or `UNKNOWN`, kept as the source published it.
 - `lei_status` is the status of the entity's LEI record (GLEIF's registration status), empty for an entity without an LEI: `ISSUED`, `LAPSED`, `RETIRED`, `MERGED`, `DUPLICATE`, `ANNULLED`, `CANCELLED`, `TRANSFERRED`, `PENDING_TRANSFER`, `PENDING_ARCHIVAL` or `PENDING_VALIDATION`. The two are separate because an active entity may have a lapsed LEI. An LEI that is `LAPSED`, `RETIRED`, `MERGED`, `DUPLICATE` or `ANNULLED` is no longer kept up to date and is a data gap (`LAPSED_LEI`).
 - `jurisdiction` is the ISO 3166-1 alpha-2 country, upper case (`US`, not `US-DE`); a value that is not a country code is read as no jurisdiction (`pipeline/jurisdiction.py`).
+- `birth_dates` are ISO dates, possibly partial (`1970`, `1970-03`); `nationalities` are ISO 3166-1 alpha-2 countries. Both are empty when no record states them, which is always so for a `LegalEntity`. They corroborate or contradict a name match (`SanctionMatch.corroboration`).
 - `repex_reason` summarises why a parent is not reported: the distinct `CATEGORY:reason` values, sorted and joined with `; `. The full reporting exceptions are separate records, each with a category (`DIRECT_PARENT` or `ULTIMATE_PARENT`), a reason and its own provenance.
 
 ### One entity from several records
 
 - Records that share an LEI are one entity. So are records that share a registration authority and number, unless that would put two LEIs or two entity types in one entity; those two entities are linked instead.
-- The entity is described by one of its records: a registry's before a list's, then the newest. A field that record leaves empty comes from the next record. `aliases` holds every other name and alias of every record.
+- The entity is described by one of its records: a registry's before a list's, then the newest. A field that record leaves empty comes from the next record. `aliases` holds every other name and alias of every record; `birth_dates` and `nationalities` hold what any record states (Step 19).
 - `supporting_records` lists every record of the entity, including the one that describes it.
 - Entities with similar names are never merged. A pair that scores at least 0.85 is a link with that score as its confidence, unless both have an LEI or their jurisdictions differ.
 
@@ -67,7 +68,7 @@ Every node, edge and designation carries: `source`, `source_record_id`, `snapsho
 
 | Role | Masked fields | Read-only | Decision rights |
 |---|---|---|---|
-| `analyst` | `Person`: `legal_name`, `aliases`, `registration_number`, `lei` | no | none |
+| `analyst` | `Person`: `legal_name`, `aliases`, `registration_number`, `lei`, `birth_dates`, `nationalities` | no | none |
 | `reviewer` | none | no | `APPROVED`, `OVERRIDDEN`, `ESCALATED` |
 | `auditor` | none | yes | none |
 | `engineer` | none | no | none |

@@ -19,6 +19,7 @@ from ubo_sentinel.models.graph import CandidateLink, EntityMatch
 from ubo_sentinel.pipeline.entity_linking import BLOCK_PREFIX_LENGTH
 from ubo_sentinel.pipeline.jurisdiction import normalise_jurisdiction
 from ubo_sentinel.pipeline.name_match import (
+    block_tokens,
     form_similarity,
     name_similarity,
     normalise_name,
@@ -154,7 +155,8 @@ def _score_names(store: GraphStore, query: str) -> dict[str, tuple[float, bool, 
     """Node id -> (best score, whether a name is the query exactly, how closely that
     name with its legal form matches the query's, that name)."""
     query_norm = normalise_name(query)
-    blocks = sorted({token[:BLOCK_PREFIX_LENGTH] for token in query_norm.split()})
+    # Silver's blocks: the tokens of both forms of the name, in Latin letters.
+    blocks = sorted({token[:BLOCK_PREFIX_LENGTH] for token in block_tokens(query_norm)})
     if not blocks:
         return {}
     # A name equal to the query is found whatever the size of its blocks.
@@ -179,9 +181,18 @@ def _score_names(store: GraphStore, query: str) -> dict[str, tuple[float, bool, 
         ).fetchall()
         in_hand += size
 
+    # Each name is scored as a name of its entity's type (a person's initials, a
+    # company's generic words), as Silver scores a link.
+    types = dict(
+        store.con.execute(
+            "SELECT id, entity_type FROM graph_nodes"
+            f" WHERE snapshot_set_id = ? AND id IN {id_list()}",
+            [store.set_id, sorted({node_id for node_id, _, _ in names})],
+        ).fetchall()
+    )
     best: dict[str, tuple[float, bool, float, str]] = {}
     for node_id, name, name_norm in sorted(set(names)):
-        score = similarity_normalised(query_norm, name_norm)
+        score = similarity_normalised(query_norm, name_norm, types.get(node_id))
         if score < RESOLVE_FLOOR:
             continue
         found = (score, name_norm == query_norm, form_similarity(query, name), name)
@@ -359,7 +370,7 @@ class LabelledPair:
     entity_type: str
     same: bool
     variant_type: str
-    # As the source states them, or empty: Step 19 reads them, the score does not yet.
+    # As the source states them, or empty. The rules read them (Step 19); the name score does not.
     birth_year_a: str = ""
     nationality_a: str = ""
     birth_year_b: str = ""
@@ -429,8 +440,9 @@ class PairCounts:
 
 
 def score_pairs(pairs: list[LabelledPair]) -> list[tuple[LabelledPair, float]]:
-    """Each pair with the score Silver links by (`name_similarity()`), computed once."""
-    return [(pair, name_similarity(pair.name_a, pair.name_b)) for pair in pairs]
+    """Each pair with the score Silver links by (`name_similarity()` for the pair's
+    entity type), computed once."""
+    return [(pair, name_similarity(pair.name_a, pair.name_b, pair.entity_type)) for pair in pairs]
 
 
 def sweep_pairs(

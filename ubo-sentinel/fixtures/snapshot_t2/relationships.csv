@@ -78,3 +78,4 @@ fx_registry,s28-rel-1,2026-09-01,1.0,fx_registry:s28-parent,fx_registry:s28-targ
 fx_list,s28-rel-2,2026-09-15,1.0,fx_list:s28-director,fx_registry:s28-parent,CONTROLS,,directorship,false
 fx_registry,s29-rel-1,2026-09-01,1.0,fx_registry:s29-owner,fx_registry:s29-target,OWNS,70,shareholding,false
 fx_registry,s30-rel-1,2026-09-01,1.0,fx_registry:s30-owner,fx_registry:s30-target,OWNS,60,shareholding,false
+fx_registry,s31-rel-1,2026-09-01,1.0,fx_registry:s31-owner,fx_registry:s31-target,OWNS,70,shareholding,false

@@ -52,6 +52,11 @@ OS_ENTITIES = RealDataset(
             "registrationNumber",
             "ogrnCode",
             "innCode",
+            # A person's dates of birth and nationalities, read as corroborators of a
+            # name match (Step 19). A snapshot ingested before holds none.
+            "birthDate",
+            "nationality",
+            "citizenship",
         ),
         Column("target", kind=Kind.BOOL),
     ),

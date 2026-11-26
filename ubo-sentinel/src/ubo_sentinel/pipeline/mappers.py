@@ -29,7 +29,10 @@ STAGE_TABLES: dict[str, str] = {
     "stg_entities": (
         "lei TEXT, registration_authority_id TEXT, registration_number TEXT, legal_name TEXT,"
         " aliases TEXT[], jurisdiction TEXT, status TEXT, lei_status TEXT, entity_type TEXT,"
-        " successor_lei TEXT, jurisdiction_raw TEXT, lei_status_raw TEXT"
+        " successor_lei TEXT, jurisdiction_raw TEXT, lei_status_raw TEXT,"
+        # A person's dates of birth (ISO, possibly partial: `1970`, `1970-03`) and
+        # nationalities (ISO alpha-2), as the source states them (Step 19).
+        " birth_dates TEXT[], nationalities TEXT[]"
     ),
     "stg_relationships": (
         "subject_ref TEXT, object_ref TEXT, rel_type TEXT, pct DECIMAL(7,4), basis TEXT,"
@@ -85,6 +88,28 @@ def _in(expression: str, values: tuple[str, ...] | list[str]) -> str:
     return f"{expression} IN ({', '.join(repr(v) for v in values)})"
 
 
+# An ISO date, possibly partial: a year, a year and month, or a full date.
+ISO_PARTIAL_DATE = r"[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?"
+NO_VALUES = "CAST([] AS TEXT[])"
+
+
+def _dates(values: str) -> str:
+    """SQL: the ISO dates (`ISO_PARTIAL_DATE`) of a list, distinct and in order."""
+    return (
+        f"list_sort(list_distinct(list_filter(coalesce({values}, {NO_VALUES}),"
+        f" d -> regexp_full_match(trim(d), '{ISO_PARTIAL_DATE}'))))"
+    )
+
+
+def _nationalities(values: str) -> str:
+    """SQL: the countries a list of nationalities names (`ubo_nationality`), distinct
+    and in order; a value that names no country is left out."""
+    return (
+        f"list_sort(list_distinct(list_filter(list_transform(coalesce({values}, {NO_VALUES}),"
+        " n -> ubo_nationality(n)), c -> c IS NOT NULL)))"
+    )
+
+
 # Dataset -> mapper. The fixture files are already in the staging shape, so
 # their mappers only read the cells and give them a type.
 MAPPERS: dict[str, Mapper] = {
@@ -103,6 +128,8 @@ MAPPERS: dict[str, Mapper] = {
             "NULL",
             _text("jurisdiction"),
             _text("lei_status"),
+            _dates(f"string_split(_raw->>'birth_dates', '{ALIAS_SEPARATOR}')"),
+            _nationalities(f"string_split(_raw->>'nationalities', '{ALIAS_SEPARATOR}')"),
         ),
     ),
     "relationships": Mapper(
@@ -227,6 +254,8 @@ def _gleif_entities() -> Mapper:
             f" THEN {_g('Entity.SuccessorEntity.1.SuccessorLEI')} END",
             _g("Entity.LegalJurisdiction"),
             status,
+            NO_VALUES,
+            NO_VALUES,
         ),
     )
 
@@ -412,6 +441,10 @@ def _os_entities() -> Mapper:
             "NULL",
             jurisdiction,
             "NULL",
+            # FtM `birthDate` is an ISO date, often partial; `nationality` and
+            # `citizenship` are country codes. Records read before Step 19 state none.
+            _dates(_values("birthDate")),
+            _nationalities(f"list_concat({_values('nationality')}, {_values('citizenship')})"),
         ),
         filters=((FILTER_UNSUPPORTED_SCHEMA, f"NOT {_in(schema, tuple(OS_ENTITY_SCHEMAS))}"),),
     )
@@ -712,6 +745,8 @@ def _ch_companies() -> Mapper:
             "NULL",
             "'GB'",
             "NULL",
+            NO_VALUES,
+            NO_VALUES,
         ),
     )
 
@@ -775,6 +810,13 @@ def _ch_psc_entities() -> Mapper:
             "NULL",
             country,
             "NULL",
+            # The register states a month and year of birth, never the day.
+            _dates(
+                f"[{_psc('data.date_of_birth.year')}"
+                f" || coalesce('-' || lpad({_psc('data.date_of_birth.month')}, 2, '0'), '')]"
+            ),
+            # Free text ("British"); several are written with commas.
+            _nationalities(f"regexp_split_to_array({_psc('data.nationality')}, '\\s*[,/;]\\s*')"),
         ),
         skip=(
             f"NOT ({_in(_PSC_KIND, CH_INDIVIDUAL)} OR ({_in(_PSC_KIND, CH_CORPORATE)}"

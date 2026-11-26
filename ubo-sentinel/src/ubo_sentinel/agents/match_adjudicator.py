@@ -34,6 +34,7 @@ CARD_FIELDS = (
     "jurisdiction_a",
     "jurisdiction_b",
     "jurisdictions_agree",
+    "corroboration",
     "type_a",
     "type_b",
     "types_agree",
@@ -95,7 +96,8 @@ def _names(entity: MemoEntity) -> list[str]:
 def card(match: MemoMatch, a: MemoEntity, b: MemoEntity) -> dict[str, Any]:
     """The two records of one match side by side, and what code can say about them."""
     a_names, b_names = _names(a), _names(b)
-    best = max(name_similarity(x, y) for x in a_names for y in b_names)
+    same_type = a.entity_type if a.entity_type == b.entity_type else None
+    best = max(name_similarity(x, y, same_type) for x in a_names for y in b_names)
     a_tokens = {t for name in a_names for t in normalise_name(name).split()}
     b_tokens = {t for name in b_names for t in normalise_name(name).split()}
     folded_a = {normalise_name(name) for name in a_names}
@@ -118,6 +120,9 @@ def card(match: MemoMatch, a: MemoEntity, b: MemoEntity) -> dict[str, Any]:
         "types_agree": a.entity_type == b.entity_type,
         "lei_conflict": conflict(a.lei, b.lei),
         "registration_conflict": conflict(a.registration_number, b.registration_number),
+        # What the rules read beside the name: AGREE, CONFLICT or UNSTATED for each
+        # of jurisdiction, birth year and nationality, never the values (Step 19).
+        "corroboration": dict(match.corroboration),
         "match_type": match.match_type,
         "match_confidence": round(match.confidence, 4),
         "programs": list(match.programs),

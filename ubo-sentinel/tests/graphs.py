@@ -16,7 +16,7 @@ from ubo_sentinel.models import (
     relationship_id,
     sanction_id,
 )
-from ubo_sentinel.models.graph import upper_lower
+from ubo_sentinel.models.graph import unstated, upper_lower
 
 PROVENANCE = Provenance(
     source="hand",
@@ -120,8 +120,13 @@ def designated(
     active=True,
     list_source=IN_SCOPE,
     jurisdictions_agree=True,
+    corroboration=None,
 ):
-    """A designation that reaches `node_id`: its own, or one of `by` that crossed a link."""
+    """A designation that reaches `node_id`: its own, or one of `by` that crossed a link.
+
+    `corroboration` states the three corroborators; without it, the jurisdiction
+    agrees (or is unstated when `jurisdictions_agree` is false) and the rest are unstated.
+    """
     by = by or node_id
     match_type = match_type or ("DIRECT" if by == node_id else "FUZZY_NAME")
     record = Sanction(
@@ -141,7 +146,11 @@ def designated(
         match_type=match_type,
         confidence=confidence,
         is_active=active,
-        jurisdictions_agree=jurisdictions_agree or by == node_id,
+        corroboration=corroboration
+        or {
+            **unstated(),
+            "jurisdiction": "AGREE" if jurisdictions_agree or by == node_id else "UNSTATED",
+        },
         sanction_records=[record],
     )
 

@@ -29,3 +29,4 @@ fx_list,s27-des,2026-09-15,1.0,fx_list:s27-owner,FX-PROGRAM-ALPHA,2023-04-18,FX-
 fx_list,s28-des,2026-09-15,1.0,fx_list:s28-director,FX-PROGRAM-BRAVO,2024-09-03,FX-OFAC-SDN,true
 fx_list,s29-des,2026-09-15,1.0,fx_list:s29-listed,FX-PROGRAM-BRAVO,2024-06-05,FX-OFAC-SDN,true
 fx_list,s30-des,2026-09-15,1.0,fx_list:s30-listed,FX-PROGRAM-EU-1,2023-02-25,FX-EU-LIST,true
+fx_list,s31-des,2026-09-15,1.0,fx_list:s31-listed,FX-PROGRAM-BRAVO,2024-06-05,FX-OFAC-SDN,true

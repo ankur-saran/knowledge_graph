@@ -202,6 +202,7 @@ def build_memo(
             match_type=match.match_type,
             confidence=match.confidence,
             is_active=match.is_active,
+            corroboration=match.corroboration,
             effect=classify_match(pack, match)
             or ("OTHER_REGIME" if classify_other_regime(pack, match) else "NONE"),
             programs=[record.program for record in match.sanction_records],

@@ -26,6 +26,8 @@ from ubo_sentinel.models.reporting_exception import RepexCategory
 ALIAS_SEPARATOR = "|"
 
 Lei = Annotated[str, Field(pattern=r"^[A-Z0-9]{18}[0-9]{2}$")]
+IsoPartialDate = Annotated[str, Field(pattern=r"^[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?$")]
+Country = Annotated[str, Field(pattern=r"^[A-Z]{2}$")]
 
 _BASIS_BY_REL_TYPE: dict[str, set[str]] = {
     "OWNS": {"shareholding"},
@@ -54,6 +56,9 @@ class _Row(BaseModel):
 
 
 class EntityRow(_Row):
+    # A person's dates of birth and nationalities (Step 19), each `|`-separated.
+    OPTIONAL_COLUMNS: ClassVar[tuple[str, ...]] = ("birth_dates", "nationalities")
+
     lei: Lei | None = None
     registration_authority_id: NonEmptyStr | None = None
     registration_number: NonEmptyStr | None = None
@@ -63,6 +68,8 @@ class EntityRow(_Row):
     status: EntityStatus
     lei_status: LeiStatus | None = None
     entity_type: EntityType
+    birth_dates: list[IsoPartialDate] = []
+    nationalities: list[Country] = []
 
     @model_validator(mode="after")
     def _lei_status_needs_an_lei(self) -> Self:
@@ -70,7 +77,7 @@ class EntityRow(_Row):
             raise ValueError("an LEI status needs an LEI")
         return self
 
-    @field_validator("aliases", mode="before")
+    @field_validator("aliases", "birth_dates", "nationalities", mode="before")
     @classmethod
     def _split_aliases(cls, value: object) -> object:
         if value is None:

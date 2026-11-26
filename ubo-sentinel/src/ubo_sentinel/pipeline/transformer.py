@@ -27,7 +27,7 @@ from ubo_sentinel.pipeline.entity_linking import (
     LINK_FLOOR,
     resolve_groups,
 )
-from ubo_sentinel.pipeline.jurisdiction import normalise_jurisdiction
+from ubo_sentinel.pipeline.jurisdiction import normalise_jurisdiction, normalise_nationality
 from ubo_sentinel.pipeline.mappers import (
     FILTERED_TABLE,
     MAPPERS,
@@ -35,7 +35,7 @@ from ubo_sentinel.pipeline.mappers import (
     create_stage_tables,
     stage,
 )
-from ubo_sentinel.pipeline.name_match import normalise_name, similarity_normalised
+from ubo_sentinel.pipeline.name_match import block_tokens, normalise_name, similarity_normalised
 from ubo_sentinel.pipeline.silver import (
     SILVER_TABLES,
     SilverError,
@@ -49,7 +49,9 @@ from ubo_sentinel.pipeline.sources import CONTEXT_DATASETS, SOURCE_RANK, SOURCE_
 # Raise this when a change here alters the rows Silver holds for the same Bronze
 # rows. A set built by another version is not reused. 5: `CONFLICTING_PCT` (Step 15).
 # 6: stakes as ranges and an interest (equity or voting) on every edge (Step 16).
-TRANSFORM_VERSION = 6
+# 7: names transliterated, scored by entity type and blocked under both forms;
+# birth dates and nationalities on entities (Step 19).
+TRANSFORM_VERSION = 7
 
 REJECT_UNRESOLVED_REF = "UNRESOLVED_REF"
 REJECT_SELF_LOOP = "SELF_LOOP_AFTER_MERGE"
@@ -76,7 +78,13 @@ _SUPPORTING_RECORDS = (
 _FUNCTIONS = {
     "ubo_normalise_name": (normalise_name, ["VARCHAR"], "VARCHAR"),
     "ubo_jurisdiction": (normalise_jurisdiction, ["VARCHAR"], "VARCHAR"),
-    "ubo_similarity_normalised": (similarity_normalised, ["VARCHAR", "VARCHAR"], "DOUBLE"),
+    "ubo_nationality": (normalise_nationality, ["VARCHAR"], "VARCHAR"),
+    "ubo_similarity_normalised": (
+        similarity_normalised,
+        ["VARCHAR", "VARCHAR", "VARCHAR"],
+        "DOUBLE",
+    ),
+    "ubo_block_tokens": (block_tokens, ["VARCHAR"], "VARCHAR[]"),
     "ubo_relationship_id": (
         relationship_id,
         ["VARCHAR", "VARCHAR", "VARCHAR", "BOOLEAN", "VARCHAR"],
@@ -129,7 +137,7 @@ def build_silver(
             )
         return SilverSummary(set_id, "already built", existing["counts"], existing["silver_digest"])
 
-    _register_functions(con)
+    register_functions(con)
     # Everything is derived first, into temp tables that mirror Silver
     # (`stg_silver_*`), and only then written to Silver in one transaction. A
     # transaction keeps the rows it creates in its own storage, which DuckDB joins
@@ -182,7 +190,11 @@ def _create_mirrors(con: duckdb.DuckDBPyConnection) -> None:
         con.execute(f"CREATE OR REPLACE TEMP TABLE {mirror} AS SELECT * FROM {table} LIMIT 0")
 
 
-def _register_functions(con: duckdb.DuckDBPyConnection) -> None:
+# Functions that may return NULL: a value that is not a country is no country.
+_NULLABLE = ("ubo_jurisdiction", "ubo_nationality")
+
+
+def register_functions(con: duckdb.DuckDBPyConnection) -> None:
     """Let SQL call the one name scorer and the one definition of each id."""
     present = {
         name
@@ -194,7 +206,7 @@ def _register_functions(con: duckdb.DuckDBPyConnection) -> None:
         if name not in present:
             # A source's jurisdiction that is not a country code ("United Arab
             # Emirates") is no jurisdiction: the function may return NULL.
-            nulls = "special" if name == "ubo_jurisdiction" else "default"
+            nulls = "special" if name in _NULLABLE else "default"
             con.create_function(name, function, arguments, result, null_handling=nulls)
 
 
@@ -348,6 +360,9 @@ def _write_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
             -- A registry says what state an LEI is in; a list only states the LEI.
             arg_min(lei_status, pos) FILTER (WHERE lei_status IS NOT NULL) AS lei_status,
             arg_min(entity_type, pos) AS entity_type,
+            -- What any member states: a person's dates of birth and nationalities.
+            list_sort(list_distinct(flatten(list(birth_dates)))) AS birth_dates,
+            list_sort(list_distinct(flatten(list(nationalities)))) AS nationalities,
             arg_min(source, pos) AS source,
             arg_min(source_record_id, pos) AS source_record_id,
             arg_min(snapshot_id, pos) AS snapshot_id,
@@ -377,7 +392,7 @@ def _write_entities(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
         INSERT INTO stg_silver_entities
         SELECT ?, e.entity_id, e.lei, e.registration_authority_id, e.registration_number,
             e.legal_name, coalesce(a.aliases, CAST([] AS TEXT[])), e.jurisdiction, e.status,
-            e.lei_status, e.entity_type, r.repex_reason,
+            e.lei_status, e.entity_type, e.birth_dates, e.nationalities, r.repex_reason,
             {", ".join(f"e.{c.strip()}" for c in _PROV.split(","))},
             e.supporting_records
         FROM stg_entity e
@@ -438,14 +453,15 @@ def _write_links(
     # and two described by records of one source (a source's own duplicates are
     # its own to resolve). So every pair has an entity without an LEI, and the
     # search starts from those, each name trying its rarest blocks first
-    # (`LINK_CANDIDATE_CAP`, `LINK_BLOCK_MAX`).
+    # (`LINK_CANDIDATE_CAP`, `LINK_BLOCK_MAX`). A name's tokens are those of both
+    # its forms (`block_tokens()`): "Al Rashid" is blocked under "alra" too.
     con.execute(
         """
         CREATE OR REPLACE TEMP TABLE stg_blocks AS
         SELECT DISTINCT t.entity_id, t.name, t.name_norm, e.entity_type,
                left(t.token, ?) AS block
         FROM (
-            SELECT entity_id, name, name_norm, unnest(string_split(name_norm, ' ')) AS token
+            SELECT entity_id, name, name_norm, unnest(ubo_block_tokens(name_norm)) AS token
             FROM stg_silver_entity_names WHERE snapshot_set_id = ?
         ) t
         JOIN stg_entity e ON e.entity_id = t.entity_id
@@ -490,7 +506,8 @@ def _write_links(
             CASE WHEN p.entity_id < b.entity_id THEN pn.name ELSE b.name END AS name_a,
             CASE WHEN p.entity_id < b.entity_id THEN b.name ELSE pn.name END AS name_b,
             CASE WHEN p.entity_id < b.entity_id THEN pn.name_norm ELSE b.name_norm END AS norm_a,
-            CASE WHEN p.entity_id < b.entity_id THEN b.name_norm ELSE pn.name_norm END AS norm_b
+            CASE WHEN p.entity_id < b.entity_id THEN b.name_norm ELSE pn.name_norm END AS norm_b,
+            p.entity_type
         FROM stg_probes p
         JOIN stg_blocks pn
             ON pn.entity_id = p.entity_id AND pn.name = p.name AND pn.block = p.block
@@ -504,12 +521,13 @@ def _write_links(
                OR ea.jurisdiction = eb.jurisdiction)
         """
     )
-    # Each pair of normalised names is scored once, by the one scorer.
+    # Each pair of normalised names is scored once per entity type, by the one scorer.
     con.execute(
         """
         CREATE OR REPLACE TEMP TABLE stg_link_scores AS
-        SELECT norm_a, norm_b, ubo_similarity_normalised(norm_a, norm_b) AS score
-        FROM (SELECT DISTINCT norm_a, norm_b FROM stg_link_pairs)
+        SELECT norm_a, norm_b, entity_type,
+               ubo_similarity_normalised(norm_a, norm_b, entity_type) AS score
+        FROM (SELECT DISTINCT norm_a, norm_b, entity_type FROM stg_link_pairs)
         """
     )
     con.execute(
@@ -520,7 +538,8 @@ def _write_links(
                 PARTITION BY p.a_id, p.b_id ORDER BY s.score DESC, p.name_a, p.name_b
             ) AS rn
             FROM stg_link_pairs p
-            JOIN stg_link_scores s ON s.norm_a = p.norm_a AND s.norm_b = p.norm_b
+            JOIN stg_link_scores s
+                ON s.norm_a = p.norm_a AND s.norm_b = p.norm_b AND s.entity_type = p.entity_type
         )
         SELECT ?, a_id, b_id, 'FUZZY_NAME', score, name_a, name_b
         FROM best

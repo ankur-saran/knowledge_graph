@@ -22,7 +22,7 @@ other_designations: review
 
 match_threshold: 0.92
 review_band_low: 0.85
-name_match_requires_jurisdiction: true
+name_match_corroborators: [jurisdiction, birth_year, nationality]
 presume_majority_for_consolidation: true
 gap_scope: on_path
 review_exposure_pct: 25

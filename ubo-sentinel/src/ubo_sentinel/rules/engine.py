@@ -385,7 +385,12 @@ def _classify(pack: RulePack, match: SanctionMatch) -> BlockSet | None:
         # merge on: the identifier is contested, so the match is neither proof nor nothing.
         return "POSSIBLY_BLOCKED"
     if match.confidence >= pack.match_threshold:
-        if pack.name_match_requires_jurisdiction and not match.jurisdictions_agree:
+        found = [match.corroboration[name] for name in pack.name_match_corroborators]
+        if "CONFLICT" in found:
+            # Both records state a birth year, a nationality or a jurisdiction, and
+            # they differ: likely a homonym. Capped at a review, never dropped.
+            return "POSSIBLY_BLOCKED"
+        if pack.name_match_corroborators and "AGREE" not in found:
             # A name and nothing else in common: a homonym abroad is as likely.
             return "POSSIBLY_BLOCKED"
         return "BLOCKED"

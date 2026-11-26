@@ -17,6 +17,35 @@ ResolveType = Literal["LEI", "REGISTRATION", "NAME_EXACT", "NAME_FUZZY"]
 
 RepexRecord = ReportingException
 
+# What a name match is corroborated by (Step 19): the attributes both records may state.
+Corroborator = Literal["birth_year", "jurisdiction", "nationality"]
+CORROBORATORS: tuple[Corroborator, ...] = ("birth_year", "jurisdiction", "nationality")
+# Both records state it and it is the same (for a list, one value in common);
+# both state it and it differs; or one of them does not state it.
+Corroboration = Literal["AGREE", "CONFLICT", "UNSTATED"]
+
+
+def compare(a: set[str], b: set[str]) -> Corroboration:
+    """How two records' values of one attribute bear on whether they are one party."""
+    if not a or not b:
+        return "UNSTATED"
+    return "AGREE" if a & b else "CONFLICT"
+
+
+def corroboration(a: Entity, b: Entity) -> dict[Corroborator, Corroboration]:
+    """For each corroborator, whether entity `a` and entity `b` agree on it."""
+    return {
+        "birth_year": compare(a.birth_years, b.birth_years),
+        "jurisdiction": compare(
+            {a.jurisdiction} - {None}, {b.jurisdiction} - {None}  # type: ignore[arg-type]
+        ),
+        "nationality": compare(set(a.nationalities), set(b.nationalities)),
+    }
+
+
+def unstated() -> dict[Corroborator, Corroboration]:
+    return dict.fromkeys(CORROBORATORS, "UNSTATED")  # type: ignore[return-value]
+
 
 class _Model(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -95,16 +124,32 @@ class SanctionMatch(_Model):
     is_active: bool
     # Equal to `entity_id` unless the designations crossed a link.
     designated_entity_id: NonEmptyStr
-    # True when the node and the designated entity both state a jurisdiction and
-    # it is the same one: a name match with nothing else in common is weaker.
-    # True for a node's own designation.
-    jurisdictions_agree: bool
+    # For each of jurisdiction, birth year and nationality: whether the node and
+    # the designated entity both state it and agree (`AGREE`), both state it and
+    # differ (`CONFLICT`), or not (`UNSTATED`). A name match with nothing else in
+    # common is weaker, and one that conflicts is likely a homonym (Step 19).
+    corroboration: dict[Corroborator, Corroboration]
     sanction_records: list[Sanction] = Field(min_length=1)
 
     @field_validator("sanction_records")
     @classmethod
     def _sort_records(cls, value: list[Sanction]) -> list[Sanction]:
         return sorted(value, key=lambda sanction: sanction.id)
+
+    @field_validator("corroboration")
+    @classmethod
+    def _every_corroborator(
+        cls, value: dict[Corroborator, Corroboration]
+    ) -> dict[Corroborator, Corroboration]:
+        if set(value) != set(CORROBORATORS):
+            raise ValueError(f"corroboration must state each of {', '.join(CORROBORATORS)}")
+        return {key: value[key] for key in CORROBORATORS}
+
+    @property
+    def jurisdictions_agree(self) -> bool:
+        """Whether both records state the same jurisdiction (the test before Step 19,
+        read by the test oracle `tests/oracles/engine_v3.py`)."""
+        return self.corroboration["jurisdiction"] == "AGREE"
 
     def sort_key(self) -> tuple[str, str]:
         return (self.entity_id, self.designated_entity_id)

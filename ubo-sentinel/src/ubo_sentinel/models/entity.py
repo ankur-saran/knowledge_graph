@@ -43,15 +43,25 @@ class Entity(BaseModel):
     status: EntityStatus
     lei_status: LeiStatus | None = None
     entity_type: EntityType
+    # A person's dates of birth, ISO and possibly partial (`1970`, `1970-03`), and
+    # nationalities (ISO 3166-1 alpha-2), as any of its records state them. They
+    # corroborate a name match or conflict with it (Step 19); empty is unstated.
+    birth_dates: list[str] = []
+    nationalities: list[str] = []
     # Summary only; the full records are `ReportingException`.
     repex_reason: str | None = None
     provenance: Provenance
     supporting_records: list[Provenance] = []
 
-    @field_validator("aliases")
+    @field_validator("aliases", "birth_dates", "nationalities")
     @classmethod
     def _sort_aliases(cls, value: list[str]) -> list[str]:
         return sorted(set(value))
+
+    @property
+    def birth_years(self) -> set[str]:
+        """The years of the dates of birth stated."""
+        return {date[:4] for date in self.birth_dates}
 
     @model_validator(mode="after")
     def _lei_status_needs_an_lei(self) -> Self:
