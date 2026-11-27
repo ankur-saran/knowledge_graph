@@ -17,7 +17,6 @@ from ubo_sentinel.models.decision import (
     UtcDatetime,
 )
 from ubo_sentinel.models.entity import EntityStatus, EntityType, LeiStatus
-from ubo_sentinel.models.graph import Corroboration, Corroborator
 from ubo_sentinel.models.evidence import (
     DataGap,
     EffectiveExposure,
@@ -25,6 +24,7 @@ from ubo_sentinel.models.evidence import (
     Exposure,
     ReasonCode,
 )
+from ubo_sentinel.models.graph import Corroboration, Corroborator
 from ubo_sentinel.models.provenance import Confidence, NonEmptyStr, Provenance
 from ubo_sentinel.models.relationship import Interest, Pct, PctBounds, PctLow, RelType
 from ubo_sentinel.models.sanction import MatchType

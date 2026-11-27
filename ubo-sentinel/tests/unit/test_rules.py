@@ -232,10 +232,66 @@ def test_a_name_match_blocks_only_where_both_records_name_one_jurisdiction():
     home = designated("A", by="X", confidence=0.95)
     assert evaluate(subgraph, [home]).blocked_set == ["A", "T"]
     # Without the requirement a name alone is enough.
-    assert evaluate(subgraph, [abroad], name_match_requires_jurisdiction=False).blocked_set == [
-        "A",
-        "T",
-    ]
+    assert evaluate(subgraph, [abroad], name_match_corroborators=[]).blocked_set == ["A", "T"]
+
+
+def _with(**states):
+    return {
+        "birth_year": "UNSTATED",
+        "jurisdiction": "UNSTATED",
+        "nationality": "UNSTATED",
+    } | states
+
+
+@pytest.mark.parametrize(
+    ("states", "blocked"),
+    [
+        # One corroborator agrees and none conflicts: proof.
+        ({"nationality": "AGREE"}, True),
+        ({"birth_year": "AGREE", "jurisdiction": "AGREE"}, True),
+        # Nothing stated beside the name: a homonym is as likely.
+        ({}, False),
+        # A conflict caps the match at a review, whatever agrees (SCEN-31).
+        ({"jurisdiction": "AGREE", "birth_year": "CONFLICT"}, False),
+        ({"jurisdiction": "AGREE", "nationality": "AGREE", "birth_year": "CONFLICT"}, False),
+    ],
+)
+def test_a_name_match_blocks_when_a_corroborator_agrees_and_none_conflicts(states, blocked):
+    subgraph = graph("T", [edge("A", "T", 60)])
+    match = designated("A", by="X", confidence=0.95, corroboration=_with(**states))
+    result = evaluate(subgraph, [match])
+    if blocked:
+        assert (result.blocked_set, result.possibly_blocked_set) == (["A", "T"], [])
+    else:
+        # Never dropped: the match stays, as a review-band one.
+        assert (result.blocked_set, result.possibly_blocked_set) == ([], ["A", "T"])
+        assert result.recommendation == "REVIEW"
+        assert gaps_of(result) == {("REVIEW_BAND_MATCH", "A", True)}
+
+
+def test_only_the_listed_corroborators_are_read():
+    subgraph = graph("T", [edge("A", "T", 60)])
+    conflict = designated("A", by="X", confidence=0.95, corroboration=_with(birth_year="CONFLICT"))
+    agree = designated("A", by="X", confidence=0.95, corroboration=_with(nationality="AGREE"))
+    # A pack that asks for jurisdiction only: a birth year is not read, nor a nationality.
+    only = {"name_match_corroborators": ["jurisdiction"]}
+    assert evaluate(subgraph, [conflict], **only).possibly_blocked_set == ["A", "T"]
+    assert evaluate(subgraph, [agree], **only).possibly_blocked_set == ["A", "T"]
+    # A pack that asks for none: the name alone blocks, a conflict unread.
+    assert evaluate(subgraph, [conflict], name_match_corroborators=[]).blocked_set == ["A", "T"]
+
+
+def test_a_conflict_never_raises_a_match_below_the_band():
+    subgraph = graph("T", [edge("A", "T", 60)])
+    low = designated("A", by="X", confidence=0.86, corroboration=_with(birth_year="CONFLICT"))
+    result = evaluate(subgraph, [low], review_band_low=0.88, match_threshold=0.92)
+    assert (result.blocked_set, result.possibly_blocked_set) == ([], [])
+
+
+def test_the_shipped_packs_list_every_corroborator():
+    for name in ("ofac", "uk_ofsi", "eu"):
+        pack = load_rule_pack(pack_path(name))
+        assert pack.name_match_corroborators == ["birth_year", "jurisdiction", "nationality"]
 
 
 # --- the lists a pack applies ------------------------------------------------------------
@@ -586,7 +642,7 @@ def test_eval_reports_every_suite():
     build_with_the_cli()
     result = runner.invoke(app, ["eval", "--suite", "all"])
     assert result.exit_code == 0, result.output
-    assert "29/29 scenarios passed" in result.output
+    assert "30/30 scenarios passed" in result.output
     assert "SCEN-23" in result.output and "pipeline suite" in result.output
     for metric in ("Decision accuracy", "Evidence-path recall", "ER precision@1"):
         assert metric in result.output

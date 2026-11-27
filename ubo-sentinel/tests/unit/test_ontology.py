@@ -87,8 +87,16 @@ def test_designations_are_a_table_keyed_by_node(shipped):
 def test_role_matrix(shipped):
     roles = shipped.roles
     assert roles["analyst"].masked_fields == {
-        # A sole proprietor's LEI names the person in GLEIF's public record.
-        "Person": ["legal_name", "aliases", "registration_number", "lei"]
+        # A sole proprietor's LEI names the person in GLEIF's public record; a
+        # person's birth dates and nationalities say who it is (Step 19).
+        "Person": [
+            "legal_name",
+            "aliases",
+            "registration_number",
+            "lei",
+            "birth_dates",
+            "nationalities",
+        ]
     }
     assert roles["reviewer"].masked_fields == {}
     assert roles["auditor"].read_only is True

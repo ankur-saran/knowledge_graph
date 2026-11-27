@@ -35,7 +35,7 @@ from ubo_sentinel.pipeline.mappers import (
 )
 from ubo_sentinel.pipeline.silver import read_rows
 from ubo_sentinel.pipeline.sources import SOURCE_CONFIDENCE, SOURCE_RANK, SOURCE_TIE
-from ubo_sentinel.pipeline.transformer import build_silver
+from ubo_sentinel.pipeline.transformer import build_silver, register_functions
 
 CH = "companies_house:"
 
@@ -364,6 +364,38 @@ def test_a_psc_keeps_its_birth_month_year_and_nationality_in_bronze(con, built):
     assert raw["data"]["nationality"] == "Emirati"
     # The day is never published, and nothing the record does not state is invented.
     assert "address" not in raw["data"]
+
+
+def test_a_psc_person_s_birth_month_year_and_nationality_reach_silver(con, built):
+    """Step 19: read as corroborators of a name match; the demonym is its country."""
+    people = {
+        r["legal_name"]: (r["birth_dates"], r["nationalities"])
+        for r in rows(con, "silver_entities", built, source="companies_house")
+        if "/persons-with-significant-control/" in r["id"]
+    }
+    assert people["Mr Viktor Lomanov"] == (["1966-04"], ["AE"])
+    # A company states neither.
+    assert people["Vantelli Holdings S.A."] == ([], [])
+
+
+@pytest.mark.parametrize(
+    ("written", "read"),
+    [
+        ('"British"', ["GB"]),
+        ('"British, Irish"', ["GB", "IE"]),
+        ('"Scottish"', ["GB"]),
+        ('"Martian"', []),
+        ("null", []),
+    ],
+)
+def test_a_psc_nationality_is_read_as_the_country_it_names(con, written, read):
+    register_functions(con)
+    mapper = MORE_MAPPERS["ch_psc"][0]
+    found = con.execute(
+        f"SELECT {mapper.columns[13]} FROM (SELECT CAST(? AS JSON) AS _raw)",
+        ['{"data":{"nationality":' + written + "}}"],
+    ).fetchone()
+    assert found == (read,)
 
 
 # --- download --------------------------------------------------------------------------

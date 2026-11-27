@@ -37,7 +37,8 @@ def corroboration(a: Entity, b: Entity) -> dict[Corroborator, Corroboration]:
     return {
         "birth_year": compare(a.birth_years, b.birth_years),
         "jurisdiction": compare(
-            {a.jurisdiction} - {None}, {b.jurisdiction} - {None}  # type: ignore[arg-type]
+            {a.jurisdiction} - {None},
+            {b.jurisdiction} - {None},  # type: ignore[arg-type]
         ),
         "nationality": compare(set(a.nationalities), set(b.nationalities)),
     }

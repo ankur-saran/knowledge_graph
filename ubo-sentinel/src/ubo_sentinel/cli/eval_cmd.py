@@ -441,6 +441,72 @@ def write_baseline(
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
+# The headline figures compared with the baseline: (section, metric, label).
+_AGAINST = (
+    ("resolution", "precision_at_1", "precision@1"),
+    ("resolution", "recall_at_5", "recall@5"),
+    ("resolution", "false_candidate_rate", "no-entity rows found"),
+    ("pair_scores", "recall", "pair recall"),
+    ("pair_scores", "false_pos", "pairs linked wrongly"),
+)
+
+
+def _count_or_share(metric: str, value: float | None) -> str:
+    if value is None:
+        return "-"
+    return str(value) if metric == "false_pos" else f"{value:.1%}"
+
+
+def _print_against_baseline(
+    out: _Output,
+    path: Path,
+    family: str,
+    sweep: _Sweep,
+    er_path: Path,
+    pairs_path: Path | None,
+) -> None:
+    """The family's figures at the operating points beside those of `eval/er_baseline.json`
+    (Step 19): what a change to the scorer moved, per variant type. Only what moved is
+    listed. The targets are set from the real baseline with the owner (18.2); until
+    then nothing here fails a run."""
+    baseline = (json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}).get(family)
+    if baseline is None:
+        out.echo(f"Against the baseline: none for family {family} in {path.as_posix()}.")
+        return
+    now = {
+        "resolution": _sweep_document(sweep.resolution, set(sweep.marks)),
+        "pair_scores": _sweep_document(sweep.pairs, set(sweep.marks)) if sweep.pairs else None,
+    }
+    same_files = (baseline.get("labels") or {}).get("sha256") == (_file_entry(er_path) or {}).get(
+        "sha256"
+    ) and (baseline.get("pairs") or {}).get("sha256") == (_file_entry(pairs_path) or {}).get(
+        "sha256"
+    )
+    out.echo(
+        f"Against the baseline ({path.as_posix()}, set {baseline['snapshot_set_id']};"
+        + (" the same labels)" if same_files else " other labels: rows differ)")
+    )
+    moved = 0
+    for point in sorted(now["resolution"]):
+        for section, metric, label in _AGAINST:
+            was = (baseline.get(section) or {}).get(point, {})
+            found = (now.get(section) or {}).get(point, {})
+            for kind in sorted(set(was) | set(found)):
+                before = was.get(kind, {}).get(metric)
+                after = found.get(kind, {}).get(metric)
+                if before == after:
+                    continue
+                moved += 1
+                was_shown, now_shown = (
+                    _count_or_share(metric, before),
+                    _count_or_share(metric, after),
+                )
+                out.echo(f"  {point} {label:22} {kind:18} {was_shown:>7} -> {now_shown}")
+    if not moved:
+        out.echo("  nothing moved")
+    out.echo("  Targets: not yet set (18.2: from the real baseline, with the owner).")
+
+
 def _print_assist(out: _Output, store: GraphStore) -> bool:
     """Recall@5 on messy queries without and with the intake assist (`UBO_LLM_INTAKE`)."""
     try:
@@ -987,6 +1053,9 @@ def evaluate(
                     raise typer.Exit(code=2)
                 er_ok, measured = _print_sweep(out, store, er_path, pairs_path, engine.pack)
                 ok = er_ok and ok
+                _print_against_baseline(
+                    out, ER_BASELINE_PATH, family, measured, er_path, pairs_path
+                )
                 if update_baseline:
                     write_baseline(ER_BASELINE_PATH, family, set_id, measured, er_path, pairs_path)
                     out.echo(f"  ER baseline ({family}) written to {ER_BASELINE_PATH.as_posix()}")

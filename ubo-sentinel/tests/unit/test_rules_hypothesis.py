@@ -30,7 +30,11 @@ PACKS = st.builds(
     gap_scope=st.sampled_from(["on_path", "any"]),
     control_link_scope=st.sampled_from(["upstream", "target"]),
     other_designations=st.sampled_from(["review", "ignore"]),
-    name_match_requires_jurisdiction=st.booleans(),
+    # The engine before Step 19 read one flag; these lists ask it the same question
+    # when only the jurisdiction is stated (the matches below).
+    name_match_corroborators=st.sampled_from(
+        [[], ["jurisdiction"], ["birth_year", "jurisdiction", "nationality"]]
+    ),
 )
 # A list the shipped pack does not apply.
 OTHER_LIST = "FX-EU-LIST"

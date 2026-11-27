@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Any
 
 from ubo_sentinel.graph.store import GraphStore
-from ubo_sentinel.graph.views import MASK, METADATA_ONLY_ROLES, pseudonym_for
+from ubo_sentinel.graph.views import MASK, METADATA_ONLY_ROLES, UNSEARCHED_FIELDS, pseudonym_for
 from ubo_sentinel.models.ontology import OntologyConfig
 
 PROVENANCE_COLUMNS = ("source", "source_record_id", "snapshot_id", "as_of", "confidence")
@@ -190,7 +190,7 @@ def masked_values(rows: GraphRows, store: GraphStore, ontology: OntologyConfig) 
         if row["label"] not in hidden:
             continue
         values.update((row["id"], row["source_record_id"]))
-        for name in hidden[row["label"]]:
+        for name in hidden[row["label"]] - UNSEARCHED_FIELDS:
             value = row.get(name)
             values.update(value if isinstance(value, list) else [value] if value else [])
     return sorted(values)

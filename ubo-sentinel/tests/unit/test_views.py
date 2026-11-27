@@ -76,6 +76,18 @@ def test_an_analyst_sees_the_whole_graph_without_person_details(store, view):
     assert company == plain.node(TARGET)
 
 
+def test_an_analyst_sees_no_person_s_birth_dates_or_nationalities(con, graph_t0, ontology):
+    """Step 19: both are masked on a `Person` (SCEN-31's owner states them)."""
+    owner = "fx_registry:s31-owner"
+    with GraphStore.open(graph_t0, con) as opened:
+        plain = queries.get_entity_by_id(opened, owner)
+        masked = GraphView(opened, "analyst", ontology).get_entity_by_id(owner)
+        reviewer = GraphView(opened, "reviewer", ontology).get_entity_by_id(owner)
+    assert (plain.birth_dates, plain.nationalities) == (["1971-04"], ["GB"])
+    assert (masked.birth_dates, masked.nationalities) == ([MASK], [MASK])
+    assert (reviewer.birth_dates, reviewer.nationalities) == (["1971-04"], ["GB"])
+
+
 def test_masked_fields_come_from_the_ontology(store, ontology):
     spec = ontology.roles["analyst"]
     wider = ontology.model_copy(

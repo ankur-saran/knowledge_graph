@@ -50,7 +50,7 @@ def test_every_scenario_is_one_recorded_decision(fresh_con, ontology, gold, log)
 
     events = log.records()
     assert [event["event_type"] for event in events] == ["RECOMMENDED"] * len(gold)
-    assert len({event["decision_id"] for event in events}) == len(gold) == 30
+    assert len({event["decision_id"] for event in events}) == len(gold) == 31
     report = log.verify(ontology)
     assert (report.intact, report.count) == (True, 30)
 

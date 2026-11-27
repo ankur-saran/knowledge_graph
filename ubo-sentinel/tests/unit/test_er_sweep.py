@@ -21,6 +21,7 @@ from ubo_sentinel.graph.entity_resolution import (
     sweep_labelled,
     sweep_pairs,
 )
+from ubo_sentinel.pipeline.entity_linking import LINK_FLOOR
 
 runner = CliRunner()
 
@@ -79,10 +80,12 @@ def test_pairs_are_scored_once_and_cut_at_every_threshold():
     linked_at = int(near * 100)
     assert sweep[linked_at]["near_homonym"].false_pos == 1
     every = sweep[100][ALL_TYPES]
-    # Identical after folding: linked at 1.00; the other script is not (yet).
-    assert (every.true_pos, every.false_neg, every.false_pos) == (1, 1, 0)
-    assert every.precision == 1.0 and every.recall == 0.5
-    assert every.f1 == pytest.approx(2 / 3)
+    # Identical after folding, and the other script after transliteration (Step 19):
+    # both linked at 1.00. The near-homonym is held below the link floor.
+    assert (every.true_pos, every.false_neg, every.false_pos) == (2, 0, 0)
+    assert every.precision == 1.0 and every.recall == 1.0
+    assert every.f1 == pytest.approx(1.0)
+    assert near < LINK_FLOOR
     # Only pairs labelled different: no recall, so no F1.
     assert sweep[100]["near_homonym"].recall is None
     assert sweep[100]["near_homonym"].f1 is None
@@ -131,6 +134,7 @@ def test_sweep_prints_every_threshold_and_marks_the_operating_points(tmp_path, m
     assert "    0.85 *" in result.output and "    0.92 *" in result.output
     assert "    0.86 *" not in result.output
     assert "transliteration" in result.output and not baseline.exists()
+    assert "Against the baseline: none for family fixtures" in result.output
 
     result = runner.invoke(app, ["eval", "--suite", "er", "--sweep", "--update-baseline"])
     assert result.exit_code == 0, result.output
@@ -144,6 +148,9 @@ def test_sweep_prints_every_threshold_and_marks_the_operating_points(tmp_path, m
     before = baseline.read_bytes()
     runner.invoke(app, ["eval", "--suite", "er", "--sweep", "--update-baseline"])
     assert baseline.read_bytes() == before
+    # Measured again against what was written: the same labels, and nothing moved.
+    again = runner.invoke(app, ["eval", "--suite", "er", "--sweep"]).output
+    assert "the same labels)\n  nothing moved\n  Targets: not yet set" in again
 
     as_json = runner.invoke(app, ["eval", "--suite", "er", "--sweep", "--json"])
     document = json.loads(as_json.output)
@@ -155,3 +162,21 @@ def test_sweep_and_baseline_need_the_er_suite():
     for args in (["--suite", "rules", "--sweep"], ["--suite", "er", "--update-baseline"]):
         result = runner.invoke(app, ["eval", *args])
         assert result.exit_code == 2, args
+
+
+def test_step_19_moves_the_shipped_fixture_baseline_where_it_should():
+    """Against Step 18's baseline: more same-name pairs linked, fewer near-homonyms."""
+    build_with_the_cli()
+    output = runner.invoke(app, ["eval", "--suite", "er", "--sweep"]).output
+    section = output[output.index("Against the baseline (eval/er_baseline.json") :]
+    assert "the same labels)" in section
+    assert "0.85 pairs linked wrongly   near_homonym             5 -> 1" in section
+    assert "0.92 pair recall            initials              0.0% -> 100.0%" in section
+    # Nothing a pair or a query gained was lost elsewhere.
+    for line in section.splitlines()[1:]:
+        if " -> " not in line:
+            continue
+        left, right = line.split(" -> ")
+        before, after = float(left.split()[-1].rstrip("%")), float(right.rstrip("%"))
+        lower_is_better = "wrongly" in line or "found" in line
+        assert after <= before if lower_is_better else after >= before, line

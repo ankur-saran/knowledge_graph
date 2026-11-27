@@ -285,7 +285,11 @@ def similarity_normalised(a_norm: str, b_norm: str, entity_type: str | None = No
     if entity_type == "Person":
         a, b = _person_forms(a, b)
     score = _ratio(a, b)
-    if RULE_SPACING in ENABLED_RULES:
+    # Spaces matter only where the two names split words differently ("North Star",
+    # "Northstar"): one name's words all among the other's is a shorter name, and
+    # read without spaces it would score as a prefix ("Halcyon Ridge" ~ "Halcyon
+    # Ridge Minerals", measured on the fixtures' intake set).
+    if RULE_SPACING in ENABLED_RULES and not (set(a) <= set(b) or set(b) <= set(a)):
         score = max(score, fuzz.ratio("".join(a), "".join(b)) / 100)
     if RULE_PARTICLES in ENABLED_RULES:
         score = max(score, _ratio(join_particles(a), join_particles(b)))

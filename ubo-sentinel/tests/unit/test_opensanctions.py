@@ -12,7 +12,7 @@ from ubo_sentinel.pipeline.loaders.opensanctions_loader import OS_DATASETS
 from ubo_sentinel.pipeline.loaders.real_base import ingest_real
 from ubo_sentinel.pipeline.loaders.real_loader import REAL_DATASETS, ingest_opensanctions
 from ubo_sentinel.pipeline.mappers import MAPPERS, os_percentage
-from ubo_sentinel.pipeline.transformer import build_silver
+from ubo_sentinel.pipeline.transformer import build_silver, register_functions
 
 OS = "opensanctions:NK-fx"
 
@@ -71,6 +71,46 @@ def test_list_records_become_entities(con, built):
     # A vessel is in Bronze, not in the graph.
     assert f"{OS}Vessel" not in found
     assert counts["filtered"]["os_entities"] == {"UNSUPPORTED_SCHEMA": 1}
+
+
+def test_a_person_s_birth_dates_and_nationalities_reach_silver(con, built):
+    """Step 19: read as corroborators of a name match."""
+    set_id, _ = built
+    found = dict(
+        (row[0], row[1:])
+        for row in rows(
+            con,
+            "SELECT id, birth_dates, nationalities FROM silver_entities WHERE snapshot_set_id = ?",
+            set_id,
+        )
+    )
+    assert found[f"{OS}Lomanov"] == (["1966-04-12"], ["AE"])
+    assert found[f"{OS}Sarvanta"] == ([], [])
+
+
+@pytest.mark.parametrize(
+    ("properties", "dates", "countries"),
+    [
+        ('{"birthDate":["1970"],"nationality":["ru"]}', ["1970"], ["RU"]),
+        # Several dates, partial or full, and the citizenship beside the nationality.
+        (
+            '{"birthDate":["1970-03","1969-12-31"],"nationality":["ru"],"citizenship":["cy","ru"]}',
+            ["1969-12-31", "1970-03"],
+            ["CY", "RU"],
+        ),
+        # What is no ISO date or no country is left out.
+        ('{"birthDate":["circa 1970"],"nationality":["suhh"]}', [], []),
+        ("{}", [], []),
+    ],
+)
+def test_birth_dates_and_nationalities_are_read_as_iso(con, properties, dates, countries):
+    register_functions(con)
+    columns = MAPPERS["os_entities"].columns
+    found = con.execute(
+        f"SELECT {columns[12]}, {columns[13]} FROM (SELECT CAST(? AS JSON) AS _raw)",
+        ['{"schema":"Person","properties":' + properties + "}"],
+    ).fetchone()
+    assert found == (dates, countries)
 
 
 @pytest.mark.parametrize(

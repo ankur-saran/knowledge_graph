@@ -16,7 +16,7 @@ Every file starts with `source`, `source_record_id`, `as_of`, `confidence`. Then
 
 | File | Columns |
 |---|---|
-| `entities.csv` | `lei`, `registration_authority_id`, `registration_number`, `legal_name`, `aliases`, `jurisdiction`, `status`, `lei_status`, `entity_type` |
+| `entities.csv` | `lei`, `registration_authority_id`, `registration_number`, `legal_name`, `aliases`, `jurisdiction`, `status`, `lei_status`, `entity_type`, and optionally `birth_dates`, `nationalities` |
 | `relationships.csv` | `subject_ref`, `object_ref`, `rel_type`, `pct`, `basis`, `is_ultimate` |
 | `sanctions.csv` | `entity_ref`, `program`, `list_date`, `list_source`, `is_active` |
 | `repex.csv` | `entity_ref`, `category`, `reason` |
@@ -26,6 +26,7 @@ Every file starts with `source`, `source_record_id`, `as_of`, `confidence`. Then
 - `aliases` are separated by `|`. Dates are `YYYY-MM-DD`. Booleans are `true` / `false`.
 - `status` is the entity's legal status (`ACTIVE`, `INACTIVE`, `UNKNOWN`); `lei_status` is the status of its LEI record (`ISSUED`, `LAPSED`, `RETIRED`, ...). A registry row with an LEI gives its status; a list row states an LEI and leaves `lei_status` empty.
 - `jurisdiction` is an ISO 3166-1 alpha-2 country code.
+- `birth_dates` (ISO dates, possibly partial: `1971`, `1971-04`) and `nationalities` (ISO 3166-1 alpha-2) are a person's, each `|`-separated (Step 19). A file may leave both columns out; the t0 and t2 `entities.csv` have them, empty but for SCEN-31's two persons, who share a name and a country and differ in birth year.
 - `list_source` names the list a designation is on. `FX-OFAC-SDN` stands in for the OFAC SDN list, the one the OFAC pack applies; `FX-EU-LIST` stands in for a list it does not (SCEN-30).
 - Edge direction follows the ontology: `OWNS` owner → asset, `CONSOLIDATED_BY` child → parent, `CONTROLS` controller → controlled.
 

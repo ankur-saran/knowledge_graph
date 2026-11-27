@@ -43,6 +43,10 @@ from ubo_sentinel.models.relationship import Relationship
 from ubo_sentinel.models.sanction import Sanction
 
 MASK = "[PII MASKED]"
+# Masked fields whose values are replaced where they are written but never
+# searched for in text: a year of birth or a country code names no one, and
+# appears everywhere ("GB" is every UK company's jurisdiction) (Step 19).
+UNSEARCHED_FIELDS = frozenset({"birth_dates", "nationalities"})
 
 # Roles that see what was built and nothing of the graph itself. The ontology
 # has no property for this, so it is the one rule here that names a role.
@@ -129,7 +133,7 @@ def masked_values(decision: Decision, role: str, ontology: OntologyConfig) -> li
             continue
         masked_ids.add(entity.id)
         values.update((entity.id, entity.provenance.source_record_id))
-        for name in hidden[entity.entity_type]:
+        for name in hidden[entity.entity_type] - UNSEARCHED_FIELDS:
             value = getattr(entity, name, None)
             values.update(value if isinstance(value, list) else [value] if value else [])
     for match in memo.matches:
@@ -477,7 +481,7 @@ class GraphView:
             if entity is not None:
                 records = [entity.provenance, *entity.supporting_records]
                 values.update(record.source_record_id for record in records)
-                for name in self._masked_fields.get(entity.entity_type, ()):
+                for name in self._masked_fields.get(entity.entity_type, set()) - UNSEARCHED_FIELDS:
                     value = getattr(entity, name)
                     values.update(value if isinstance(value, list) else [value] if value else [])
             self._met[entity_id] = values

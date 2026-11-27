@@ -498,8 +498,8 @@ def test_edges_that_cannot_be_loaded_are_rejected_with_a_reason(con, ontology, t
         ("repex", "s99-repex"): ("UNRESOLVED_REF", "fx_registry:s99-missing"),
     }
     # Nothing rejected was loaded, and nothing else was lost.
-    assert len(read_relationships(con, set_id)) == 78
-    assert len(read_sanctions(con, set_id)) == 33
+    assert len(read_relationships(con, set_id)) == 79
+    assert len(read_sanctions(con, set_id)) == 35
     assert len(read_reporting_exceptions(con, set_id)) == 4
 
 
@@ -540,7 +540,7 @@ def test_match_type_says_how_a_designation_reaches_its_entity(con, t0):
     review = reached["s14-des", "lei:FXS14OWNER0000000000"]
     assert review.match_confidence < MATCH_THRESHOLD
     assert reached["s26-des", "lei:FXS26OWNER0000000000"].match_confidence >= MATCH_THRESHOLD
-    assert len({sanction.id for sanction in reached.values()}) == len(reached) == 33
+    assert len({sanction.id for sanction in reached.values()}) == len(reached) == 35
 
 
 # --- gold scenarios -----------------------------------------------------------------

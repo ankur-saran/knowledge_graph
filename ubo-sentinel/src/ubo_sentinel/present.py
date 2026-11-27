@@ -12,7 +12,7 @@ from ubo_sentinel.agents.guardrail import check_render
 from ubo_sentinel.agents.investigator_guardrail import resolve_value
 from ubo_sentinel.audit.log import AuditLog
 from ubo_sentinel.graph.store import GraphStore
-from ubo_sentinel.graph.views import GraphView, mask_decision, pseudonym_for
+from ubo_sentinel.graph.views import UNSEARCHED_FIELDS, GraphView, mask_decision, pseudonym_for
 from ubo_sentinel.llm.egress import EGRESS_ROLE
 from ubo_sentinel.models.change import MonitorRun, SetDiff
 from ubo_sentinel.models.decision import Decision
@@ -102,7 +102,10 @@ class Masker:
         if not hidden:
             return
         for label, fields in hidden.items():
-            columns = ", ".join(f for f in fields if f != "aliases")
+            # Lists are read apart; a year or a country code is not searched for.
+            columns = ", ".join(
+                f for f in fields if f != "aliases" and f not in UNSEARCHED_FIELDS
+            )
             rows = con.execute(
                 f"SELECT DISTINCT id, source_record_id, aliases{', ' + columns if columns else ''}"
                 " FROM graph_nodes WHERE label = ?"
