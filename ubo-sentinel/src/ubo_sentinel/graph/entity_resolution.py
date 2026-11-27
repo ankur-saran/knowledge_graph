@@ -161,7 +161,7 @@ def _score_names(store: GraphStore, query: str) -> dict[str, tuple[float, bool, 
         return {}
     # A name equal to the query is found whatever the size of its blocks.
     names = store.con.execute(
-        "SELECT DISTINCT node_id, name, name_norm FROM graph_name_blocks"
+        "SELECT DISTINCT node_id, name, name_norm, entity_type FROM graph_name_blocks"
         f" WHERE snapshot_set_id = ? AND block IN {id_list()} AND name_norm = ?",
         [store.set_id, blocks, query_norm],
     ).fetchall()
@@ -175,7 +175,7 @@ def _score_names(store: GraphStore, query: str) -> dict[str, tuple[float, bool, 
         if in_hand and in_hand + size > CANDIDATE_CAP:
             break
         names += store.con.execute(
-            "SELECT node_id, name, name_norm FROM graph_name_blocks"
+            "SELECT node_id, name, name_norm, entity_type FROM graph_name_blocks"
             " WHERE snapshot_set_id = ? AND block = ?",
             [store.set_id, block],
         ).fetchall()
@@ -183,16 +183,9 @@ def _score_names(store: GraphStore, query: str) -> dict[str, tuple[float, bool, 
 
     # Each name is scored as a name of its entity's type (a person's initials, a
     # company's generic words), as Silver scores a link.
-    types = dict(
-        store.con.execute(
-            "SELECT id, entity_type FROM graph_nodes"
-            f" WHERE snapshot_set_id = ? AND id IN {id_list()}",
-            [store.set_id, sorted({node_id for node_id, _, _ in names})],
-        ).fetchall()
-    )
     best: dict[str, tuple[float, bool, float, str]] = {}
-    for node_id, name, name_norm in sorted(set(names)):
-        score = similarity_normalised(query_norm, name_norm, types.get(node_id))
+    for node_id, name, name_norm, entity_type in sorted(set(names)):
+        score = similarity_normalised(query_norm, name_norm, entity_type)
         if score < RESOLVE_FLOOR:
             continue
         found = (score, name_norm == query_norm, form_similarity(query, name), name)

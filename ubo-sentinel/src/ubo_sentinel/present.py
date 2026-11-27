@@ -103,9 +103,7 @@ class Masker:
             return
         for label, fields in hidden.items():
             # Lists are read apart; a year or a country code is not searched for.
-            columns = ", ".join(
-                f for f in fields if f != "aliases" and f not in UNSEARCHED_FIELDS
-            )
+            columns = ", ".join(f for f in fields if f != "aliases" and f not in UNSEARCHED_FIELDS)
             rows = con.execute(
                 f"SELECT DISTINCT id, source_record_id, aliases{', ' + columns if columns else ''}"
                 " FROM graph_nodes WHERE label = ?"

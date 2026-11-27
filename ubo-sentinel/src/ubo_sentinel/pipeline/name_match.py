@@ -289,10 +289,16 @@ def similarity_normalised(a_norm: str, b_norm: str, entity_type: str | None = No
     # "Northstar"): one name's words all among the other's is a shorter name, and
     # read without spaces it would score as a prefix ("Halcyon Ridge" ~ "Halcyon
     # Ridge Minerals", measured on the fixtures' intake set).
+    # Each further reading counts only above the score in hand (`score_cutoff`), which
+    # also lets rapidfuzz stop early: the resolver scores thousands of names a query.
     if RULE_SPACING in ENABLED_RULES and not (set(a) <= set(b) or set(b) <= set(a)):
-        score = max(score, fuzz.ratio("".join(a), "".join(b)) / 100)
-    if RULE_PARTICLES in ENABLED_RULES:
-        score = max(score, _ratio(join_particles(a), join_particles(b)))
+        spaced = fuzz.ratio("".join(a), "".join(b), score_cutoff=score * 100) / 100
+        score = max(score, spaced)
+    if RULE_PARTICLES in ENABLED_RULES and not PARTICLES.isdisjoint(a + b):
+        joined = fuzz.token_sort_ratio(
+            " ".join(join_particles(a)), " ".join(join_particles(b)), score_cutoff=score * 100
+        )
+        score = max(score, joined / 100)
     if (
         entity_type == "LegalEntity"
         and RULE_GENERIC_SUFFIX in ENABLED_RULES

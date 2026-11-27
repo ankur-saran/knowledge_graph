@@ -100,14 +100,16 @@ _TABLES: dict[str, tuple[str, str]] = {
     linked_name TEXT NOT NULL""",
         "node_id, linked_node_id",
     ),
-    # Every name under each of its blocks: the first letters of each word.
+    # Every name under each of its blocks: the first letters of each word. With
+    # its entity's type, which the scorer reads (Step 19).
     "graph_name_blocks": (
         """
     block TEXT NOT NULL,
     node_id TEXT NOT NULL,
     name TEXT NOT NULL,
     name_norm TEXT NOT NULL,
-    kind TEXT NOT NULL""",
+    kind TEXT NOT NULL,
+    entity_type TEXT NOT NULL""",
         "block, node_id, name",
     ),
 }
@@ -366,10 +368,14 @@ def _write_name_blocks(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
     con.execute(
         """
         INSERT INTO graph_name_blocks
-        SELECT DISTINCT snapshot_set_id, left(token, ?), entity_id, name, name_norm, kind FROM (
+        SELECT DISTINCT t.snapshot_set_id, left(t.token, ?), t.entity_id, t.name, t.name_norm,
+            t.kind, e.entity_type
+        FROM (
             SELECT *, unnest(ubo_block_tokens(name_norm)) AS token
             FROM silver_entity_names WHERE snapshot_set_id = ?
-        ) WHERE token <> ''
+        ) t
+        JOIN silver_entities e ON e.snapshot_set_id = t.snapshot_set_id AND e.id = t.entity_id
+        WHERE t.token <> ''
         """,
         [BLOCK_PREFIX_LENGTH, set_id],
     )
