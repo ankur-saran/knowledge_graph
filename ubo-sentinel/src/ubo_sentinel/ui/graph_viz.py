@@ -35,7 +35,9 @@ STATE_STYLE: dict[str, tuple[str, str, str]] = {
     "outside": ("#FFFFFF", "box", "OUTSIDE THE GRAPH"),
     "other": ("#009E73", "dot", ""),
 }
-EDGE_DASHES = {"OWNS": False, "CONSOLIDATED_BY": [10, 6], "CONTROLS": [2, 4]}
+EDGE_DASHES = {"OWNS": False, "CONSOLIDATED_BY": [10, 6], "CONTROLS": [2, 4], "RELATED_TO": [1, 6]}
+# Edges drawn without a stake in their label.
+_NO_STAKE = ("CONTROLS", "RELATED_TO")
 EDGE_COLOUR = "#555555"
 ULTIMATE_COLOUR = "#AAAAAA"
 LINK_COLOUR = "#0072B2"
@@ -128,6 +130,9 @@ def _with_chains(chosen: set[str], memo: Memo) -> set[str]:
     while frontier:
         reached = []
         for edge in sorted(memo.edges, key=lambda e: (e.upper_id, e.id)):
+            if edge.rel_type == "RELATED_TO":
+                # A relation is no chain down to the target.
+                continue
             if edge.lower_id in frontier and edge.upper_id not in child_of:
                 if edge.upper_id != memo.target_id:
                     child_of[edge.upper_id] = edge.lower_id
@@ -288,7 +293,7 @@ def evidence_graph(view: DecisionView, scope: Scope = "paths", cap: int = DEFAUL
         if edge.upper_id not in drawn or edge.lower_id not in drawn:
             continue
         label = (
-            edge.rel_type if edge.rel_type == "CONTROLS" else f"{edge.rel_type} {_pct(edge.pct)}"
+            edge.rel_type if edge.rel_type in _NO_STAKE else f"{edge.rel_type} {_pct(edge.pct)}"
         )
         if edge.is_ultimate:
             label += " (ultimate)"
@@ -406,7 +411,8 @@ def _vis_data(spec: GraphSpec) -> dict[str, list[dict]]:
                 "dashes": dashes,
                 "width": 4 if edge.on_path else 1 if edge.is_ultimate else 2,
                 "color": {"color": colour},
-                "arrows": "to",
+                # A family or associate relation has no direction.
+                "arrows": "" if edge.kind == "RELATED_TO" else "to",
                 "font": {"size": 11, "align": "middle"},
             }
         )

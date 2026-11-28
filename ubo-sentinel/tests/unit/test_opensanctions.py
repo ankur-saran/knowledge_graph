@@ -7,11 +7,13 @@ import duckdb
 import pytest
 from real_format import SAMPLES
 
+from ubo_sentinel.pipeline.bronze import resolve_set
+from ubo_sentinel.pipeline.gold import build_gold
 from ubo_sentinel.pipeline.loaders import LOADERS
 from ubo_sentinel.pipeline.loaders.opensanctions_loader import OS_DATASETS
 from ubo_sentinel.pipeline.loaders.real_base import ingest_real
 from ubo_sentinel.pipeline.loaders.real_loader import REAL_DATASETS, ingest_opensanctions
-from ubo_sentinel.pipeline.mappers import MAPPERS, os_percentage
+from ubo_sentinel.pipeline.mappers import MAPPERS, OS_OTHER_LINK_SCHEMAS, os_percentage
 from ubo_sentinel.pipeline.transformer import build_silver, register_functions
 
 OS = "opensanctions:NK-fx"
@@ -190,9 +192,49 @@ def test_links(con, built):
     assert edges[(f"{OS}Mirovane", f"{OS}MiroTrading")][1] is None
     assert edges[(f"{OS}Sarvanta", f"{OS}SarvLogistics")][1] is None
     assert edges[(f"{OS}Lomanov", f"{OS}Sarvanta")] == ("CONTROLS", None, "directorship")
-    assert counts["filtered"]["os_relationships"] == {"UNSUPPORTED_REL_TYPE": 1}
+    # The unknown link; and an associate record that names one end only (Step 20).
+    assert counts["filtered"]["os_relationships"] == {"NO_ENDS": 1, "UNSUPPORTED_REL_TYPE": 1}
     # "majority" is a share in words; an Ownership that states none is not counted.
     assert counts["unreadable"]["pct"] == 1
+
+
+def test_family_and_associates_are_relations_in_id_order(con, built):
+    """Step 20: `Family` and `Associate` are RELATED_TO edges, no longer filtered. They
+    have no direction: the ends are in id order, whichever side the record names first."""
+    set_id, counts = built
+    assert "Family" not in OS_OTHER_LINK_SCHEMAS and "Associate" not in OS_OTHER_LINK_SCHEMAS
+    found = rows(
+        con,
+        "SELECT subject_id, object_id, basis, pct_high, interest, is_ultimate, source_record_id"
+        " FROM silver_relationships WHERE snapshot_set_id = ? AND rel_type = 'RELATED_TO'",
+        set_id,
+    )
+    # The record names the sister as `person`; her id sorts after his.
+    assert found == [
+        (f"{OS}Lomanov", f"{OS}Lomanova", "family", None, "equity", False, "NK-fxFam1")
+    ]
+    # An associate record that names one end only has no ends.
+    assert counts["filtered"]["os_relationships"]["NO_ENDS"] == 1
+
+
+def test_a_relation_is_kept_apart_from_the_graph_edges(con, built, ontology):
+    """Gold holds it in `graph_related`, so no traversal walks it, and no degree counts it."""
+    set_id, _ = built
+    snapshot_set = resolve_set(con, set_id)
+    build_gold(con, snapshot_set)
+    assert rows(
+        con, "SELECT count(*) FROM graph_edges WHERE snapshot_set_id = ? AND rel_type = ?",
+        set_id, "RELATED_TO",
+    ) == [(0,)]
+    assert rows(
+        con, "SELECT upper_id, lower_id FROM graph_related WHERE snapshot_set_id = ?", set_id
+    ) == [(f"{OS}Lomanov", f"{OS}Lomanova")]
+    assert rows(
+        con,
+        "SELECT up_degree, down_degree FROM graph_nodes WHERE snapshot_set_id = ? AND id = ?",
+        set_id,
+        f"{OS}Lomanova",
+    ) == [(0, 0)]
 
 
 @pytest.mark.parametrize(

@@ -19,8 +19,13 @@ BlockSet = Literal["BLOCKED", "POSSIBLY_BLOCKED"]
 # SEED: a designation put the node in the set. AGGREGATE: its owners in the set
 # hold enough of it. PRESUMED_MAJORITY: an edge without a percentage to such an owner.
 # RANGE: its owners' stakes are stated as ranges, and some of their values meet
-# the test while not all do (Step 16).
-DerivationBasis = Literal["SEED", "AGGREGATE", "PRESUMED_MAJORITY", "RANGE"]
+# the test while not all do (Step 16). CONTROL: a control edge of a basis the
+# pack's `control_blocks` lists, from a node in the set. RELATED_AGGREGATE: the
+# summed stakes of holders in the set that are joined by a RELATED_TO edge the
+# pack reviews would meet the test, where the largest alone does not (Step 20).
+DerivationBasis = Literal[
+    "SEED", "AGGREGATE", "PRESUMED_MAJORITY", "RANGE", "CONTROL", "RELATED_AGGREGATE"
+]
 
 
 def _absent(value: object) -> bool:

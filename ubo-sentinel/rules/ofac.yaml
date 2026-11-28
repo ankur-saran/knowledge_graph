@@ -14,6 +14,12 @@ ownership_measures: [equity]
 # block. FX-OFAC-SDN is the fixtures' stand-in for the SDN list; us_ofac_sdn is
 # the OpenSanctions dataset of it.
 designation_lists: [FX-OFAC-SDN, us_ofac_sdn]
+# What a designation on those lists does, by its program (`Sanction.program`, a
+# glob such as `US-*`): block, review (possibly blocked only) or ignore (listed
+# as not applied). The first entry that matches wins; a program no entry matches
+# blocks. Every SDN program blocks. `ubo refresh`'s quality report lists the
+# programs each list holds.
+programs: []
 # A designation on another list (EU, UK, UN, ...) never blocks under this pack.
 # review: when the other lists' designations would block or possibly block the
 # target under this pack's own test, the target is REVIEW
@@ -47,6 +53,12 @@ near_miss_pct: 40
 # whose path down to the target crosses a control link is also reviewed.
 control_link_review: true
 control_link_scope: upstream
+# Control of these bases puts the controlled entity in its controller's set.
+# None under OFAC: its rule is ownership only, and control is reviewed.
+control_blocks: []
+# Holders joined by a family or associate relation (OpenSanctions). Read only when
+# `aggregate_blocked_owners` is false; OFAC adds every blocked owner's stake anyway.
+aggregate_related: {family: review, associate: review}
 
 # An entity linked by name to a record that has owners of its own.
 duplicate_link_review: true

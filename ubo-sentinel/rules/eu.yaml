@@ -3,7 +3,7 @@
 # expressed in this engine's keys. Schema and loader: ubo_sentinel.rules.pack.
 # Not legal advice.
 id: eu_illustrative_v1
-label: "Illustrative pack, not validated by counsel. Control by a designated person is sent for review, not treated as designation."
+label: "Illustrative pack, not validated by counsel. The right to appoint the board blocks; significant influence and sectoral programs are sent for review."
 
 # Possession of more than 50 % of the proprietary rights. Exactly half does not meet it.
 ownership_threshold_pct: 50
@@ -18,6 +18,16 @@ ownership_measures: [equity, voting]
 # FX-EU-LIST is the fixtures' stand-in (SCEN-30); eu_fsf is the OpenSanctions
 # dataset of the EU Financial Sanctions Files (checked 2026-10-28).
 designation_lists: [FX-EU-LIST, eu_fsf]
+# Illustrative: the "owned or controlled" test belongs to the asset freeze. A
+# sectoral measure restricts dealings and freezes nothing, so it is reviewed; a
+# travel ban alone freezes nothing, so it is listed as not applied. The first
+# entry that matches wins; any other program blocks. No program on eu_fsf in the
+# real set of 2026-11-26 matches either glob (the Financial Sanctions Files hold
+# asset freezes; travel bans are another dataset, eu_travel_bans, which this
+# pack does not apply). `ubo refresh`'s quality report lists the programs.
+programs:
+  - {program: "*SECTORAL*", treat: review}
+  - {program: "*TRAVEL*", treat: ignore}
 other_designations: review
 
 match_threshold: 0.92
@@ -29,10 +39,15 @@ review_exposure_pct: 25
 near_miss_pct: 40
 
 # The EU test also covers control (the right to appoint or remove a majority of
-# the board, a dominant influence). The engine cannot make control block, so a
-# control link from a blocked party is REVIEW (CONTROL_LINK): the gap the label states.
+# the board, a dominant influence). The right to appoint the board blocks
+# (`control_blocks`); significant influence and other control stay a control
+# link, REVIEW (CONTROL_LINK), as the label states.
 control_link_review: true
 control_link_scope: upstream
+control_blocks: [board_appointment]
+# Read only when `aggregate_blocked_owners` is false; this pack adds every
+# designated holder's stake, so a relation between them adds nothing more.
+aggregate_related: {family: review, associate: review}
 
 duplicate_link_review: true
 max_depth: 5

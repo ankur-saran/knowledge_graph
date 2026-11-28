@@ -5,6 +5,7 @@ Every threshold the rule engine reads is here; none is written in Python.
 
 import re
 from decimal import Decimal
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Annotated, Literal, Self
 
@@ -14,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from ubo_sentinel.models.canonical import sha256_hex
 from ubo_sentinel.models.graph import Corroborator
 from ubo_sentinel.models.provenance import Confidence, NonEmptyStr
+from ubo_sentinel.models.relationship import ControlBasis
 from ubo_sentinel.pipeline.entity_linking import LINK_FLOOR
 
 # Commands are run from the repository root.
@@ -23,16 +25,45 @@ DEFAULT_PACK = "ofac"
 # Raise when a change to `rules/engine.py` alters what a pack concludes. It is
 # part of `rule_pack_hash`, and so of every `decision_id`. 4: stakes as ranges,
 # and the measures a pack tests (Step 16). 5: a name match blocks only when a
-# listed corroborator agrees and none conflicts (Step 19).
-RULES_VERSION = 5
+# listed corroborator agrees and none conflicts (Step 19). 6: programs, control
+# that blocks and holdings of related holders (Step 20).
+RULES_VERSION = 6
 
 ThresholdPct = Annotated[Decimal, Field(gt=0, le=100)]
 
 _PACK_NAME = re.compile(r"^[a-z0-9_]+$")
 
+# What a designation of a program does under a pack: it seeds the blocked set
+# (`block`), the possibly-blocked set only (`review`), or nothing (`ignore`).
+ProgramTreatment = Literal["block", "review", "ignore"]
+RelatedTreatment = Literal["review", "ignore"]
+
 
 class UnknownRulePack(LookupError):
     pass
+
+
+class ProgramRule(BaseModel):
+    """A program glob (`fnmatch`, case-sensitive: `EU-*`) and what its designations do."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    program: NonEmptyStr
+    treat: ProgramTreatment
+
+
+class RelatedAggregation(BaseModel):
+    """Per basis of a RELATED_TO edge: whether the stakes of holders it joins are summed
+    for review (`review`) or not (`ignore`). Read only when a pack does not add owners."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    family: RelatedTreatment
+    associate: RelatedTreatment
+
+    @property
+    def reviewed(self) -> frozenset[str]:
+        return frozenset(b for b in ("family", "associate") if getattr(self, b) == "review")
 
 
 class RulePack(BaseModel):
@@ -49,6 +80,9 @@ class RulePack(BaseModel):
     ownership_measures: list[Literal["equity", "voting"]] = Field(min_length=1)
     # Designations on these lists (`Sanction.list_source`) are the ones the pack applies.
     designation_lists: list[NonEmptyStr] = Field(min_length=1)
+    # What a designation on those lists does, by its program: the first entry whose
+    # glob matches wins, and a program no entry matches blocks. In order, so not sorted.
+    programs: list[ProgramRule]
     other_designations: Literal["review", "ignore"]
     match_threshold: Confidence
     review_band_low: Confidence
@@ -63,6 +97,11 @@ class RulePack(BaseModel):
     near_miss_pct: ThresholdPct
     control_link_review: bool
     control_link_scope: Literal["upstream", "target"]
+    # A CONTROLS edge of one of these bases puts the controlled node in the set its
+    # controller is in (basis CONTROL). Control of another basis stays a control link.
+    control_blocks: list[ControlBasis]
+    # Holders joined by a RELATED_TO edge, when `aggregate_blocked_owners` is false.
+    aggregate_related: RelatedAggregation
     duplicate_link_review: bool
     max_depth: int = Field(ge=1)
     max_depth_down: int = Field(ge=0)
@@ -72,11 +111,20 @@ class RulePack(BaseModel):
     # without one hashes as it did before the key existed.
     label: NonEmptyStr | None = Field(default=None, exclude_if=lambda value: value is None)
 
-    @field_validator("designation_lists", "ownership_measures", "name_match_corroborators")
+    @field_validator(
+        "designation_lists", "ownership_measures", "name_match_corroborators", "control_blocks"
+    )
     @classmethod
     def _sort_lists[T: str](cls, value: list[T]) -> list[T]:
         # A set: the order it is written in changes nothing, the hash included.
         return sorted(set(value))
+
+    def treatment(self, program: str) -> ProgramTreatment:
+        """What a designation of `program` on one of the pack's lists does."""
+        for rule in self.programs:
+            if fnmatchcase(program, rule.program):
+                return rule.treat
+        return "block"
 
     @property
     def name_match_requires_jurisdiction(self) -> bool:

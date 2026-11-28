@@ -17,6 +17,12 @@
 - {{ name(claim.subject_id) }} is possibly blocked: blocked and possibly-blocked owners hold {{ stake(p.aggregate_pct, p.get("aggregate_pct_high"), p.get("pct_bounds")) }} of it, a stated range of which some values meet the test and some do not.{{ cites(claim.citations) }}
 {% elif claim.code == "PRESUMED_MAJORITY" %}
 - {{ name(claim.subject_id) }} is possibly blocked: a blocked or possibly-blocked parent holds a stake of unknown size, presumed a majority.{{ cites(claim.citations) }}
+{% elif claim.code == "BLOCKED_BY_CONTROL" %}
+- {{ name(claim.subject_id) }} is blocked by control: a blocked party holds a kind of control the rule pack treats as designation.{{ cites(claim.citations) }}
+{% elif claim.code == "POSSIBLY_BLOCKED_BY_CONTROL" %}
+- {{ name(claim.subject_id) }} is possibly blocked: a possibly-blocked party holds a kind of control the rule pack treats as designation.{{ cites(claim.citations) }}
+{% elif claim.code == "POSSIBLY_BLOCKED_BY_RELATED" %}
+- {{ name(claim.subject_id) }} is possibly blocked: related holders (family or associates) hold {{ stake(p.aggregate_pct, p.get("aggregate_pct_high"), p.get("pct_bounds")) }} of it together; a relation alone does not prove a joint arrangement.{{ cites(claim.citations) }}
 {% elif claim.code == "REASON" %}
 - `{{ p.reason }}` on {{ subject(claim.subject_id) }}{% if p.pct is defined %}: {{ stake(p.pct, p.get("pct_high"), p.get("pct_bounds")) }}{% endif %}.{{ cites(claim.citations) }}
 {% elif claim.code == "DATA_GAP" %}
@@ -56,7 +62,7 @@ Rule pack: `{{ memo.rule_pack.id }}` (`{{ memo.rule_pack.hash[:16] }}`), blockin
 ## Why
 
 {{ claims_of(["REASON"]) }}
-{{- claims_of(["DESIGNATED", "POSSIBLY_DESIGNATED", "BLOCKED_BY_OWNERSHIP", "POSSIBLY_BLOCKED_BY_OWNERSHIP", "POSSIBLY_BLOCKED_BY_RANGE", "PRESUMED_MAJORITY"]) }}
+{{- claims_of(["DESIGNATED", "POSSIBLY_DESIGNATED", "BLOCKED_BY_OWNERSHIP", "POSSIBLY_BLOCKED_BY_OWNERSHIP", "POSSIBLY_BLOCKED_BY_RANGE", "PRESUMED_MAJORITY", "BLOCKED_BY_CONTROL", "POSSIBLY_BLOCKED_BY_CONTROL", "POSSIBLY_BLOCKED_BY_RELATED"]) }}
 {{- claims_of(["DIRECT_AGGREGATE", "EFFECTIVE_EXPOSURE", "STAKE_COVERAGE", "NO_DESIGNATION_FOUND"]) -}}
 {% if memo.paths %}
 

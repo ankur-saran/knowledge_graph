@@ -236,3 +236,146 @@
   rationale: >-
     The range is on an owner that is not designated and not on any blocked
     party's path, so it decides nothing: a gap for information only.
+
+# --- Step 20: packs that define regimes. A designation's `program` is read by a
+# pack's `programs`; a CONTROLS edge's `basis` by its `control_blocks`; a
+# RELATED_TO edge (family, associate) by its `aggregate_related`. The UK and EU
+# packs review `*SECTORAL*` programs, ignore `*TRAVEL*` ones and block on the
+# right to appoint the board; OFAC blocks every program and no control.
+- id: PACK-20
+  title: a sectoral program over a wholly owned subsidiary
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 100}
+  designations:
+    - {node: A, program: FX-SECTORAL}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [POSSIBLY_BLOCKED], possibly_blocked: [A, T]}
+    eu: {recommendation: REVIEW, reasons: [POSSIBLY_BLOCKED], possibly_blocked: [A, T]}
+  rationale: >-
+    A program the UK and EU packs review seeds the possibly-blocked set only, so
+    the subsidiary it wholly owns is possibly blocked, for a reviewer. OFAC
+    blocks every program on its list.
+
+- id: PACK-21
+  title: an ignored program over a wholly owned subsidiary
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 100}
+  designations:
+    - {node: A, program: FX-TRAVEL-BAN}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, T]}
+    uk_ofsi: {recommendation: CLEAR, gaps: [PROGRAM_NOT_APPLIED]}
+    eu: {recommendation: CLEAR, gaps: [PROGRAM_NOT_APPLIED]}
+  rationale: >-
+    A travel ban alone freezes nothing, so the UK and EU packs do not apply it:
+    it seeds nothing, and the memo lists it as not applied, a gap that never
+    decides. OFAC blocks every program on its list.
+
+- id: PACK-22
+  title: the right to appoint the board, held by a designated person
+  target: T
+  edges:
+    - {upper: A, lower: T, rel: CONTROLS, basis: board_appointment}
+  designations:
+    - {node: A}
+  expected:
+    ofac: {recommendation: REVIEW, reasons: [CONTROL_LINK], blocked: [A]}
+    uk_ofsi: {recommendation: ESCALATE, reasons: [CONTROL_LINK], blocked: [A, T]}
+    eu: {recommendation: ESCALATE, reasons: [CONTROL_LINK], blocked: [A, T]}
+  rationale: >-
+    The UK and EU tests cover control, and these packs block on the right to
+    appoint the board: the controlled entity is blocked (basis CONTROL), and
+    the control link is the reason. OFAC's rule is ownership only; control is
+    reviewed.
+
+- id: PACK-23
+  title: significant influence, held by a designated person
+  target: T
+  edges:
+    - {upper: A, lower: T, rel: CONTROLS, basis: significant_influence}
+  designations:
+    - {node: A}
+  expected:
+    ofac: {recommendation: REVIEW, reasons: [CONTROL_LINK], blocked: [A]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [CONTROL_LINK], blocked: [A]}
+    eu: {recommendation: REVIEW, reasons: [CONTROL_LINK], blocked: [A]}
+  rationale: >-
+    Influence is weaker than the right to appoint the board: no pack blocks on
+    it, and every pack sends it to a reviewer.
+
+- id: PACK-24
+  title: two designated brothers with 30 % each
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 30}
+    - {upper: B, lower: T, pct: 30}
+    - {upper: A, lower: B, rel: RELATED_TO, basis: family}
+  designations:
+    - {node: A}
+    - {node: B}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, B, T]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [EFFECTIVE_EXPOSURE, POSSIBLY_BLOCKED], blocked: [A, B], possibly_blocked: [T]}
+    eu: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, B, T]}
+  rationale: >-
+    The UK pack tests the largest holding (30 %), but the two holders are
+    family, and together they hold 60 %: possibly blocked (basis
+    RELATED_AGGREGATE), since a relation alone does not prove a joint
+    arrangement. OFAC and the EU pack add every designated holder's stake.
+
+- id: PACK-25
+  title: two designated associates with 30 % each
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 30}
+    - {upper: B, lower: T, pct: 30}
+    - {upper: B, lower: A, rel: RELATED_TO, basis: associate}
+  designations:
+    - {node: A}
+    - {node: B}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, B, T]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [EFFECTIVE_EXPOSURE, POSSIBLY_BLOCKED], blocked: [A, B], possibly_blocked: [T]}
+    eu: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, B, T]}
+  rationale: >-
+    As PACK-24, for associates; the relation is the same whichever end it is
+    written from.
+
+- id: PACK-26
+  title: two unrelated designated holders with 30 % each
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 30}
+    - {upper: B, lower: T, pct: 30}
+  designations:
+    - {node: A}
+    - {node: B}
+  expected:
+    ofac: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, B, T]}
+    uk_ofsi: {recommendation: REVIEW, reasons: [EFFECTIVE_EXPOSURE], blocked: [A, B]}
+    eu: {recommendation: ESCALATE, reasons: [DERIVED_50PCT], blocked: [A, B, T]}
+  rationale: >-
+    Without a relation between them, the UK pack does not consider the two
+    holdings together: the target is not possibly blocked. The combined
+    exposure (60 %) is still a risk signal for a reviewer, as in PACK-03.
+
+- id: PACK-27
+  title: a relation to a designated person outside the upward graph
+  target: T
+  edges:
+    - {upper: A, lower: T, pct: 20}
+    - {upper: X, lower: Y, pct: 60}
+    - {upper: A, lower: X, rel: RELATED_TO, basis: family}
+  designations:
+    - {node: A}
+    - {node: X}
+  expected:
+    ofac: {recommendation: CLEAR, blocked: [A]}
+    uk_ofsi: {recommendation: CLEAR, blocked: [A]}
+    eu: {recommendation: CLEAR, blocked: [A]}
+  rationale: >-
+    X holds nothing above the target, so the relation is never walked and adds
+    nothing: neither X nor what it owns enters the graph the rules read.

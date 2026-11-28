@@ -49,6 +49,11 @@ ClaimCode = Literal[
     "POSSIBLY_BLOCKED_BY_RANGE",
     # An ownership edge without a percentage to such an owner.
     "PRESUMED_MAJORITY",
+    # A kind of control the pack blocks on, from an entity in the set (Step 20).
+    "BLOCKED_BY_CONTROL",
+    "POSSIBLY_BLOCKED_BY_CONTROL",
+    # Holders joined by a family or associate relation hold enough of it together.
+    "POSSIBLY_BLOCKED_BY_RELATED",
     # A rule that fired; `params.reason` is the reason code.
     "REASON",
     "DATA_GAP",

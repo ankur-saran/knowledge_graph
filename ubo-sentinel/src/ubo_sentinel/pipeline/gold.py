@@ -76,6 +76,28 @@ _TABLES: dict[str, tuple[str, str]] = {
     lower_id TEXT NOT NULL""",
         "id",
     ),
+    # RELATED_TO edges (family, associates; Step 20), apart from `graph_edges` so
+    # that no traversal walks one: a screen reads them only between nodes it has
+    # already reached (`graph/projection.py`). No direction: `upper_id` and
+    # `lower_id` are the ends in id order, as Silver stores them.
+    "graph_related": (
+        f"""
+    id TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    object_id TEXT NOT NULL,
+    rel_type TEXT NOT NULL,
+    pct DECIMAL(7,4),
+    pct_low DECIMAL(7,4),
+    pct_high DECIMAL(7,4),
+    pct_bounds TEXT,
+    interest TEXT NOT NULL,
+    basis TEXT NOT NULL,
+    is_ultimate BOOLEAN NOT NULL,{_PROVENANCE},
+    supporting_records JSON NOT NULL,
+    upper_id TEXT NOT NULL,
+    lower_id TEXT NOT NULL""",
+        "id",
+    ),
     "graph_sanctions": (
         f"""
     id TEXT NOT NULL,
@@ -296,7 +318,8 @@ def _write_nodes(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
                        AS upper_id,
                    CASE WHEN rel_type = 'CONSOLIDATED_BY' THEN subject_id ELSE object_id END
                        AS lower_id
-            FROM silver_relationships WHERE snapshot_set_id = ?
+            -- A relation is no owner and nothing owned.
+            FROM silver_relationships WHERE snapshot_set_id = ? AND rel_type <> 'RELATED_TO'
         ), up AS (
             SELECT lower_id AS id, count(*) AS n FROM ends GROUP BY lower_id
         ), down AS (
@@ -317,18 +340,22 @@ def _write_nodes(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
 
 
 def _write_edges(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
-    con.execute(
-        f"""
-        INSERT INTO graph_edges
-        SELECT snapshot_set_id, id, subject_id, object_id, rel_type, pct,
-            pct_low, pct_high, pct_bounds, interest, basis, is_ultimate,
-            {_PROV}, supporting_records,
-            CASE WHEN rel_type = 'CONSOLIDATED_BY' THEN object_id ELSE subject_id END,
-            CASE WHEN rel_type = 'CONSOLIDATED_BY' THEN subject_id ELSE object_id END
-        FROM silver_relationships WHERE snapshot_set_id = ?
-        """,
-        [set_id],
-    )
+    for table, condition in (
+        ("graph_edges", "rel_type <> 'RELATED_TO'"),
+        ("graph_related", "rel_type = 'RELATED_TO'"),
+    ):
+        con.execute(
+            f"""
+            INSERT INTO {table}
+            SELECT snapshot_set_id, id, subject_id, object_id, rel_type, pct,
+                pct_low, pct_high, pct_bounds, interest, basis, is_ultimate,
+                {_PROV}, supporting_records,
+                CASE WHEN rel_type = 'CONSOLIDATED_BY' THEN object_id ELSE subject_id END,
+                CASE WHEN rel_type = 'CONSOLIDATED_BY' THEN subject_id ELSE object_id END
+            FROM silver_relationships WHERE snapshot_set_id = ? AND {condition}
+            """,
+            [set_id],
+        )
 
 
 def _write_sanctions(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
@@ -388,6 +415,11 @@ def _check(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
             SELECT count(*) FROM graph_edges e WHERE e.snapshot_set_id = $1 AND (
                 e.upper_id NOT IN (SELECT id FROM graph_nodes WHERE snapshot_set_id = $1)
                 OR e.lower_id NOT IN (SELECT id FROM graph_nodes WHERE snapshot_set_id = $1))""",
+        "relations with an end that is not a node": """
+            SELECT count(*) FROM graph_related e WHERE e.snapshot_set_id = $1 AND (
+                e.upper_id NOT IN (SELECT id FROM graph_nodes WHERE snapshot_set_id = $1)
+                OR e.lower_id NOT IN (SELECT id FROM graph_nodes WHERE snapshot_set_id = $1)
+                OR e.upper_id >= e.lower_id)""",
         "designations of an entity that is not a node": """
             SELECT count(*) FROM graph_sanctions s WHERE s.snapshot_set_id = $1 AND (
                 s.node_id NOT IN (SELECT id FROM graph_nodes WHERE snapshot_set_id = $1)
@@ -413,12 +445,14 @@ def _check(con: duckdb.DuckDBPyConnection, set_id: str) -> None:
                 f"Snapshot set {set_id}: {table} has {rows - keys} rows that share a key ({key})."
             )
 
-    for gold_table, silver_table in (
-        ("graph_nodes", "silver_entities"),
-        ("graph_edges", "silver_relationships"),
-        ("graph_sanctions", "silver_sanctions"),
+    for gold_tables, silver_table in (
+        (("graph_nodes",), "silver_entities"),
+        (("graph_edges", "graph_related"), "silver_relationships"),
+        (("graph_sanctions",), "silver_sanctions"),
     ):
-        gold_rows, silver_rows = _count(con, gold_table, set_id), _count(con, silver_table, set_id)
+        gold_table = " and ".join(gold_tables)
+        gold_rows = sum(_count(con, table, set_id) for table in gold_tables)
+        silver_rows = _count(con, silver_table, set_id)
         if gold_rows != silver_rows:
             raise GoldError(
                 f"Snapshot set {set_id}: {gold_table} has {gold_rows} rows,"

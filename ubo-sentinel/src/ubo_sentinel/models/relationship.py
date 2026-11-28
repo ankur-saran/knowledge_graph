@@ -14,10 +14,17 @@ from ubo_sentinel.models.canonical import quantize, short_id
 from ubo_sentinel.models.provenance import NonEmptyStr, Provenance, sort_provenance
 
 # Direction: OWNS is owner -> asset, CONSOLIDATED_BY is child -> parent,
-# CONTROLS is controller -> controlled.
-RelType = Literal["OWNS", "CONSOLIDATED_BY", "CONTROLS"]
+# CONTROLS is controller -> controlled. RELATED_TO (Step 20) has no direction:
+# its ends are stored in id order (`subject_id` < `object_id`). It is never
+# ownership, never a hop, and no traversal walks it.
+RelType = Literal["OWNS", "CONSOLIDATED_BY", "CONTROLS", "RELATED_TO"]
+# The relations a traversal walks: every one but RELATED_TO.
+GRAPH_RELATIONS: frozenset[str] = frozenset({"OWNS", "CONSOLIDATED_BY", "CONTROLS"})
+RELATED = "RELATED_TO"
 # `board_appointment` and `significant_influence` are Companies House natures of
 # control (Step 17): the right to appoint the board, and significant influence.
+# `family` and `associate` are the bases of a RELATED_TO edge (OpenSanctions
+# `Family` and `Associate`, Step 20).
 Basis = Literal[
     "shareholding",
     "accounting_consolidation",
@@ -25,7 +32,15 @@ Basis = Literal[
     "board_appointment",
     "significant_influence",
     "other",
+    "family",
+    "associate",
 ]
+# The bases of a CONTROLS edge, which a pack's `control_blocks` may list.
+ControlBasis = Literal[
+    "directorship", "board_appointment", "significant_influence", "other"
+]
+# The bases of a RELATED_TO edge.
+RelatedBasis = Literal["family", "associate"]
 # What a stake is a stake of (Step 16): shares, or votes.
 Interest = Literal["equity", "voting"]
 # Which ends of a stated range belong to it: "(]" is "more than low, at most high".

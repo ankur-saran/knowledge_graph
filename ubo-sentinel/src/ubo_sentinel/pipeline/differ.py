@@ -51,6 +51,22 @@ class _Table:
 _DESIGNATION_FIELDS = ("program", "list_date", "list_source", "is_active")
 _MATCH_FIELDS = ("node_id", "designated_node_id", "match_type", "match_confidence")
 
+_EDGE_FIELDS = tuple(
+    (name, name)
+    for name in (
+        "upper_id",
+        "lower_id",
+        "rel_type",
+        "pct",
+        "pct_low",
+        "pct_high",
+        "pct_bounds",
+        "interest",
+        "basis",
+        "is_ultimate",
+    )
+)
+
 _TABLES = (
     _Table(
         "designation",
@@ -60,27 +76,10 @@ _TABLES = (
         about=("node_id", "designated_node_id"),
         info=(("source", "source"), ("source_record_id", "source_record_id")),
     ),
-    _Table(
-        "edge",
-        "graph_edges",
-        "id",
-        tuple(
-            (name, name)
-            for name in (
-                "upper_id",
-                "lower_id",
-                "rel_type",
-                "pct",
-                "pct_low",
-                "pct_high",
-                "pct_bounds",
-                "interest",
-                "basis",
-                "is_ultimate",
-            )
-        ),
-        about=("upper_id", "lower_id"),
-    ),
+    _Table("edge", "graph_edges", "id", _EDGE_FIELDS, about=("upper_id", "lower_id")),
+    # A family or associate relation (Step 20): an edge, compared as one. An edge
+    # id names its relation type, so the two tables share no key.
+    _Table("edge", "graph_related", "id", _EDGE_FIELDS, about=("upper_id", "lower_id")),
     # Each link once, from its smaller end.
     _Table(
         "link",
@@ -270,6 +269,11 @@ def _changes(
                 other = b if kind == "REMOVED" else a
                 held = (row["source"], row["source_record_id"]) in records[other]
                 cause = "LINK" if held else "LIST"
+        elif spec.domain == "edge" and spec.table == "graph_related":
+            # A relation has no lower end: it bears on a node both ends hold, so
+            # each end is an anchor, and the walk down finds that node.
+            anchors = {row[end] for row in rows_ for end in ("upper_id", "lower_id")}
+            cause = "OWNERSHIP"
         elif spec.domain == "edge":
             anchors, cause = {row["lower_id"] for row in rows_}, "OWNERSHIP"
         elif spec.domain == "link":

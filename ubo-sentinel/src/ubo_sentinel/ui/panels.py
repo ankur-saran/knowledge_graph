@@ -678,6 +678,7 @@ def glossary(memo: Memo) -> dict[str, str]:
         "POSSIBLE_DUPLICATE": "A linked record of this entity has owners the screen did not see.",
         "CONFLICTING_PCT": "Two sources state different stakes for one ownership link.",
         "PCT_RANGE": "An ownership link states its stake as a range, not one figure.",
+        "PROGRAM_NOT_APPLIED": "A designation of a program the rule pack does not apply.",
     }
 
 

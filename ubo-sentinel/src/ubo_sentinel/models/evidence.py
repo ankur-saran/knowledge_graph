@@ -25,6 +25,9 @@ GapCode = Literal[
     # An ownership edge states its stake as a range, not one figure (Step 16). It
     # decides where the range alone makes the node it leads into possibly blocked.
     "PCT_RANGE",
+    # A designation on one of the pack's lists whose program the pack ignores
+    # (`programs`, Step 20). It seeds nothing and never decides.
+    "PROGRAM_NOT_APPLIED",
 ]
 
 # Why a recommendation was made. The last four come from the agent pipeline, not the rules.

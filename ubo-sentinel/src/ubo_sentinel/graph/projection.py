@@ -45,17 +45,34 @@ def read_nodes(store: GraphStore, ids: list[str]) -> list[Entity]:
     return [Entity.model_validate(fold_provenance(row)) for row in rows]
 
 
-def read_edges(store: GraphStore, where: str, parameters: list[Any]) -> list[Relationship]:
-    """The edges of the store's set that satisfy `where`, a condition on `graph_edges`.
+def read_edges(
+    store: GraphStore, where: str, parameters: list[Any], table: str = "graph_edges"
+) -> list[Relationship]:
+    """The edges of the store's set that satisfy `where`, a condition on `graph_edges`
+    (or on `graph_related`, the RELATED_TO edges).
 
     `where` names its parameters `$2`, `$3`, ...; `$1` is the set id.
     """
     rows = store.rows(
-        f"SELECT {_EDGE_COLUMNS} FROM graph_edges WHERE snapshot_set_id = $1 AND ({where})"
+        f"SELECT {_EDGE_COLUMNS} FROM {table} WHERE snapshot_set_id = $1 AND ({where})"
         " ORDER BY id",
         [store.set_id, *parameters],
     )
     return [Relationship.model_validate(fold_provenance(row)) for row in rows]
+
+
+def read_related(store: GraphStore, ids: list[str]) -> list[Relationship]:
+    """The RELATED_TO edges with both ends among `ids` (Step 20).
+
+    Never walked: a relation adds no node to a subgraph, and one to a node
+    outside it is not read.
+    """
+    return read_edges(
+        store,
+        f"upper_id IN {id_list('$2')} AND lower_id IN {id_list('$2')}",
+        [ids],
+        table="graph_related",
+    )
 
 
 def _neighbours(store: GraphStore, frontier: list[str], end: str) -> list[str]:
@@ -132,6 +149,9 @@ def extract_ego_graph(
         f" OR (lower_id IN {id_list('$3')} AND upper_id IN {id_list('$4')})",
         [up_ids, down_ids, [entity_id, *down_ids]],
     )
+    # Family and associate relations between two upward nodes: the rules read
+    # them between two holders of one node (`aggregate_related`).
+    edges += read_related(store, up_ids)
 
     return SubGraph(
         target_id=entity_id,

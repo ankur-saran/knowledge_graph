@@ -358,11 +358,12 @@ OS_LINK_SCHEMAS = {
     # schema -> (rel_type, basis, subject property, object property)
     "Ownership": ("OWNS", "shareholding", "owner", "asset"),
     "Directorship": ("CONTROLS", "directorship", "director", "organization"),
+    # No direction: Silver puts the ends in id order (Step 20).
+    "Family": ("RELATED_TO", "family", "person", "relative"),
+    "Associate": ("RELATED_TO", "associate", "person", "associate"),
 }
 OS_OTHER_LINK_SCHEMAS = (
-    "Associate",
     "Employment",
-    "Family",
     "Membership",
     "Occupancy",
     "Representation",

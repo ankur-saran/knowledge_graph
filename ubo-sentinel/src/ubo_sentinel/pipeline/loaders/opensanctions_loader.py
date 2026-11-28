@@ -84,9 +84,22 @@ OS_RELATIONSHIPS = RealDataset(
     source=SOURCE,
     file=FILE,
     format=Format.NDJSON,
-    columns=_record("owner", "asset", "percentage", "director", "organization", "role"),
+    # `person`, `relative` and `associate` are the ends of a `Family` or an
+    # `Associate` record (Step 20). A snapshot ingested before holds none, so its
+    # family and associate records are filtered as having no ends.
+    columns=_record(
+        "owner",
+        "asset",
+        "percentage",
+        "director",
+        "organization",
+        "role",
+        "person",
+        "relative",
+        "associate",
+    ),
     key=("id",),
-    # Links the graph does not hold (family, associates) are in Bronze, counted.
+    # Links the graph does not hold (employment, membership, ...) are in Bronze, counted.
     select=("schema", frozenset({*OS_LINK_SCHEMAS, *OS_OTHER_LINK_SCHEMAS})),
 )
 

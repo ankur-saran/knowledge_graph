@@ -69,6 +69,14 @@ def test_the_shipped_pack_loads():
         {"max_depth": 0},
         {"designation_lists": []},
         {"other_designations": "block"},
+        # Step 20: a treatment is block, review or ignore; control blocks on a
+        # kind of control only; a relation is reviewed or ignored.
+        {"programs": [{"program": "EU-*", "treat": "escalate"}]},
+        {"programs": [{"program": "", "treat": "block"}]},
+        {"control_blocks": ["family"]},
+        {"control_blocks": ["shareholding"]},
+        {"aggregate_related": {"family": "block", "associate": "review"}},
+        {"aggregate_related": {"family": "review"}},
     ],
     ids=lambda changes: next(iter(changes)),
 )

@@ -13,6 +13,12 @@ than 25 % but not more than 50 %"). An entity is blocked only when every value
 of its holders' stake meets the test, and possibly blocked when only some do.
 A pack tests one or more measures (shares, votes); an entity meets the test on
 any one of them, and measures are never added together.
+
+A pack may also define its regime (Step 20): what each program of its lists
+does (`programs`), which kinds of control put the controlled entity in its
+controller's set (`control_blocks`), and whether holders joined by a family or
+associate relation are reviewed together (`aggregate_related`). A RELATED_TO
+edge is never a hop: it is read only between two holders of one entity.
 """
 
 from collections import defaultdict
@@ -33,7 +39,7 @@ from ubo_sentinel.models.evidence import (
 )
 from ubo_sentinel.models.graph import SanctionMatch, SubGraph, upper_lower
 from ubo_sentinel.models.provenance import Provenance
-from ubo_sentinel.models.relationship import Relationship
+from ubo_sentinel.models.relationship import GRAPH_RELATIONS, RELATED, Relationship
 from ubo_sentinel.models.rule_result import (
     BlockSet,
     DerivationBasis,
@@ -174,7 +180,11 @@ class Hop:
     presumed_edges: tuple[Relationship, ...]
     # `CONTROLS` edges, and stakes of a measure the pack does not test that could
     # meet its threshold or are of unknown size (votes under an equity-only pack).
+    # A `CONTROLS` edge of a basis the pack's `control_blocks` lists is not here.
     control_edges: tuple[Relationship, ...]
+    # `CONTROLS` edges of a basis in `control_blocks`: the lower node joins the set
+    # the upper node is in (Step 20).
+    blocking_edges: tuple[Relationship, ...]
     ownership: bool
     # True when only ultimate-parent records join the pair.
     ultimate_only: bool
@@ -235,6 +245,9 @@ def _hop(upper: str, lower: str, edges: list[Relationship], pack: RulePack) -> H
             stakes.append((measure, *found))
     largest = _largest((stake, edge) for _, stake, edge in stakes)
     stake_edge = largest[1] if largest else None
+    blocking = tuple(
+        edge for edge in kept if edge.rel_type == "CONTROLS" and edge.basis in pack.control_blocks
+    )
     cited = min(
         kept,
         key=lambda edge: (
@@ -251,8 +264,11 @@ def _hop(upper: str, lower: str, edges: list[Relationship], pack: RulePack) -> H
         stakes=tuple(stakes),
         presumed_edges=tuple(edge for edge in measured if edge not in stated),
         control_edges=tuple(
-            edge for edge in kept if edge.rel_type == "CONTROLS" or edge in unmeasured_control
+            edge
+            for edge in kept
+            if (edge.rel_type == "CONTROLS" and edge not in blocking) or edge in unmeasured_control
         ),
+        blocking_edges=blocking,
         ownership=bool(measured),
         ultimate_only=all(edge.is_ultimate for edge in kept),
         edge=cited,
@@ -365,9 +381,41 @@ def other_regime(pack: RulePack, match: SanctionMatch) -> list[Sanction]:
     return [r for r in match.sanction_records if r.is_active and r.list_source not in lists]
 
 
+def applied(pack: RulePack, match: SanctionMatch) -> list[Sanction]:
+    """The match's designations the pack applies: on its lists, of a program it does not ignore."""
+    return [r for r in in_scope(pack, match) if pack.treatment(r.program) != "ignore"]
+
+
+def not_applied(pack: RulePack, match: SanctionMatch) -> list[Sanction]:
+    """The match's designations on the pack's lists of a program the pack ignores."""
+    return [r for r in in_scope(pack, match) if pack.treatment(r.program) == "ignore"]
+
+
 def classify_match(pack: RulePack, match: SanctionMatch) -> BlockSet | None:
-    """What the match does under the pack: only its designations on the pack's lists count."""
-    return _classify(pack, match) if in_scope(pack, match) else None
+    """How strongly the match ties the designations the pack applies to its node.
+
+    The strength of the match alone: what its programs do is `match_effect()`.
+    A review-band match is `POSSIBLY_BLOCKED` here whatever its program.
+    """
+    return _classify(pack, match) if applied(pack, match) else None
+
+
+def match_effect(pack: RulePack, match: SanctionMatch) -> BlockSet | None:
+    """What the match does under the pack: its strength, capped by its programs.
+
+    It blocks only when the match would and one of its applied designations is
+    of a program the pack blocks; a program the pack reviews seeds the
+    possibly-blocked set only.
+    """
+    strength = classify_match(pack, match)
+    if strength == "BLOCKED" and not _blocking(pack, match):
+        return "POSSIBLY_BLOCKED"
+    return strength
+
+
+def _blocking(pack: RulePack, match: SanctionMatch) -> list[Sanction]:
+    """The applied designations of a program the pack blocks."""
+    return [r for r in applied(pack, match) if pack.treatment(r.program) == "block"]
 
 
 def classify_other_regime(pack: RulePack, match: SanctionMatch) -> BlockSet | None:
@@ -416,9 +464,16 @@ class _Evaluation:
         self.threshold = Fraction(pack.ownership_threshold_pct)
 
         pairs: dict[tuple[str, str], list[Relationship]] = defaultdict(list)
+        # A RELATED_TO edge between two upward nodes: never a hop, read only to
+        # join two holders of one node (`aggregate_related`).
+        self.related: list[Relationship] = []
         for edge in subgraph.edges:
             upper, lower = upper_lower(edge)
-            if upper in self.upward and lower in self.upward:
+            if upper not in self.upward or lower not in self.upward:
+                continue
+            if edge.rel_type == RELATED:
+                self.related.append(edge)
+            elif edge.rel_type in GRAPH_RELATIONS:
                 pairs[upper, lower].append(edge)
         self.edges = [edge for edges in pairs.values() for edge in edges]
         self.owners: dict[str, list[Hop]] = defaultdict(list)
@@ -439,14 +494,22 @@ class _Evaluation:
         The designations on the pack's lists, or with `other_lists` those on the
         lists it does not apply.
         """
-        classify, records = (
-            (classify_other_regime, other_regime) if other_lists else (classify_match, in_scope)
-        )
         found: dict[BlockSet, dict[str, list[str]]] = {"BLOCKED": {}, "POSSIBLY_BLOCKED": {}}
         for match in self.matches:
-            block_set = classify(self.pack, match)
+            if other_lists:
+                block_set = classify_other_regime(self.pack, match)
+                records = other_regime(self.pack, match)
+            else:
+                # A designation of a program the pack reviews seeds the possibly-
+                # blocked set only; one it ignores seeds nothing.
+                block_set = match_effect(self.pack, match)
+                records = (
+                    _blocking(self.pack, match)
+                    if block_set == "BLOCKED"
+                    else applied(self.pack, match)
+                )
             if block_set is not None:
-                ids = [record.id for record in records(self.pack, match)]
+                ids = [record.id for record in records]
                 found[block_set].setdefault(match.entity_id, []).extend(ids)
         blocked = found["BLOCKED"]
         review = {n: ids for n, ids in found["POSSIBLY_BLOCKED"].items() if n not in blocked}
@@ -537,8 +600,83 @@ class _Evaluation:
                 if holding is not None and self._every(holding.stake):
                     members.add(node_id, "AGGREGATE", round_, holding.stake, holding.edges)
                     added = True
+                elif control := self._blocking_control(node_id, holders):
+                    members.add(node_id, "CONTROL", round_, edges=control)
+                    added = True
             if not added:
                 return members
+
+    def _blocking_control(self, node_id: str, holders: set[str]) -> list[Relationship]:
+        """The edges of a kind of control the pack blocks on, from `holders` into the node."""
+        return [
+            edge
+            for hop in self.owners[node_id]
+            if hop.upper in holders
+            for edge in hop.blocking_edges
+        ]
+
+    def _related_holding(
+        self, node_id: str, holders: set[str]
+    ) -> tuple[_Holding, list[Relationship]] | None:
+        """The summed stakes of holders joined by RELATED_TO edges the pack reviews.
+
+        Only when the pack does not add every holder's stake. Holders are joined
+        when a reviewed RELATED_TO edge runs between two of them, and in turn
+        (a group); each group's stakes are added on each measure. Returns the
+        group whose sum tells most, when some value of it meets the test, with
+        the RELATED_TO edges that join it; else None.
+        """
+        reviewed = self.pack.aggregate_related.reviewed
+        if self.pack.aggregate_blocked_owners or not reviewed:
+            return None
+        hops = {hop.upper: hop for hop in self.owners[node_id] if hop.upper in holders}
+        joins = [
+            edge
+            for edge in self.related
+            if edge.basis in reviewed and edge.subject_id in hops and edge.object_id in hops
+        ]
+        if not joins:
+            return None
+        group = {upper: upper for upper in hops}
+
+        def root(node: str) -> str:
+            while group[node] != node:
+                node = group[node]
+            return node
+
+        for edge in sorted(joins, key=lambda item: item.id):
+            a, b = sorted((root(edge.subject_id), root(edge.object_id)))
+            group[b] = a
+        members: dict[str, list[str]] = defaultdict(list)
+        for upper in sorted(hops):
+            members[root(upper)].append(upper)
+        found = []
+        for uppers in members.values():
+            if len(uppers) < 2:
+                continue
+            for order, measure in enumerate(self.pack.ownership_measures):
+                held = [
+                    (hops[upper], item[0])
+                    for upper in uppers
+                    if (item := hops[upper].stake(measure)) is not None
+                ]
+                if len(held) < 2:
+                    continue
+                total = stake_sum([stake for _, stake in held])
+                if not self._some(total):
+                    continue
+                edges = [
+                    edge
+                    for edge in joins
+                    if edge.subject_id in uppers and edge.object_id in uppers
+                ]
+                rank = (self._every(total), total.rank(), -order, uppers)
+                holding = _Holding(measure, total, tuple(hop for hop, _ in held))
+                found.append((rank, holding, edges))
+        if not found:
+            return None
+        _, holding, edges = max(found, key=lambda item: item[0])
+        return holding, edges
 
     def _possibly_blocked(self, seeds: dict[str, list[str]], blocked: set[str]) -> _Members:
         members = _Members("POSSIBLY_BLOCKED")
@@ -561,14 +699,23 @@ class _Evaluation:
                     added = True
                     continue
                 holding = self._holding(node_id, holders)
-                if holding is None:
-                    continue
-                if self._every(holding.stake):
+                if holding is not None and self._every(holding.stake):
                     members.add(node_id, "AGGREGATE", round_, holding.stake, holding.edges)
                     added = True
-                elif self._some(holding.stake):
+                elif holding is not None and self._some(holding.stake):
                     # Some values of a stated range meet the test and others do not.
                     members.add(node_id, "RANGE", round_, holding.stake, holding.edges)
+                    added = True
+                elif control := self._blocking_control(node_id, holders):
+                    members.add(node_id, "CONTROL", round_, edges=control)
+                    added = True
+                elif related := self._related_holding(node_id, holders):
+                    # Related holders whose stakes together would meet the test: a
+                    # relation is not proof of a joint arrangement, so a review.
+                    joint, joins = related
+                    members.add(
+                        node_id, "RELATED_AGGREGATE", round_, joint.stake, [*joint.edges, *joins]
+                    )
                     added = True
             if not added:
                 return members
@@ -688,9 +835,14 @@ class _Evaluation:
         for match in self.matches:
             in_band = classify_match(self.pack, match) == "POSSIBLY_BLOCKED"
             if in_band and match.entity_id not in blocked:
-                record = in_scope(self.pack, match)[0]
+                record = applied(self.pack, match)[0]
                 relevant = every or match.entity_id in on_path_nodes
                 add("REVIEW_BAND_MATCH", match.entity_id, record.provenance, relevant)
+            # A designation the pack's programs leave out, listed as not applied.
+            # It never decides: the pack says what its regime is.
+            if _classify(self.pack, match) is not None:
+                for record in not_applied(self.pack, match):
+                    add("PROGRAM_NOT_APPLIED", match.entity_id, record.provenance, False)
         for gap in self.subgraph.set_gaps:
             if gap.subject_id in self.upward:
                 add(
@@ -794,13 +946,24 @@ class _Evaluation:
         if target in in_b:
             recommendation = "ESCALATE"
             holding = direct
+            still: NodeDerivation | None = blocked.why[target]
             if target in blocked_seeds:
                 found("DIRECT_DESIGNATION", sanction_ids=blocked_seeds[target])
                 # Would the target stay blocked if its own designation were lifted?
                 others = {n: ids for n, ids in blocked_seeds.items() if n != target}
-                without = set(self._blocked(others).why)
-                holding = self._holding(target, without - {target}) if target in without else None
-            if holding is not None:
+                without = self._blocked(others).why
+                still = without.get(target)
+                holding = (
+                    self._holding(target, set(without) - {target}) if still is not None else None
+                )
+            if still is not None and still.basis == "CONTROL":
+                # Blocked by a kind of control the pack blocks on: the control
+                # link is the reason, from each controller that holds it.
+                control = [e for e in self.edges if e.id in set(still.edge_ids)]
+                for upper in sorted({upper_lower(edge)[0] for edge in control}):
+                    edges = [edge for edge in control if upper_lower(edge)[0] == upper]
+                    found("CONTROL_LINK", subject_id=upper, edges=edges)
+            elif holding is not None:
                 found("DERIVED_50PCT", stake=holding.stake, edges=holding.edges)
         else:
             if target in in_p:
@@ -842,7 +1005,8 @@ class _Evaluation:
                     if (
                         path.start in flagged
                         and not any(hop.lower in flagged for hop in path.hops[:-1])
-                        and any(not hop.ownership for hop in path.hops)
+                        # Control the pack blocks on is applied, not reviewed.
+                        and any(not hop.ownership and hop.control_edges for hop in path.hops)
                     ):
                         chains[path.start].update((hop.edge.id, hop.edge) for hop in path.hops)
                 for start in sorted(chains.keys() - reported):

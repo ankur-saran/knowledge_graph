@@ -26,6 +26,12 @@ edge_types:
     subject: {role: controller, labels: [LegalEntity, Person]}
     object: {role: controlled, labels: [LegalEntity]}
     properties: [id, subject_id, object_id, rel_type, pct, pct_low, pct_high, pct_bounds, interest, basis, is_ultimate]
+  # Family or associate (OpenSanctions). No direction: the ends are in id order.
+  # Never ownership, never a hop; a screen reads it only between two of its nodes.
+  RELATED_TO:
+    subject: {role: person, labels: [Person]}
+    object: {role: relative, labels: [Person]}
+    properties: [id, subject_id, object_id, rel_type, interest, basis, is_ultimate]
 
 # Designations are rows in a table keyed by node id, not edges.
 designations:

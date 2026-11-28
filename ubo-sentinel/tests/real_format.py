@@ -670,6 +670,31 @@ OS_ENTITIES = [
         {"director": ["NK-fxLomanov"], "organization": ["NK-fxSarvanta"], "role": ["Director"]},
         [_SDN],
     ),
+    # His sister, not designated: a family relation (Step 20), written from her
+    # side, so Silver puts its ends in id order. An associate record that names
+    # one end only has no ends.
+    _ftm(
+        "NK-fxLomanova",
+        "Person",
+        "Irina Lomanova",
+        {"name": ["Irina Lomanova"], "birthDate": ["1970"], "nationality": ["ae"]},
+        [_SDN],
+        target=False,
+    ),
+    _ftm(
+        "NK-fxFam1",
+        "Family",
+        "Family",
+        {"person": ["NK-fxLomanova"], "relative": ["NK-fxLomanov"], "relationship": ["Sister"]},
+        [_SDN],
+    ),
+    _ftm(
+        "NK-fxAssoc1",
+        "Associate",
+        "Associate",
+        {"person": ["NK-fxLomanov"], "relationship": ["Business associate"]},
+        [_SDN],
+    ),
     # Delisted: the designation ended before the publish date.
     _company("NK-fxTeverin", "Teverin Grain Export LLC", [_UK], country=["ua"]),
     _sanction(

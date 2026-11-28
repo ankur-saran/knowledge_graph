@@ -50,8 +50,9 @@ from ubo_sentinel.pipeline.sources import CONTEXT_DATASETS, SOURCE_RANK, SOURCE_
 # rows. A set built by another version is not reused. 5: `CONFLICTING_PCT` (Step 15).
 # 6: stakes as ranges and an interest (equity or voting) on every edge (Step 16).
 # 7: names transliterated, scored by entity type and blocked under both forms;
-# birth dates and nationalities on entities (Step 19).
-TRANSFORM_VERSION = 7
+# birth dates and nationalities on entities (Step 19). 8: OpenSanctions `Family`
+# and `Associate` as RELATED_TO edges, their ends in id order (Step 20).
+TRANSFORM_VERSION = 8
 
 REJECT_UNRESOLVED_REF = "UNRESOLVED_REF"
 REJECT_SELF_LOOP = "SELF_LOOP_AFTER_MERGE"
@@ -571,10 +572,15 @@ def _write_relationships(
             for label in end.labels
         ],
     )
+    # A RELATED_TO edge has no direction: its ends are put in id order, so two
+    # records that name the pair either way round are one edge.
+    swap = "(r.rel_type = 'RELATED_TO' AND o.entity_id < s.entity_id)"
     con.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE stg_edges AS
-        SELECT r.*, s.entity_id AS subject_id, o.entity_id AS object_id,
+        SELECT r.*,
+            CASE WHEN {swap} THEN o.entity_id ELSE s.entity_id END AS subject_id,
+            CASE WHEN {swap} THEN s.entity_id ELSE o.entity_id END AS object_id,
             CASE
                 WHEN s.entity_id IS NULL OR o.entity_id IS NULL THEN '{REJECT_UNRESOLVED_REF}'
                 WHEN s.entity_id = o.entity_id THEN '{REJECT_SELF_LOOP}'

@@ -314,11 +314,16 @@ class SubGraph(_Model):
         raise KeyError(entity_id)
 
     def to_networkx(self) -> nx.MultiDiGraph:
-        """Nodes and edges as a graph. Every edge runs upper -> lower, keyed by its id."""
+        """Nodes and edges as a graph. Every edge runs upper -> lower, keyed by its id.
+
+        A RELATED_TO edge has no direction and is never walked, so it is left out.
+        """
         graph = nx.MultiDiGraph()
         for node in self.nodes:
             graph.add_node(node.id, entity=node, depth_up=self.depth_up.get(node.id))
         for edge in self.edges:
+            if edge.rel_type == "RELATED_TO":
+                continue
             upper, lower = upper_lower(edge)
             graph.add_edge(upper, lower, key=edge.id, relationship=edge)
         return graph

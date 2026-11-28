@@ -191,3 +191,36 @@ def test_a_designation_that_lapses_by_date_is_seen_though_its_row_is_unchanged(t
         ("LIST", True, False)
     ]
     assert lapsed[0].anchor_ids == ["opensanctions:NK-fxTeverin"]
+
+
+def test_a_relation_that_ends_is_an_ownership_change_at_both_ends(tmp_path):
+    """Step 20: a RELATED_TO edge is compared as an edge. It has no lower end, so the
+    change is anchored at both: a node both of them hold is found by the walk down."""
+    first = shutil.copytree(SAMPLES, tmp_path / "first")
+    _build(first, "real")
+    later = shutil.copytree(first, tmp_path / "later")
+    ftm = later / "opensanctions/entities.ftm.json"
+    lines = ftm.read_bytes().splitlines(keepends=True)
+    ftm.write_bytes(b"".join(line for line in lines if b'"NK-fxFam1"' not in line))
+    restamp(later)
+    _build(later, "opensanctions")
+
+    con = connect(read_only=True)
+    sets = [
+        set_id
+        for (set_id,) in con.execute(
+            "SELECT snapshot_set_id FROM snapshot_set_info ORDER BY seq"
+        ).fetchall()
+    ]
+    diff = diff_sets(con, sets[0], sets[-1])
+    con.close()
+    related = [c for c in diff.changes if c.domain == "edge"]
+    assert [(c.kind, c.cause, c.anchor_ids, c.before["rel_type"]) for c in related] == [
+        (
+            "REMOVED",
+            "OWNERSHIP",
+            ["opensanctions:NK-fxLomanov", "opensanctions:NK-fxLomanova"],
+            "RELATED_TO",
+        )
+    ]
+    assert related[0].before["basis"] == "family"

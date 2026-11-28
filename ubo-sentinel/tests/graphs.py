@@ -33,12 +33,26 @@ _BASIS = {
 }
 
 
-def edge(upper, lower, pct=None, rel="OWNS", ultimate=False, stake=None, interest="equity"):
+def edge(
+    upper,
+    lower,
+    pct=None,
+    rel="OWNS",
+    ultimate=False,
+    stake=None,
+    interest="equity",
+    basis=None,
+):
     """An edge named by its upper and lower end, whatever the relation's own direction.
 
     `stake` is a range as `(bounds, low, high)`, e.g. `("(]", 25, 50)`, in place of `pct`.
+    `basis` is a control's kind, or a RELATED_TO edge's relation (`family`, the
+    default for one); a RELATED_TO edge's ends are put in id order.
     """
     subject, obj = (lower, upper) if rel == "CONSOLIDATED_BY" else (upper, lower)
+    if rel == "RELATED_TO":
+        subject, obj = sorted((subject, obj))
+        basis = basis or "family"
     ends = {}
     if stake is not None:
         bounds, low, high = stake
@@ -53,7 +67,7 @@ def edge(upper, lower, pct=None, rel="OWNS", ultimate=False, stake=None, interes
         object_id=obj,
         rel_type=rel,
         pct=None if pct is None else Decimal(str(pct)),
-        basis=_BASIS[rel],
+        basis=basis or _BASIS[rel],
         is_ultimate=ultimate,
         interest=interest,
         provenance=PROVENANCE,
@@ -65,6 +79,9 @@ def upward_depths(target, edges):
     """Node -> hops above the target, for every node that owns or controls it."""
     owners = {}
     for item in edges:
+        if item.rel_type == "RELATED_TO":
+            # Never walked (Step 20).
+            continue
         upper, lower = upper_lower(item)
         owners.setdefault(lower, set()).add(upper)
     depths, frontier = {target: 0}, [target]
@@ -121,6 +138,7 @@ def designated(
     list_source=IN_SCOPE,
     jurisdictions_agree=True,
     corroboration=None,
+    program="P",
 ):
     """A designation that reaches `node_id`: its own, or one of `by` that crossed a link.
 
@@ -133,7 +151,7 @@ def designated(
         id=sanction_id("hand", f"des-{by}", node_id),
         entity_id=node_id,
         designated_entity_id=by,
-        program="P",
+        program=program,
         list_source=list_source,
         is_active=active,
         match_type=match_type,

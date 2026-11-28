@@ -155,7 +155,39 @@ def quality_report(con: duckdb.DuckDBPyConnection, snapshot_set: SnapshotSet) ->
         "noted": counts.get("noted", {}),
         "stake_coverage": _stake_coverage(con, set_id),
         "psc_statements": _psc_statements(con, snapshot_set),
+        # The values a rule pack's `programs` globs must match (Step 20).
+        "programs_by_list": _programs_by_list(con, set_id),
+        "designations_on_several_lists": _designations_on_several_lists(con, snapshot_set),
     }
+
+
+def _programs_by_list(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, list[str]]:
+    """List -> the distinct programs its designations in the set state, sorted."""
+    rows = con.execute(
+        "SELECT list_source, list_sort(list(DISTINCT program)) FROM silver_sanctions"
+        " WHERE snapshot_set_id = ? GROUP BY list_source ORDER BY list_source",
+        [set_id],
+    ).fetchall()
+    return dict(rows)
+
+
+def _designations_on_several_lists(
+    con: duckdb.DuckDBPyConnection, snapshot_set: SnapshotSet
+) -> int | None:
+    """OpenSanctions `Sanction` records that name more than one dataset. None without them.
+
+    Silver reads a record's first dataset as its list (`pipeline/mappers.py`), so
+    a record on several would reach a pack of the second list as another
+    regime's. In the real set of 2026-11-26 there are none (Step 20).
+    """
+    snapshot_id = snapshot_set.snapshot_ids.get("os_sanctions")
+    if snapshot_id is None:
+        return None
+    return con.execute(
+        "SELECT count(*) FROM bronze_sanctions WHERE _snapshot_id = ?"
+        " AND len(CAST(_raw->'$.datasets' AS TEXT[])) > 1",
+        [snapshot_id],
+    ).fetchone()[0]
 
 
 def _stake_coverage(con: duckdb.DuckDBPyConnection, set_id: str) -> dict[str, dict[str, int]]:

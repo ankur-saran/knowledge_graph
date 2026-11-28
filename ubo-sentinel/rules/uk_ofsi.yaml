@@ -2,14 +2,15 @@
 # UK "owned or controlled" test (OFSI guidance), expressed in this engine's keys.
 # Schema and loader: ubo_sentinel.rules.pack. Not legal advice.
 id: uk_ofsi_illustrative_v1
-label: "Illustrative pack, not validated by counsel. Control by a designated person is sent for review, not treated as designation."
+label: "Illustrative pack, not validated by counsel. The right to appoint the board blocks; significant influence, related holders' combined stakes and sectoral programs are sent for review."
 
 # Ownership of more than half of the shares or voting rights. Exactly half does not meet it.
 ownership_threshold_pct: 50
 threshold_operator: ">"
 # OFSI does not add together the separate holdings of different designated persons
-# (only a joint arrangement is one holding, which this engine cannot express):
-# the largest holding is tested. Counsel to confirm.
+# (only a joint arrangement is one holding): the largest holding is tested.
+# Counsel to confirm. A joint arrangement is not in the data; a family or
+# associate relation between holders is (`aggregate_related` below).
 aggregate_blocked_owners: false
 # Shares or voting rights: either may meet the test; they are never added together.
 ownership_measures: [equity, voting]
@@ -18,6 +19,16 @@ ownership_measures: [equity, voting]
 # gb_fcdo_sanctions is the OpenSanctions dataset of the UK Sanctions List, the
 # single official source of UK designations since 28 January 2026 (checked 2026-10-28).
 designation_lists: [FX-UK-LIST, gb_fcdo_sanctions]
+# Illustrative: the "owned or controlled" test belongs to the asset freeze. A
+# sectoral measure restricts dealings and freezes nothing, so it is reviewed; a
+# travel ban alone freezes nothing, so it is listed as not applied. The first
+# entry that matches wins; any other program blocks. No program on
+# gb_fcdo_sanctions in the real set of 2026-11-26 matches either glob (the UK
+# list codes a regime, `GB-RUS`, not a measure): today they change nothing
+# there. `ubo refresh`'s quality report lists the programs each list holds.
+programs:
+  - {program: "*SECTORAL*", treat: review}
+  - {program: "*TRAVEL*", treat: ignore}
 other_designations: review
 
 match_threshold: 0.92
@@ -29,10 +40,16 @@ review_exposure_pct: 25
 near_miss_pct: 40
 
 # The UK test also covers control (the right to appoint the board, or affairs run
-# as a designated person wishes). The engine cannot make control block, so a
-# control link from a blocked party is REVIEW (CONTROL_LINK): the gap the label states.
+# as a designated person wishes). The right to appoint the board blocks
+# (`control_blocks`); significant influence and other control stay a control
+# link, REVIEW (CONTROL_LINK), as the label states.
 control_link_review: true
 control_link_scope: upstream
+control_blocks: [board_appointment]
+# Two designated holders joined by a family or associate relation, whose stakes
+# together would meet the test, are possibly blocked (REVIEW): a relation alone
+# is not proof of a joint arrangement, so it never blocks.
+aggregate_related: {family: review, associate: review}
 
 duplicate_link_review: true
 max_depth: 5

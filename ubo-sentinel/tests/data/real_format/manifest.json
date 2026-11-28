@@ -39,9 +39,9 @@
       "source": "opensanctions",
       "url": "https://data.opensanctions.org/artifacts/sanctions/20261001060000-fxr/entities.ftm.json",
       "published_at": "2026-10-01T06:00:00",
-      "size": 13371,
-      "sha256": "00f458d4adc776756f38de69a9f6b83d151851f1f7041ecfbf09a342023c7173",
-      "publisher_checksum": "sha1:89b313b4a922510542b285b96866f6f94c71d8a2",
+      "size": 14303,
+      "sha256": "d812cfa553a52f614e3e3ddfcad50e9177def5d6d60d4f54a9e822db4b0d3b5a",
+      "publisher_checksum": "sha1:ec161c80ac7d84d57ac8eb625cce6459a2f825eb",
       "archive_sha256": null,
       "licence": "CC-BY-NC-4.0"
     },

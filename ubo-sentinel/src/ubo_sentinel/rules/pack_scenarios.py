@@ -32,7 +32,7 @@ from ubo_sentinel.models.decision import Recommendation
 from ubo_sentinel.models.evidence import GapCode, ReasonCode
 from ubo_sentinel.models.graph import unstated, upper_lower
 from ubo_sentinel.models.provenance import Confidence, NonEmptyStr
-from ubo_sentinel.models.relationship import Interest, RelType
+from ubo_sentinel.models.relationship import Basis, Interest, RelType
 from ubo_sentinel.models.rule_result import RuleResult
 from ubo_sentinel.rules.engine import RuleEngine
 from ubo_sentinel.rules.pack import RULES_DIR, RulePack, load_rule_pack
@@ -49,10 +49,17 @@ _PROVENANCE = Provenance(
     as_of=date(2026, 1, 1),
     confidence=1.0,
 )
+# The basis an edge has when its spec states none. A RELATED_TO edge states its own.
 _BASIS = {
     "OWNS": "shareholding",
     "CONSOLIDATED_BY": "accounting_consolidation",
     "CONTROLS": "directorship",
+}
+_BASES: dict[str, set[str]] = {
+    "OWNS": {"shareholding"},
+    "CONSOLIDATED_BY": {"accounting_consolidation"},
+    "CONTROLS": {"directorship", "board_appointment", "significant_influence", "other"},
+    "RELATED_TO": {"family", "associate"},
 }
 
 
@@ -67,7 +74,10 @@ class SpecEdge(_Spec):
     """An edge named by its upper end (owner, parent or controller) and lower end.
 
     A stake is `pct` (a figure) or `range`, written as an interval: `(25, 50]` is
-    more than 25 % and at most 50 %. `interest` is what it is a stake of.
+    more than 25 % and at most 50 %. `interest` is what it is a stake of. `basis`
+    is the kind of control of a `CONTROLS` edge (`directorship` when left out),
+    and the relation of a `RELATED_TO` edge (`family` or `associate`, required);
+    a RELATED_TO edge has no direction, so which end is `upper` changes nothing.
     """
 
     upper: NonEmptyStr
@@ -76,11 +86,18 @@ class SpecEdge(_Spec):
     pct: Decimal | None = Field(default=None, gt=0, le=100)
     range: str | None = Field(default=None, pattern=_RANGE.pattern)
     interest: Interest = "equity"
+    basis: Basis | None = None
 
     @model_validator(mode="after")
     def _one_stake(self) -> Self:
         if self.pct is not None and self.range is not None:
             raise ValueError("an edge states a pct or a range, not both")
+        if self.rel == "RELATED_TO" and self.basis is None:
+            raise ValueError("a RELATED_TO edge states its basis: family or associate")
+        if self.basis is not None and self.basis not in _BASES[self.rel]:
+            raise ValueError(f"a {self.rel} edge may not have the basis {self.basis}")
+        if self.rel == "RELATED_TO" and (self.pct is not None or self.range is not None):
+            raise ValueError("a RELATED_TO edge states no stake")
         return self
 
     def stake_fields(self) -> dict[str, object]:
@@ -97,12 +114,16 @@ class SpecEdge(_Spec):
 
 
 class SpecDesignation(_Spec):
-    """A designation that reaches `node`: its own, or one of `by` across a name link."""
+    """A designation that reaches `node`: its own, or one of `by` across a name link.
+
+    `program` is the designation's program, which a pack's `programs` read (Step 20).
+    """
 
     node: NonEmptyStr
     by: NonEmptyStr | None = None
     confidence: Confidence = 1.0
     list: Literal["own", "other"] = "own"
+    program: NonEmptyStr = "P"
 
 
 class Expectation(_Spec):
@@ -170,6 +191,9 @@ def _relationship(spec: SpecEdge) -> Relationship:
     subject, obj = (
         (spec.lower, spec.upper) if spec.rel == "CONSOLIDATED_BY" else (spec.upper, spec.lower)
     )
+    if spec.rel == "RELATED_TO":
+        # No direction: the ends in id order, as Silver stores them.
+        subject, obj = sorted((subject, obj))
     return Relationship(
         id=relationship_id(subject, obj, spec.rel, False, spec.interest),
         subject_id=subject,
@@ -177,7 +201,7 @@ def _relationship(spec: SpecEdge) -> Relationship:
         rel_type=spec.rel,
         interest=spec.interest,
         **spec.stake_fields(),
-        basis=_BASIS[spec.rel],
+        basis=spec.basis or _BASIS[spec.rel],
         is_ultimate=False,
         provenance=_PROVENANCE,
     )
@@ -186,6 +210,9 @@ def _relationship(spec: SpecEdge) -> Relationship:
 def _upward_depths(target: str, edges: list[Relationship]) -> dict[str, int]:
     owners: dict[str, set[str]] = {}
     for item in edges:
+        if item.rel_type == "RELATED_TO":
+            # Never walked: a relation adds no node to the upward graph.
+            continue
         upper, lower = upper_lower(item)
         owners.setdefault(lower, set()).add(upper)
     depths, frontier, hops = {target: 0}, [target], 0
@@ -204,7 +231,7 @@ def _match(spec: SpecDesignation, pack: RulePack) -> SanctionMatch:
         id=sanction_id("pack_scenario", f"des-{by}", spec.node),
         entity_id=spec.node,
         designated_entity_id=by,
-        program="P",
+        program=spec.program,
         list_source=pack.designation_lists[0] if spec.list == "own" else OTHER_LIST,
         is_active=True,
         match_type=match_type,

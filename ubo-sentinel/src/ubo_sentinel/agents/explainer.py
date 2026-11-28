@@ -36,8 +36,8 @@ from ubo_sentinel.models.relationship import Relationship
 from ubo_sentinel.models.rule_result import RuleResult
 from ubo_sentinel.rules.engine import (
     OWNERSHIP_RELATIONS,
-    classify_match,
     classify_other_regime,
+    match_effect,
 )
 from ubo_sentinel.rules.pack import RulePack
 
@@ -52,6 +52,8 @@ GAP_ACTIONS: dict[GapCode, ActionCode] = {
     "POSSIBLE_DUPLICATE": "SCREEN_LINKED_RECORD",
     "CONFLICTING_PCT": "RECONCILE_STAKES",
     "PCT_RANGE": "OBTAIN_SHAREHOLDING",
+    # Never decides, so never asked for; here so that every gap has an action.
+    "PROGRAM_NOT_APPLIED": "COMPARE_MATCH_RECORDS",
 }
 
 # Source -> the stake at or below which it reports no holder (Step 17). The PSC
@@ -68,6 +70,9 @@ _DERIVATION_CLAIMS = {
     ("POSSIBLY_BLOCKED", "AGGREGATE"): "POSSIBLY_BLOCKED_BY_OWNERSHIP",
     ("POSSIBLY_BLOCKED", "PRESUMED_MAJORITY"): "PRESUMED_MAJORITY",
     ("POSSIBLY_BLOCKED", "RANGE"): "POSSIBLY_BLOCKED_BY_RANGE",
+    ("BLOCKED", "CONTROL"): "BLOCKED_BY_CONTROL",
+    ("POSSIBLY_BLOCKED", "CONTROL"): "POSSIBLY_BLOCKED_BY_CONTROL",
+    ("POSSIBLY_BLOCKED", "RELATED_AGGREGATE"): "POSSIBLY_BLOCKED_BY_RELATED",
 }
 
 
@@ -203,7 +208,7 @@ def build_memo(
             confidence=match.confidence,
             is_active=match.is_active,
             corroboration=match.corroboration,
-            effect=classify_match(pack, match)
+            effect=match_effect(pack, match)
             or ("OTHER_REGIME" if classify_other_regime(pack, match) else "NONE"),
             programs=[record.program for record in match.sanction_records],
             list_sources=[record.list_source for record in match.sanction_records],
@@ -577,6 +582,9 @@ def render_memo(memo: Memo) -> str:
     def edge(edge_id: str) -> str:
         item = memo.edge(edge_id)
         stake = ""
+        if item.rel_type == "RELATED_TO":
+            # No direction and no stake: a family or associate relation.
+            return f"{name(item.upper_id)} `{item.rel_type}` {name(item.lower_id)}"
         if item.rel_type != "CONTROLS":
             stake = f" {format_stake(item.pct_low, item.pct_high, item.pct_bounds)}"
             if item.pct_high is None:
